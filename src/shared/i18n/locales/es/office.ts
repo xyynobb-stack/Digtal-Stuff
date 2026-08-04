@@ -1,0 +1,68 @@
+export default {
+  title: "Office",
+  checkingStatus: "Comprobando el estado de Claw3D...",
+  setupTitle: "Configurar Claw3D",
+  installTitle: "Configurando Claw3D",
+  processLogs: "Registros del proceso",
+  noLogs: "Todavía no hay registros. Inicia los servicios para ver la salida.",
+  loadingClaw3d: "Cargando Claw3D...",
+  installClaw3d: "Instalar Claw3D",
+  setupFailed: "La configuración falló",
+  startFailed: "No se pudo iniciar Claw3D",
+  portInUse:
+    "El puerto {{port}} está en uso. Cámbialo en la configuración para iniciar.",
+  websocketUrl: "URL de WebSocket",
+  viewOnGithub: "Ver en GitHub",
+  waitingToStart: "Esperando para iniciar...",
+  starting: "Iniciando...",
+  openInBrowser: "Abrir en el navegador",
+  viewLogs: "Ver registros",
+  portInUseWarning:
+    "El puerto {{port}} está en uso. Cambia el puerto en la configuración o detén otros procesos.",
+  close: "Cerrar",
+  cannotLoadClaw3d: "No se puede cargar Claw3D",
+  startingClaw3dService: "Iniciando el servicio de Claw3D...",
+  clickToStart: 'Haz clic en "Iniciar" para ejecutar Claw3D',
+  setupDesc1:
+    "Claw3D es un entorno de visualización 3D para tus agentes de Hermes. Te permite ver a tus agentes trabajando en un espacio de oficina interactivo.",
+  setupDesc2:
+    "Haz clic abajo para descargar y configurar Claw3D automáticamente. Esto clonará el repositorio e instalará todas las dependencias.",
+  // Enterable building interiors
+  enter_office: "Entrar a la oficina",
+  enter_bank: "Entrar al banco",
+  enter_showroom: "Entrar al concesionario",
+  exitToCity: "Salir a la ciudad",
+  showroomCardColor: "Color de pintura",
+  showroomCardHint:
+    "Echa un vistazo al concesionario: pronto podrás comprar coches para tus agentes.",
+  // Space representatives (bank teller interaction menu)
+  walkMode: "Caminar",
+  walkModeExit: "Salir del paseo (Esc)",
+  walkHint: "WASD / flechas para moverte · Shift para correr · Esc para salir",
+  you: "Tú",
+  repBankTeller: "Cajero del banco",
+  spaceBank: "Banco",
+  repPanelAgentLabel: "Agente",
+  repPanelPickAgent: "Elige un agente…",
+  repActionCheckBalance: "Consultar saldo",
+  repActionAccountStatus: "Consultar estado de la cuenta",
+  repActionCreateAccount: "Crear cuenta",
+  repActionSendMoney: "Enviar dinero a un agente",
+  repComingSoon: "Próximamente",
+  repLoading: "Procesando…",
+  repErrorGeneric: "Algo salió mal. Inténtalo de nuevo.",
+  repStatusSignedOut:
+    "Inicia sesión en tu cuenta de Hermes para usar el banco.",
+  repStatusUnlinked:
+    "Este agente aún no está vinculado a un agente en la nube. Inicia sesión e inténtalo de nuevo.",
+  repWalletsNone: "Aún no hay cuentas: crea una para empezar.",
+  repBadgeTransactable: "Transaccional",
+  repBadgeReceiveOnly: "Solo recepción",
+  repBalanceNoTransactable:
+    "Este agente aún no tiene una cuenta transaccional: crea una primero.",
+  repBalanceEmpty: "Aún no hay saldos de tokens.",
+  repBalanceTotal: "Total",
+  repCreateSuccess: "Cuenta creada",
+  repCreateExists: "Este agente ya tiene una cuenta bancaria.",
+  repStatusForeign: "Este agente está vinculado a otra cuenta de Hermes One.",
+} as const;

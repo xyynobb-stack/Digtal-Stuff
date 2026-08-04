@@ -1,0 +1,69 @@
+export default {
+  title: "オフィス",
+  checkingStatus: "Claw3D の状態を確認中...",
+  setupTitle: "Claw3D をセットアップ",
+  installTitle: "Claw3D をセットアップ中",
+  processLogs: "プロセスログ",
+  noLogs: "ログはまだありません。サービスを開始すると出力が表示されます。",
+  loadingClaw3d: "Claw3D を読み込み中...",
+  installClaw3d: "Claw3D をインストール",
+  setupFailed: "セットアップ失敗",
+  startFailed: "Claw3D の起動に失敗しました",
+  portInUse:
+    "ポート {{port}} は使用中です。設定で変更してから開始してください。",
+  websocketUrl: "WebSocket URL",
+  viewOnGithub: "GitHub で見る",
+  waitingToStart: "開始待機中...",
+  starting: "起動中...",
+  openInBrowser: "ブラウザで開く",
+  viewLogs: "ログを表示",
+  portInUseWarning:
+    "ポート {{port}} は使用中です。設定でポートを変更するか、他のプロセスを停止してください。",
+  close: "閉じる",
+  cannotLoadClaw3d: "Claw3D を読み込めません",
+  startingClaw3dService: "Claw3D サービスを起動中...",
+  clickToStart: "「開始」をクリックして Claw3D を実行",
+  setupDesc1:
+    "Claw3D は Hermes エージェント用の 3D 可視化環境です。インタラクティブなオフィス空間でエージェントの動きが見られます。",
+  setupDesc2:
+    "下のボタンで Claw3D を自動ダウンロード・セットアップします。リポジトリをクローンし、依存関係をすべてインストールします。",
+  // Enterable building interiors
+  enter_office: "オフィスに入る",
+  enter_bank: "銀行に入る",
+  enter_showroom: "ショールームに入る",
+  exitToCity: "街に戻る",
+  showroomCardColor: "ボディカラー",
+  showroomCardHint:
+    "ショールームをご覧ください。エージェント用の車の購入機能は近日公開予定です。",
+  // Space representatives (bank teller interaction menu)
+  walkMode: "歩き回る",
+  walkModeExit: "ウォーク終了 (Esc)",
+  walkHint: "WASD / 矢印キーで移動 · Shiftで走る · Escで終了",
+  you: "あなた",
+  repBankTeller: "銀行の窓口係",
+  spaceBank: "銀行",
+  repPanelAgentLabel: "エージェント",
+  repPanelPickAgent: "エージェントを選択…",
+  repActionCheckBalance: "残高を確認",
+  repActionAccountStatus: "口座の状態を確認",
+  repActionCreateAccount: "口座を開設",
+  repActionSendMoney: "エージェントに送金",
+  repComingSoon: "近日公開",
+  repLoading: "処理中…",
+  repErrorGeneric: "問題が発生しました。もう一度お試しください。",
+  repStatusSignedOut:
+    "銀行を利用するには Hermes アカウントにサインインしてください。",
+  repStatusUnlinked:
+    "このエージェントはまだクラウドエージェントに連携されていません。サインインして再試行してください。",
+  repWalletsNone: "口座はまだありません。まず開設してください。",
+  repBadgeTransactable: "取引可能",
+  repBadgeReceiveOnly: "受取専用",
+  repBalanceNoTransactable:
+    "このエージェントには取引可能な口座がまだありません。まず開設してください。",
+  repBalanceEmpty: "トークン残高はまだありません。",
+  repBalanceTotal: "合計",
+  repCreateSuccess: "口座を開設しました",
+  repCreateExists: "このエージェントはすでに銀行口座を持っています。",
+  repStatusForeign:
+    "このエージェントは別の Hermes One アカウントに連携されています。",
+} as const;

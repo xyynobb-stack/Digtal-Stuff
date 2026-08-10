@@ -1040,7 +1040,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       keyEnv: envKey,
     });
     for (const entry of available) {
-      addModel(
+      const savedModel = addModel(
         entry.name,
         "custom",
         entry.model,
@@ -1048,6 +1048,12 @@ export function registerIpcHandlers(context: IpcContext): void {
         entry.contextLength,
         "Company Platform",
       );
+
+      // 模型 ID 已存在时，addModel 会保留旧名称；
+      // 这里以本次接口返回的 display_name 同步更新显示名。
+      if (savedModel.name !== entry.name) {
+        updateModel(savedModel.id, { name: entry.name });
+      }
     }
     // Persist the endpoint grant separately from models.json. The model library
     // remains intact, but every renderer-facing local model list is restricted

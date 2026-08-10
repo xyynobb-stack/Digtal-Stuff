@@ -18,7 +18,7 @@ export default {
   apiKeyModal: {
     title: "Set API Server Key",
     description:
-      "API_SERVER_KEY is required for the Hermes gateway to authenticate requests. Set it now to enable chat.",
+      "API_SERVER_KEY is required for the JingYuAI gateway to authenticate requests. Set it now to enable chat.",
     label: "API Server Key",
     placeholder: "sk-… or any secret",
     autoGenerate: "Auto-generate",

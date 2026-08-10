@@ -10,7 +10,10 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import type { DashboardRpcEvent } from "../dashboardGatewayClient";
-import { useDashboardChatTransport } from "./useDashboardChatTransport";
+import {
+  ensureDashboardRuntimeSession,
+  useDashboardChatTransport,
+} from "./useDashboardChatTransport";
 import type { ActiveTurn, ChatMessage, UsageState } from "../types";
 
 type SetUsageMock = Mock<(value: SetStateAction<UsageState | null>) => void>;
@@ -178,6 +181,87 @@ describe("useDashboardChatTransport recovery", () => {
     expect(dashboardMock.connect).toHaveBeenCalledWith("ws://fresh-dashboard");
   });
 
+  it("creates a fresh Agent with the selected model instead of racing /model", async () => {
+    const requests: Array<{ method: string; params: unknown }> = [];
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.create") {
+        return { session_id: "live", stored_session_id: "stored" };
+      }
+      if (method === "slash.exec") {
+        throw new Error("fresh sessions must not switch through slash.exec");
+      }
+      return {};
+    });
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+
+    let handled: boolean | undefined;
+    await act(async () => {
+      handled = await api.send?.("hello");
+    });
+
+    expect(handled).toBe(true);
+    expect(requests).toContainEqual({
+      method: "session.create",
+      params: {
+        cols: 96,
+        model: "bad-model",
+        provider: "bad-provider",
+      },
+    });
+    expect(requests.some((request) => request.method === "slash.exec")).toBe(
+      false,
+    );
+    expect(requests.some((request) => request.method === "model.options")).toBe(
+      false,
+    );
+  });
+
+  it("resolves a named custom provider before creating the Agent", async () => {
+    const request = vi.fn(async (method: string, params?: unknown) => {
+      void params;
+      if (method === "model.options") {
+        return {
+          model: "Kimi-2.6",
+          provider: "custom",
+          providers: [
+            {
+              slug: "company-platform",
+              base_url: "https://models.company.test/v1",
+              models: ["glm-5.2"],
+            },
+          ],
+        };
+      }
+      if (method === "session.create") {
+        return { session_id: "live", stored_session_id: "stored" };
+      }
+      return {};
+    });
+
+    const result = await ensureDashboardRuntimeSession({
+      client: {
+        request: async <T = unknown,>(method: string, params?: unknown) =>
+          (await request(method, params)) as T,
+      },
+      messages: [],
+      model: "glm-5.2",
+      modelBaseUrl: "https://models.company.test/v1/",
+      provider: "custom",
+    });
+
+    expect(result.createdModelOverride).toEqual({
+      model: "glm-5.2",
+      provider: "company-platform",
+    });
+    expect(request).toHaveBeenCalledWith("session.create", {
+      cols: 96,
+      model: "glm-5.2",
+      provider: "company-platform",
+    });
+  });
+
   it("surfaces OAuth login requirements without legacy fallback", async () => {
     // @lat: [[remote-dashboard-oauth#Test specifications#OAuth no-fallback]]
     const onUnavailable = vi.fn();
@@ -293,8 +377,14 @@ describe("useDashboardChatTransport recovery", () => {
     expect(
       requests.filter((request) => request.method === "session.create"),
     ).toEqual([
-      { method: "session.create", params: { cols: 96 } },
-      { method: "session.create", params: { cols: 96 } },
+      {
+        method: "session.create",
+        params: { cols: 96, model: "bad-model", provider: "bad-provider" },
+      },
+      {
+        method: "session.create",
+        params: { cols: 96, model: "good-model", provider: "good-provider" },
+      },
     ]);
     expect(requests).not.toContainEqual({
       method: "session.create",
@@ -320,6 +410,65 @@ describe("useDashboardChatTransport recovery", () => {
         { kind: "assistant", content: "", error: "Invalid API Key" },
       ],
     );
+  });
+
+  it("uses the latest picker model when the composer calls a stale send callback", async () => {
+    // @lat: [[model-selection#Latest picker identity wins]]
+    const requests: Array<{ method: string; params: unknown }> = [];
+    let liveModel = "bad-model";
+    let liveProvider = "bad-provider";
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.create") {
+        return { session_id: "live", stored_session_id: "stored" };
+      }
+      if (method === "model.options") {
+        return { model: liveModel, provider: liveProvider, providers: [] };
+      }
+      if (method === "slash.exec") {
+        const command = String((params as { command?: string })?.command || "");
+        const match = command.match(/^\/model\s+(.+?)\s+--provider\s+(.+)$/);
+        if (match) {
+          liveModel = match[1];
+          liveProvider = match[2];
+        }
+        return {};
+      }
+      return {};
+    });
+
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+
+    await act(async () => {
+      await api.send?.("first turn");
+    });
+    const staleSend = api.send;
+
+    await act(async () => {
+      api.setProvider?.("good-provider");
+      api.setModel?.("good-model");
+      api.activeTurnRef!.current = { ...activeRecoveryTurn };
+    });
+
+    await act(async () => {
+      await staleSend?.("sent by an input holding the previous callback");
+    });
+
+    expect(requests).toContainEqual({
+      method: "slash.exec",
+      params: {
+        session_id: "live",
+        command: "/model good-model --provider good-provider",
+      },
+    });
+    expect(requests).toContainEqual({
+      method: "prompt.submit",
+      params: {
+        session_id: "live",
+        text: "sent by an input holding the previous callback",
+      },
+    });
   });
 
   it("discards an in-flight dashboard client after the connection mode changes", async () => {
@@ -429,7 +578,7 @@ describe("useDashboardChatTransport unavailable fallback (issue #667)", () => {
   function mockStartDashboard(): ReturnType<typeof vi.fn> {
     const startDashboard = vi.fn(async () => ({
       running: false,
-      error: "Hermes dashboard chat WebSocket is unavailable (404)",
+      error: "JingYuAI dashboard chat WebSocket is unavailable (404)",
     }));
     Object.defineProperty(window, "hermesAPI", {
       configurable: true,

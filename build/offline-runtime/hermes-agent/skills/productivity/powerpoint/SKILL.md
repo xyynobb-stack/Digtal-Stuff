@@ -1,6 +1,6 @@
 ---
 name: powerpoint
-description: "Create, read, edit .pptx decks, slides, notes, templates."
+description: 创建、读取和编辑 .pptx 演示文稿、幻灯片、备注和模板。
 version: 2.0.0
 author: Anthropic (adapted by Nous Research)
 license: Proprietary. LICENSE.txt has complete terms

@@ -71,6 +71,12 @@ function Skills({
     loadAll();
   }, [loadAll]);
 
+  useEffect(() => {
+    const refresh = (): void => void loadAll();
+    window.addEventListener("hermes-skills-changed", refresh);
+    return () => window.removeEventListener("hermes-skills-changed", refresh);
+  }, [loadAll]);
+
   async function handleViewDetail(skill: InstalledSkill): Promise<void> {
     setDetailSkill(skill);
     const content = await window.hermesAPI.getSkillContent(skill.path);
@@ -84,6 +90,7 @@ function Skills({
     setActionInProgress(null);
     if (result.success) {
       await loadInstalled();
+      window.dispatchEvent(new Event("hermes-skills-changed"));
     } else {
       setError(result.error || t("skills.installFailed"));
     }
@@ -98,6 +105,7 @@ function Skills({
     if (result.success) {
       setDetailSkill(null);
       await loadInstalled();
+      window.dispatchEvent(new Event("hermes-skills-changed"));
       toast.success(t("skills.uninstallSuccess", { name }));
     } else {
       const msg = result.error || t("skills.uninstallFailed");

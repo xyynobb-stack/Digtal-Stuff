@@ -14,5 +14,5 @@ export default {
   startExited: "El gateway se inició, pero se detuvo antes de estar listo.",
   checkLog: "Revisa el registro del gateway:",
   gatewayHint:
-    "Conecta Hermes con Telegram, Discord, Slack y otras plataformas",
+    "Conecta JingYuAI con Telegram, Discord, Slack y otras plataformas",
 } as const;

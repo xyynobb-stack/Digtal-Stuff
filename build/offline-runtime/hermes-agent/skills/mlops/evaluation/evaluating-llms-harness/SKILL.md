@@ -1,6 +1,6 @@
 ---
 name: evaluating-llms-harness
-description: "lm-eval-harness: benchmark LLMs (MMLU, GSM8K, etc.)."
+description: 使用 lm-eval-harness 对大语言模型进行基准测试。
 version: 1.0.1
 author: Orchestra Research
 license: MIT

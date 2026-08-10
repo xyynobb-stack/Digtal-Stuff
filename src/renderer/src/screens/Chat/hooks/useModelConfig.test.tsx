@@ -2,10 +2,12 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useModelConfig } from "./useModelConfig";
 
+const liveDiscoveredModels = vi.hoisted(() => ["live-ollama-model"]);
+
 vi.mock("../../../hooks/useDiscoveredModels", () => ({
   useDiscoveredModels: () => ({
-    models: [],
-    status: "unsupported",
+    models: liveDiscoveredModels,
+    status: "ok",
   }),
 }));
 
@@ -47,6 +49,7 @@ function GroupHarness(): React.JSX.Element {
 describe("useModelConfig", () => {
   let savedModels: SavedModel[];
   let emitModelLibraryChanged: (() => void) | null;
+  let employeeAccessActive: boolean;
 
   beforeEach(() => {
     savedModels = [
@@ -60,6 +63,7 @@ describe("useModelConfig", () => {
       },
     ];
     emitModelLibraryChanged = null;
+    employeeAccessActive = false;
 
     Object.defineProperty(window, "hermesAPI", {
       configurable: true,
@@ -70,6 +74,9 @@ describe("useModelConfig", () => {
           baseUrl: "",
         })),
         listModels: vi.fn(async () => savedModels),
+        getEmployeeModelAccess: vi.fn(async () => ({
+          active: employeeAccessActive,
+        })),
         onConnectionConfigChanged: vi.fn(() => vi.fn()),
         onModelLibraryChanged: vi.fn((callback: () => void) => {
           emitModelLibraryChanged = callback;
@@ -115,7 +122,30 @@ describe("useModelConfig", () => {
     });
   });
 
-  it("groups a custom Hermes One model under the Hermes One brand while keeping custom routing", async () => {
+  it("does not merge live provider models into an employee-restricted catalog", async () => {
+    employeeAccessActive = true;
+    savedModels = [
+      {
+        id: "company-glm",
+        name: "GLM-5.1",
+        provider: "custom",
+        model: "glm-5.1",
+        baseUrl: "http://183.230.227.39:18600/v1",
+        createdAt: 1,
+      },
+    ];
+
+    render(<Harness />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("models")).toHaveTextContent("GLM-5.1");
+      expect(screen.getByTestId("models")).not.toHaveTextContent(
+        "live-ollama-model",
+      );
+    });
+  });
+
+  it("groups a custom JingYuAI model under the JingYuAI brand while keeping custom routing", async () => {
     savedModels = [
       {
         id: "hs-swift",
@@ -133,9 +163,7 @@ describe("useModelConfig", () => {
       const groups = JSON.parse(
         screen.getByTestId("groups").textContent || "[]",
       );
-      const hs = groups.find(
-        (g: { label: string }) => g.label === "Hermes One",
-      );
+      const hs = groups.find((g: { label: string }) => g.label === "JingYuAI");
       expect(hs).toBeTruthy();
       // Not lumped under the generic OpenAI-compatible bucket.
       expect(hs.provider).toBe("hermesone");

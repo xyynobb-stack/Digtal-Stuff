@@ -13,7 +13,7 @@ export default {
   reasoningEffort: {
     title: "مستوى التفكير",
     auto: "تلقائي",
-    autoDescription: "دع Hermes والنموذج يقرران.",
+    autoDescription: "دع JingYuAI والنموذج يقرران.",
     hint: "التلقائي هو الأكثر أماناً. المستويات اليدوية قد يتم تجاهلها أو رفضها من قبل النماذج التي لا تدعم مستوى التفكير.",
     saveError: "تعذر حفظ مستوى التفكير. تمت استعادة التحديد السابق.",
     minimal: "أدنى",
@@ -38,11 +38,11 @@ export default {
   approve: "موافقة",
   deny: "رفض",
   clarify: {
-    defaultQuestion: "يحتاج Hermes إلى مدخلاتك.",
+    defaultQuestion: "يحتاج JingYuAI إلى مدخلاتك.",
     placeholder: "اكتب إجابتك… (Ctrl+Enter للإرسال)",
     send: "إرسال",
-    skip: "تخطي — دع Hermes يقرر",
-    skipped: "تم التخطي — قرر Hermes",
+    skip: "تخطي — دع JingYuAI يقرر",
+    skipped: "تم التخطي — قرر JingYuAI",
     error: "تعذر تسليم إجابتك — ربما انتهت الجولة. حاول مرة أخرى.",
   },
   thinking: "جارٍ التفكير...",
@@ -127,7 +127,7 @@ export default {
     model: "عرض أو تبديل النموذج الحالي",
     memory: "عرض ذاكرة الوكيل",
     persona: "عرض الشخصية الحالية",
-    version: "عرض إصدار Hermes",
+    version: "عرض إصدار JingYuAI",
   },
   queued: "{{count}} رسالة في قائمة الانتظار — سيتم الإرسال عندما ينتهي الوكيل",
   queuedCount: "{{count}} في الانتظار",
@@ -161,7 +161,7 @@ export default {
   followUs: {
     title: "تابعنا على X",
     description:
-      "ابق على اطلاع بآخر ميزات ونصائح وتحديثات Hermes One. تابعنا على X!",
+      "ابق على اطلاع بآخر ميزات ونصائح وتحديثات JingYuAI. تابعنا على X!",
     follow: "متابعة",
     notNow: "ليس الآن",
   },

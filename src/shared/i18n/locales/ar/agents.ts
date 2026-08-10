@@ -1,7 +1,7 @@
 export default {
   title: "الملفات الشخصية",
   subtitle:
-    "كل ملف شخصي هو مساحة عمل معزولة لـ Hermes بإعداداته وذاكرته ومهاراته الخاصة",
+    "كل ملف شخصي هو مساحة عمل معزولة لـ JingYuAI بإعداداته وذاكرته ومهاراته الخاصة",
   newAgent: "وكيل جديد",
   namePlaceholder: "اسم الوكيل (مثال: مبرمج)",
   cloneConfig: "نسخ الإعدادات ومفاتيح API من الملف الافتراضي",
@@ -65,7 +65,7 @@ export default {
   walletCreateFailed: "تعذر إضافة المحفظة",
   walletRecoveryTitle: "عبارة الاستعادة",
   walletRecoveryInfo:
-    "احفظ هذه العبارة الآن. لن يعرضها Hermes مرة أخرى بعد إغلاق هذه النافذة.",
+    "احفظ هذه العبارة الآن. لن يعرضها JingYuAI مرة أخرى بعد إغلاق هذه النافذة.",
   walletCopyRecovery: "نسخ العبارة",
   walletDone: "لقد حفظتها",
   walletBalanceLoading: "جارٍ التحميل...",
@@ -73,6 +73,6 @@ export default {
   walletBalanceRefresh: "تحديث",
   walletDeleteTitle: "إزالة المحفظة",
   walletDeleteWarning:
-    "سيؤدي هذا إلى إزالة هذه المحفظة من Hermes بشكل دائم. تأكد من نسخ عبارة الاستعادة احتياطياً — فلن تتمكن من استعادة المحفظة بدونها.",
+    "سيؤدي هذا إلى إزالة هذه المحفظة من JingYuAI بشكل دائم. تأكد من نسخ عبارة الاستعادة احتياطياً — فلن تتمكن من استعادة المحفظة بدونها.",
   walletDeleteConfirmLabel: "إزالة المحفظة",
 } as const;

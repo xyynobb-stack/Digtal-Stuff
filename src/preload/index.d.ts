@@ -1,5 +1,9 @@
 import type { AppLocale } from "../shared/i18n/types";
 import type { Attachment } from "../shared/attachments";
+import type {
+  ImportWritingTemplateResult,
+  WritingTemplate,
+} from "../shared/writing-templates";
 import type { SessionModelOverride } from "../shared/model-override";
 import type { DesktopSessionContinuationItem } from "../shared/session-continuation";
 import type { DesktopSessionLocalError } from "../shared/session-continuation";
@@ -294,6 +298,7 @@ interface HermesAPI {
   getEnv: (profile?: string) => Promise<Record<string, string>>;
   setEnv: (key: string, value: string, profile?: string) => Promise<boolean>;
   provisionEmployee: (phone: string) => Promise<{ ok: boolean; name: string }>;
+  getEmployeeModelAccess: () => Promise<{ active: boolean }>;
   validateChatReadiness: (profile?: string) => Promise<{
     ok: boolean;
     code?:
@@ -774,6 +779,11 @@ interface HermesAPI {
   ) => Promise<
     Array<{ name: string; category: string; description: string; path: string }>
   >;
+  listUserAddedSkills: (
+    profile?: string,
+  ) => Promise<
+    Array<{ name: string; category: string; description: string; path: string }>
+  >;
   listBundledSkills: () => Promise<
     Array<{
       name: string;
@@ -783,6 +793,16 @@ interface HermesAPI {
       installed: boolean;
     }>
   >;
+  importLocalSkill: (profile?: string) => Promise<{
+    success: boolean;
+    canceled?: boolean;
+    name?: string;
+    error?: string;
+  }>;
+  listWritingTemplates: (profile?: string) => Promise<WritingTemplate[]>;
+  importWritingTemplate: (
+    profile?: string,
+  ) => Promise<ImportWritingTemplateResult>;
   getSkillContent: (skillPath: string) => Promise<string>;
   installSkill: (
     identifier: string,
@@ -1016,6 +1036,8 @@ interface HermesAPI {
       deliver: string[];
       skills: string[];
       script: string | null;
+      model: string | null;
+      provider: string | null;
     }>
   >;
   createCronJob: (
@@ -1024,6 +1046,8 @@ interface HermesAPI {
     name?: string,
     deliver?: string,
     profile?: string,
+    model?: string,
+    provider?: string,
   ) => Promise<{ success: boolean; error?: string }>;
   removeCronJob: (
     jobId: string,
@@ -1040,6 +1064,8 @@ interface HermesAPI {
   triggerCronJob: (
     jobId: string,
     profile?: string,
+    fallbackModel?: string,
+    fallbackProvider?: string,
   ) => Promise<{ success: boolean; error?: string }>;
 
   // Kanban

@@ -65,12 +65,10 @@ export const DESKTOP_SLASH_COMMANDS: SlashCommandDefinition[] = [
   ...(
     [
       ["agents", "Open Agents page"],
-      ["office", "Open Office 3D page"],
       ["discover", "Open Discover page"],
       ["providers", "Open Providers page"],
       ["schedules", "Open Schedules page"],
       ["kanban", "Open Kanban board"],
-      ["gateway", "Open Gateway status page"],
     ] as const
   ).map(
     ([name, description]): SlashCommandDefinition => ({
@@ -103,7 +101,7 @@ const LOCAL_COMMANDS: ReadonlyArray<
   ["memory", "Show agent memory"],
   ["tools", "Show available toolsets"],
   ["skills", "Show installed skills"],
-  ["version", "Show Hermes version"],
+  ["version", "Show JingYuAI version"],
   ["fast", "Toggle fast mode", true],
   ["usage", "Show token usage"],
 ];

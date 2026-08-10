@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { delimiter } from "path";
 import {
+  bundledPythonRuntimeLayout,
   getEnhancedPath,
   hermesCliArgs,
   HERMES_PYTHON,
@@ -8,6 +9,18 @@ import {
 } from "../src/main/installer";
 
 describe("installer platform wiring", () => {
+  it("uses the native bundled Python layout for each offline target", () => {
+    const windows = bundledPythonRuntimeLayout("C:\\runtime", "win32");
+    expect(windows.home).toBe("C:\\runtime");
+    expect(windows.executable).toMatch(/python\.exe$/);
+    expect(windows.launcherDirectory).toBe("Scripts");
+
+    const mac = bundledPythonRuntimeLayout("/runtime", "darwin");
+    expect(mac.home).toBe("/runtime/bin");
+    expect(mac.executable).toBe("/runtime/bin/python3");
+    expect(mac.launcherDirectory).toBe("bin");
+  });
+
   it("uses the platform path delimiter in the enhanced PATH", () => {
     const enhancedPath = getEnhancedPath();
 

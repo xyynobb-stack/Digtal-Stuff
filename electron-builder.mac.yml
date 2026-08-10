@@ -1,0 +1,15 @@
+extends: ./electron-builder.yml
+
+# This configuration is intentionally separate from the Windows offline build.
+# The macOS workflow stages an architecture-matched Python runtime under this
+# directory, then maps it to the same runtime location used by the installer.
+extraResources:
+  - from: build/offline-runtime-mac
+    to: hermes-runtime
+    filter:
+      - "**/*"
+
+mac:
+  # Internal/test builds are unsigned. A separate signed release workflow can
+  # override this when Apple Developer signing and notarization secrets exist.
+  notarize: false

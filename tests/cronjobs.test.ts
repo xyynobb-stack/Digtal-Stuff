@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
 const { execFileSpy } = vi.hoisted(() => ({
   execFileSpy: vi.fn(
@@ -28,19 +28,33 @@ vi.mock("../src/main/hermes", () => ({
 
 vi.mock("../src/main/installer", () => ({
   HERMES_HOME: "C:/hermes",
+  HERMES_REPO: "C:/desktop-runtime/hermes-agent",
   HERMES_PYTHON: "C:/hermes/hermes-agent/venv/Scripts/pythonw.exe",
+  getEnhancedPath: () => "C:/enhanced-path",
   hermesCliArgs: (args: string[] = []) => ["-m", "hermes_cli.main", ...args],
 }));
 
+let cronjobs: typeof import("../src/main/cronjobs");
+
+beforeAll(async () => {
+  cronjobs = await import("../src/main/cronjobs");
+}, 20000);
+
 describe("createCronJob", () => {
   beforeEach(() => {
-    execFileSpy.mockClear();
+    execFileSpy.mockReset();
+    execFileSpy.mockImplementation(
+      (
+        _file: string,
+        _args: string[],
+        _options: Record<string, unknown>,
+        callback: (err: Error | null, stdout: string, stderr: string) => void,
+      ) => callback(null, "ok", ""),
+    );
   });
 
   it("passes the prompt as the cron create positional argument before flags", async () => {
-    const { createCronJob } = await import("../src/main/cronjobs");
-
-    await createCronJob(
+    await cronjobs.createCronJob(
       "7 17 * * *",
       "Create a daily brief with local news, weather, and quotes.",
       "Daily brief",
@@ -62,13 +76,98 @@ describe("createCronJob", () => {
     ]);
     expect(execFileSpy.mock.calls[0][1]).not.toContain("--");
   });
+
+  it("pins a selected model and provider on new jobs", async () => {
+    await cronjobs.createCronJob(
+      "0 15 * * *",
+      "Back up the code.",
+      "Backup",
+      undefined,
+      undefined,
+      "kimi-k2.5",
+      "kimi-coding",
+    );
+
+    expect(execFileSpy.mock.calls[0][1]).toEqual([
+      "-m",
+      "hermes_cli.main",
+      "cron",
+      "create",
+      "0 15 * * *",
+      "Back up the code.",
+      "--name",
+      "Backup",
+      "--model",
+      "kimi-k2.5",
+      "--provider",
+      "kimi-coding",
+    ]);
+  });
+
+  it("runs the CLI from the packaged repository with the resolved Hermes home", async () => {
+    await cronjobs.triggerCronJob("job-123");
+
+    expect(execFileSpy).toHaveBeenCalledTimes(1);
+    expect(execFileSpy.mock.calls[0][1]).toEqual([
+      "-m",
+      "hermes_cli.main",
+      "cron",
+      "run",
+      "job-123",
+    ]);
+    expect(execFileSpy.mock.calls[0][2]).toMatchObject({
+      cwd: "C:/desktop-runtime/hermes-agent",
+      timeout: 0,
+      env: expect.objectContaining({
+        HERMES_HOME: "C:/hermes",
+        PATH: "C:/enhanced-path",
+      }),
+    });
+  });
+
+  it("surfaces CLI stdout when a cron action exits with no stderr", async () => {
+    execFileSpy.mockImplementationOnce(
+      (
+        _file: string,
+        _args: string[],
+        _options: Record<string, unknown>,
+        callback: (err: Error | null, stdout: string, stderr: string) => void,
+      ) => callback(new Error("Command failed"), "Job not found: missing", ""),
+    );
+    await expect(cronjobs.triggerCronJob("missing")).resolves.toEqual({
+      success: false,
+      error: "Job not found: missing",
+    });
+  });
+
+  it("pins the configured model before running a legacy job", async () => {
+    await cronjobs.triggerCronJob("legacy-job", undefined, "glm-5", "zai");
+
+    expect(execFileSpy).toHaveBeenCalledTimes(2);
+    expect(execFileSpy.mock.calls[0][1]).toEqual([
+      "-m",
+      "hermes_cli.main",
+      "cron",
+      "edit",
+      "legacy-job",
+      "--model",
+      "glm-5",
+      "--provider",
+      "zai",
+    ]);
+    expect(execFileSpy.mock.calls[1][1]).toEqual([
+      "-m",
+      "hermes_cli.main",
+      "cron",
+      "run",
+      "legacy-job",
+    ]);
+  });
 });
 
 describe("parseCronListOutput", () => {
   it("parses the Hermes cron list table used by SSH profiles", async () => {
-    const { parseCronListOutput } = await import("../src/main/cronjobs");
-
-    const jobs = parseCronListOutput(`
+    const jobs = cronjobs.parseCronListOutput(`
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         Scheduled Jobs                                  │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -79,6 +178,8 @@ describe("parseCronListOutput", () => {
     Repeat:    ∞
     Next run:  2026-06-25T09:00:00+09:00
     Deliver:   origin
+    Model:     kimi-k2.5
+    Provider:  kimi-coding
     Workdir:   /workspaces/biz-office
     Last run:  2026-06-24T09:16:46.248027+09:00  ok
 
@@ -104,6 +205,8 @@ describe("parseCronListOutput", () => {
       last_status: "ok",
       repeat: { times: null, completed: 0 },
       deliver: ["origin"],
+      model: "kimi-k2.5",
+      provider: "kimi-coding",
     });
     expect(jobs[1]).toMatchObject({
       id: "85e1165b00eb",

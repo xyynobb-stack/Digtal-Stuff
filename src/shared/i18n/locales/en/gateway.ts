@@ -15,8 +15,8 @@ export default {
     "Gateway was started, but it stopped again before it became ready.",
   checkLog: "Check the gateway log:",
   gatewayHint:
-    "Connects Hermes to Telegram, Discord, Slack, and other platforms",
-  subtitle: "Messaging platforms Hermes can connect to.",
+    "Connects JingYuAI to Telegram, Discord, Slack, and other platforms",
+  subtitle: "Messaging platforms JingYuAI can connect to.",
   refreshTooltip: "Refresh platform status",
   refresh: "Refresh",
   configHint: "Saving restarts the gateway when needed.",

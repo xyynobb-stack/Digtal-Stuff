@@ -8,7 +8,7 @@ export default {
   newTask: "新增任務",
   newBoard: "新增看板",
 
-  remoteUnsupportedTitle: "看板需要本機安裝 Hermes 或 SSH 通道模式。",
+  remoteUnsupportedTitle: "看板需要本機安裝 JingYuAI 或 SSH 通道模式。",
   remoteUnsupportedHint:
     "純遠端（HTTP + API 金鑰）模式尚未開放看板 API。請在設定中切換到本機或 SSH 通道模式來管理看板。",
 

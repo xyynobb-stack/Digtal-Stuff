@@ -7,7 +7,7 @@ import { I18nProvider } from "./components/I18nProvider";
 import { initAnalytics } from "./utils/analytics";
 
 const appName = import.meta.env.VITE_HERMES_DESKTOP_APP_NAME?.trim();
-document.title = appName || "Hermes One";
+document.title = appName || "JingYuAI";
 
 // Initialize analytics (privacy-first, only if user consented and key is configured)
 initAnalytics();

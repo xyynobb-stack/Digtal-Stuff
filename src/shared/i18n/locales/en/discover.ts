@@ -1,6 +1,6 @@
 export default {
   title: "Discover",
-  subtitle: "Browse community skills, MCP servers, agents, and workflows.",
+  subtitle: "浏览社区SKILLS、Agent、和写作模板",
   tabs: {
     skills: "Skills",
     mcps: "MCPs",

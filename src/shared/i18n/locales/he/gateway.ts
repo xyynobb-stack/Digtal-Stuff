@@ -13,8 +13,8 @@ export default {
   startExited: "השער הופעל, אך נעצר שוב לפני שהספיק להיות מוכן.",
   checkLog: "בדקו את יומן השער:",
   gatewayHint:
-    "מחבר את Hermes ל-Telegram, ל-Discord, ל-Slack ולפלטפורמות נוספות",
-  subtitle: "ניהול פלטפורמות המסרים שאליהן Hermes Agent יכול להתחבר.",
+    "מחבר את JingYuAI ל-Telegram, ל-Discord, ל-Slack ולפלטפורמות נוספות",
+  subtitle: "ניהול פלטפורמות המסרים שאליהן JingYuAI Agent יכול להתחבר.",
   refreshTooltip: "רענון מצב הפלטפורמות",
   refresh: "רענון",
   configHint:

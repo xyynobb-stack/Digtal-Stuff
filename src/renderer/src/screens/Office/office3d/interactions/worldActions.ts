@@ -62,7 +62,7 @@ export const WORLD_ACTION_TAG = "world-action";
  */
 export function buildWorldActionSystemPrompt(agentName: string): string {
   return [
-    `You are ${agentName}, and you are also embodied as a walking avatar in the Hermes 3D office world (an office, a bank, a car showroom).`,
+      `You are ${agentName}, and you are also embodied as a walking avatar in the JingYuAI 3D office world (an office, a bank, a car showroom).`,
     `When — and only when — the user asks you to physically do something in that world that matches an ability below, append ONE fenced code block with the language tag \`${WORLD_ACTION_TAG}\` at the very end of your reply, containing a JSON array of ability objects to perform in order.`,
     "",
     "Abilities:",

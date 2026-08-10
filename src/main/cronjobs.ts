@@ -2,7 +2,13 @@ import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { execFile } from "child_process";
-import { HERMES_HOME, HERMES_PYTHON, hermesCliArgs } from "./installer";
+import {
+  getEnhancedPath,
+  HERMES_HOME,
+  HERMES_PYTHON,
+  HERMES_REPO,
+  hermesCliArgs,
+} from "./installer";
 import { profileHome } from "./utils";
 import {
   isRemoteMode,
@@ -30,6 +36,8 @@ export interface CronJob {
   deliver: string[];
   skills: string[];
   script: string | null;
+  model: string | null;
+  provider: string | null;
 }
 
 function jobsFilePath(profile?: string): string {
@@ -66,6 +74,8 @@ function normalizeJob(job: Record<string, unknown>): CronJob | null {
     skills:
       (job.skills as string[]) || (job.skill ? [job.skill as string] : []),
     script: (job.script as string) || null,
+    model: (job.model as string) || null,
+    provider: (job.provider as string) || null,
   };
 }
 
@@ -143,6 +153,8 @@ export function parseCronListOutput(output: string): CronJob[] {
       deliver: deliver.length > 0 ? deliver : ["local"],
       skills: splitCsvish(current.fields.Skills),
       script: current.fields.Script || null,
+      model: current.fields.Model || null,
+      provider: current.fields.Provider || null,
     });
     current = null;
   }
@@ -332,25 +344,45 @@ function runCronCommand(
     cliArgs.push("-p", profile);
   }
   cliArgs.push("cron", ...args);
+  // `cron run` executes a complete agent task synchronously and commonly takes
+  // minutes. The Python scheduler already has its own inactivity watchdog, so
+  // an outer 15-second exec timeout only kills healthy jobs halfway through.
+  const timeout = args[0] === "run" ? 0 : 30000;
 
   return new Promise((resolve) => {
     execFile(
       HERMES_PYTHON,
       cliArgs,
       {
-        cwd: join(HERMES_HOME, "hermes-agent"),
-        timeout: 15000,
+        // In offline packages the managed repository lives under Electron's
+        // userData directory, not HERMES_HOME/hermes-agent.
+        cwd: HERMES_REPO,
+        timeout,
+        env: {
+          ...process.env,
+          PATH: getEnhancedPath(),
+          // Electron may resolve HERMES_HOME from its persisted override or
+          // Windows fallback without process.env containing it. Pass the exact
+          // resolved directory so the CLI reads the same jobs.json as the UI.
+          HERMES_HOME,
+        },
+        maxBuffer: 16 * 1024 * 1024,
         ...HIDDEN_SUBPROCESS_OPTIONS,
       },
       (err, stdout, stderr) => {
         if (err) {
+          const stdoutText = (stdout || "").toString().trim();
+          const stderrText = (stderr || "").toString().trim();
           resolve({
             success: false,
-            output: stdout || "",
-            error: stderr || err.message,
+            output: stdoutText,
+            // Some Hermes CLI failures explain the problem on stdout. Do not
+            // discard that useful text in favour of Node's generic
+            // "Command failed: ..." wrapper.
+            error: stderrText || stdoutText || err.message,
           });
         } else {
-          resolve({ success: true, output: stdout || "" });
+          resolve({ success: true, output: (stdout || "").toString() });
         }
       },
     );
@@ -363,11 +395,15 @@ export async function createCronJob(
   name?: string,
   deliver?: string,
   profile?: string,
+  model?: string,
+  provider?: string,
 ): Promise<{ success: boolean; error?: string }> {
   const args = ["create", schedule];
   if (prompt) args.push(prompt);
   if (name) args.push("--name", name);
   if (deliver) args.push("--deliver", deliver);
+  if (model) args.push("--model", model);
+  if (provider) args.push("--provider", provider);
 
   const sshResult = await runNamedProfileSshCron(args, profile);
   if (sshResult) {
@@ -384,6 +420,8 @@ export async function createCronJob(
           schedule,
           prompt: prompt || "",
           deliver: deliver || "local",
+          model: model || null,
+          provider: provider || null,
         }),
       });
       if (!res.ok) {
@@ -471,8 +509,32 @@ export async function resumeCronJob(
 export async function triggerCronJob(
   jobId: string,
   profile?: string,
+  fallbackModel?: string,
+  fallbackProvider?: string,
 ): Promise<{ success: boolean; error?: string }> {
   if (!jobId) return { success: false, error: "Missing job ID" };
+  if (fallbackModel) {
+    const editArgs = ["edit", jobId, "--model", fallbackModel];
+    if (fallbackProvider) editArgs.push("--provider", fallbackProvider);
+
+    const sshResult = await runNamedProfileSshCron(editArgs, profile);
+    if (sshResult) {
+      if (!sshResult.success) {
+        return { success: false, error: sshResult.error };
+      }
+    } else if (isRemoteMode()) {
+      return {
+        success: false,
+        error:
+          "This legacy remote job has no model. Edit it on the remote JingYuAI host and assign a model before running it.",
+      };
+    } else {
+      const editResult = await runCronCommand(editArgs, profile);
+      if (!editResult.success) {
+        return { success: false, error: editResult.error };
+      }
+    }
+  }
   if (isRemoteMode()) return remoteJobAction(jobId, "run", profile);
   const result = await runCronCommand(["run", jobId], profile);
   return { success: result.success, error: result.error };

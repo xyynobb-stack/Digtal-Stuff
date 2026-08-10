@@ -7550,7 +7550,45 @@ class AIAgent:
             start_task_run,
         )
         from agent.subagent_lifecycle import bind_subagent_parent
+        from tools.skills_tool import (
+            clear_task_skill_allowlist,
+            set_task_skill_allowlist,
+        )
         effective_task_id = task_id or str(uuid.uuid4())
+        # The desktop sends this envelope on ordinary chat messages.  Keep the
+        # selection task-local so skills_list and skill_view enforce it without
+        # changing the globally installed skill library.
+        selection = (
+            re.match(r"^\[Active session skills:\s*(.*?)\]\s*\n", user_message)
+            if isinstance(user_message, str)
+            else None
+        )
+        if selection:
+            # The selection envelope is model-facing control data, not text the
+            # employee authored. Keep the full envelope for this API turn, but
+            # use the clean suffix for state.db/history. This uses the agent's
+            # existing persistence override channel, so prompt caching and the
+            # current-turn model input remain unchanged.
+            _desktop_control_prefix = (
+                "Built-in skills are always available to this chat. The listed names are "
+                "the only user-added custom skills enabled for this chat. Load and follow "
+                "each listed custom skill with the skill_view tool before answering. An "
+                "empty list means no custom skills are enabled."
+            )
+            _desktop_clean_message = user_message[selection.end():]
+            _desktop_user_marker = "\n\n[User message]\n"
+            if _desktop_clean_message.startswith(_desktop_control_prefix):
+                _desktop_marker_idx = _desktop_clean_message.find(_desktop_user_marker)
+                if _desktop_marker_idx >= 0:
+                    _desktop_clean_message = _desktop_clean_message[
+                        _desktop_marker_idx + len(_desktop_user_marker):
+                    ]
+                    if persist_user_message is None or persist_user_message == user_message:
+                        persist_user_message = _desktop_clean_message
+            set_task_skill_allowlist(
+                effective_task_id,
+                [name.strip() for name in selection.group(1).split(",") if name.strip()],
+            )
         session_id = str(getattr(self, "session_id", None) or "")
         task_context = {
             "session_id": session_id,
@@ -7663,6 +7701,7 @@ class AIAgent:
                         outcome=relay_outcome,
                     )
             finally:
+                clear_task_skill_allowlist(effective_task_id)
                 try:
                     if relay_lease is not None:
                         relay_runtime.SESSION_COORDINATOR.release_conversation(

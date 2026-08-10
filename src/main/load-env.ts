@@ -3,7 +3,7 @@ import { join } from "path";
 
 // Vite inlines MAIN_VITE_* into `import.meta.env` at BUILD time, so a dev edit
 // to `.env` doesn't take effect until the main bundle is rebuilt. That makes
-// the Hermes One API endpoint feel like it ignores the file (see
+// the JingYuAI API endpoint feel like it ignores the file (see
 // getApiUrl/getApiKey in hermes-account.ts). Loading the project `.env` into
 // process.env at startup lets those runtime reads reflect the file after a
 // plain app relaunch — handy for pointing dev at a real backend.

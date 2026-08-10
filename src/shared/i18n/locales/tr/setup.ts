@@ -45,7 +45,7 @@ export default {
   saving: "Kaydediliyor...",
   apiKeyLabel: "{{provider}} API Anahtarı",
   noApiKeyRequired:
-    "{{provider}} bir API anahtarı gerektirmez. Hermes yerel CLI/OAuth yapılandırmanızı kullanacaktır.",
+    "{{provider}} bir API anahtarı gerektirmez. JingYuAI yerel CLI/OAuth yapılandırmanızı kullanacaktır.",
   localNoKeyNeeded: "API anahtarı gerekmez",
   localLlm: "Yerel LLM",
   modelBaseUrlPlaceholder: "http://localhost:1234/v1",

@@ -181,7 +181,7 @@ function buildDialogHtml(): string {
   button:hover { opacity:0.9; }
 </style></head>
 <body>
-<div class="title">Hermes needs your computer password</div>
+      <div class="title">JingYuAI needs your computer password</div>
 <div class="prompt">The installer will install browser libraries that require administrator access. You'll only be asked once — the password is used locally and never stored.</div>
 <input id="pw" type="password" autofocus autocomplete="off" placeholder="Password" />
 <div class="row">

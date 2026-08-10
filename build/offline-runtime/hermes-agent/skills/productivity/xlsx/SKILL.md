@@ -1,6 +1,6 @@
 ---
 name: xlsx
-description: "Create, read, edit Excel .xlsx spreadsheets and CSVs."
+description: 创建、读取和编辑 Excel .xlsx 电子表格及 CSV 文件。
 version: 1.0.0
 author: Anthropic (adapted by Nous Research)
 license: Proprietary. LICENSE.txt has complete terms

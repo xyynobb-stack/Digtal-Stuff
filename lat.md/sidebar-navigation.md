@@ -2,7 +2,23 @@
 
 The sidebar starts with New Chat, keeps app destinations pinned, then gives conversations and projects their own scroll area.
 
-[[src/renderer/src/screens/Layout/Layout.tsx#Layout]] renders a New Chat action before Discover, Office, Kanban, and Schedules from `PINNED_NAV_ITEMS`, then renders [[src/renderer/src/screens/Layout/SidebarRecentSessions.tsx]] inside a flexible `.sidebar-chat-section`. New Chat is active when the visible Chat view has no session id yet. The standalone `sessions` view is still absent from the `View` union; the full list opens from the Cmd/Ctrl+K menu action.
+[[src/renderer/src/screens/Layout/Layout.tsx#Layout]] renders a New Chat action before Discover, Kanban, and Schedules from `PINNED_NAV_ITEMS`, then renders [[src/renderer/src/screens/Layout/SidebarRecentSessions.tsx]] inside a flexible `.sidebar-chat-section`. New Chat is active when the visible Chat view has no session id yet. The standalone `sessions` view is still absent from the `View` union; the full list opens from the Cmd/Ctrl+K menu action.
+
+## Employee-facing navigation
+
+The employee desktop hides administrative workspace and gateway management while retaining the local gateway runtime required for chat.
+
+[[src/renderer/src/screens/Layout/Layout.tsx#Layout]] omits Office and Gateway from the navigation arrays, the `View` union, and the mounted pane list. Their renderer screens and main-process gateway lifecycle remain in the codebase for internal operation and possible future restoration, but employees cannot navigate to them. The matching `/office` and `/gateway` renderer commands are also absent from [[src/renderer/src/screens/Chat/slash/desktopCommands.ts#DESKTOP_SLASH_COMMANDS]].
+
+## Discover Skill picker
+
+The Discover header imports a local Skill package into the active Hermes profile, keeping library installation distinct from per-chat activation.
+
+[[src/renderer/src/screens/Discover/Discover.tsx#Discover]] opens a native file picker labeled **导入本地 SKILL**. [[src/main/skills.ts#importLocalSkill]] validates the selected `SKILL.md`, copies its containing folder (including scripts, references, and assets) into the active profile, and rejects duplicate target names. Successful imports appear as deduplicated Discover cards and contribute to its Skill count; `hermes-skills-changed` keeps the Capabilities page and current-chat picker synchronized.
+
+`resources/example-skills/python-web-reader/SKILL.md` is a minimal Windows-safe import example. Selecting that file imports the complete example directory into the `company` category; it prefers the packaged Python runtime for reading a user-provided web page.
+
+Built-in Skill cards use the Chinese `description` value in each Skill's frontmatter, while names, commands, and full Skill instructions remain unchanged so tool invocation stays compatible.
 
 ## Collapse toggle brand mark
 

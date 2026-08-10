@@ -43,7 +43,7 @@ export default {
   saving: "Zapisywanie...",
   apiKeyLabel: "Klucz API {{provider}}",
   noApiKeyRequired:
-    "{{provider}} nie wymaga klucza API. Hermes użyje Twojej lokalnej konfiguracji CLI/OAuth.",
+    "{{provider}} nie wymaga klucza API. JingYuAI użyje Twojej lokalnej konfiguracji CLI/OAuth.",
   localNoKeyNeeded: "Klucz API nie jest potrzebny",
   localLlm: "Lokalny LLM",
   modelBaseUrlPlaceholder: "http://localhost:1234/v1",

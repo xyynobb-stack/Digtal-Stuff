@@ -1,6 +1,6 @@
 ---
 name: grounded-citations
-description: "Ground answers and documents in cited, verifiable sources."
+description: 使用可验证的引用来源为回答和文档提供事实依据。
 version: 1.1.0
 author: Hermes Agent + Teknium
 license: MIT

@@ -23,7 +23,7 @@ export default {
   startingClaw3dService: "Claw3D servisi başlatılıyor...",
   clickToStart: 'Claw3D\'yi çalıştırmak için "Başlat"a tıklayın',
   setupDesc1:
-    "Claw3D, Hermes ajanlarınız için 3B görselleştirme ortamıdır. Ajanlarınızı interaktif bir ofis alanında çalışırken görmenizi sağlar.",
+    "Claw3D, JingYuAI ajanlarınız için 3B görselleştirme ortamıdır. Ajanlarınızı interaktif bir ofis alanında çalışırken görmenizi sağlar.",
   setupDesc2:
     "Claw3D'yi otomatik olarak indirip kurmak için aşağıya tıklayın. Bu, depoyu kopyalayacak ve tüm bağımlılıkları yükleyecektir.",
   // Enterable building interiors
@@ -51,7 +51,7 @@ export default {
   repComingSoon: "Yakında",
   repLoading: "İşleniyor…",
   repErrorGeneric: "Bir şeyler ters gitti. Tekrar deneyin.",
-  repStatusSignedOut: "Bankayı kullanmak için Hermes hesabınıza giriş yapın.",
+  repStatusSignedOut: "Bankayı kullanmak için JingYuAI hesabınıza giriş yapın.",
   repStatusUnlinked:
     "Bu ajan henüz bir bulut ajanına bağlı değil. Giriş yapıp tekrar deneyin.",
   repWalletsNone: "Henüz hesap yok — başlamak için bir tane oluşturun.",
@@ -63,5 +63,5 @@ export default {
   repBalanceTotal: "Toplam",
   repCreateSuccess: "Hesap oluşturuldu",
   repCreateExists: "Bu ajanın zaten bir banka hesabı var.",
-  repStatusForeign: "Bu ajan farklı bir Hermes One hesabına bağlı.",
+  repStatusForeign: "Bu ajan farklı bir JingYuAI hesabına bağlı.",
 } as const;

@@ -13,6 +13,7 @@ import { DashboardGatewayClient } from "../dashboardGatewayClient";
 import { executeSlash, type SlashExecOutcome } from "../slashExec";
 import type { AgentCommandsCatalogResponse } from "../slash/types";
 import type { ActiveTurn, Attachment, ChatMessage, UsageState } from "../types";
+import { addAttachmentRefsToSessionEnvelope } from "../sessionSkillEnvelope";
 import type { DesktopSessionContinuationItem } from "../../../../../shared/session-continuation";
 
 interface SessionResponse {
@@ -68,11 +69,18 @@ interface EnsureDashboardRuntimeSessionParams {
   excludeSeedUserId?: string | null;
   forceCreate?: boolean;
   messages: ReadonlyArray<ChatMessage>;
+  model?: string;
+  modelBaseUrl?: string;
   profile?: string;
+  provider?: string;
   storedSessionId?: string | null;
 }
 
 interface EnsureDashboardRuntimeSessionResult {
+  createdModelOverride?: {
+    model: string;
+    provider: string;
+  };
   created: boolean;
   runtimeSessionId: string;
   storedSessionId: string;
@@ -256,6 +264,29 @@ export async function ensureDashboardRuntimeSession(
   const seedMessages = dashboardSeedMessagesFromTranscript(params.messages, {
     excludeUserId: params.excludeSeedUserId ?? null,
   });
+  let createProvider = params.provider;
+  if (params.model && createProvider === "custom") {
+    const inventory = await params.client.request<ModelOptionsResponse>(
+      "model.options",
+      {},
+    );
+    createProvider = resolveDashboardProviderForModel(
+      createProvider,
+      params.model,
+      params.modelBaseUrl,
+      inventory,
+    );
+  }
+  // A named provider can be applied atomically while the gateway builds the
+  // new Agent. Bare `custom` still needs the existing live-session switch,
+  // because it does not identify which custom endpoint should be used.
+  const createdModelOverride =
+    params.model &&
+    createProvider &&
+    createProvider !== "auto" &&
+    createProvider !== "custom"
+      ? { model: params.model, provider: createProvider }
+      : undefined;
   const created = await params.client.request<SessionResponse>(
     "session.create",
     {
@@ -263,10 +294,12 @@ export async function ensureDashboardRuntimeSession(
       ...(seedMessages.length > 0 ? { messages: seedMessages } : {}),
       ...(params.contextFolder ? { cwd: params.contextFolder } : {}),
       ...(params.profile ? { profile: params.profile } : {}),
+      ...(createdModelOverride ?? {}),
     },
   );
 
   return {
+    createdModelOverride,
     created: true,
     runtimeSessionId: created.session_id,
     storedSessionId: created.stored_session_id || created.session_id,
@@ -413,6 +446,8 @@ export function dashboardPromptTextWithAttachmentRefs(
   text: string,
   refs: string[],
 ): string {
+  const enveloped = addAttachmentRefsToSessionEnvelope(text, refs);
+  if (enveloped !== text) return enveloped;
   return [refs.join("\n").trim(), text.trim()].filter(Boolean).join("\n\n");
 }
 
@@ -642,12 +677,12 @@ function logDashboardEvent(
   const events = window.__HERMES_DASHBOARD_EVENTS__ ?? [];
   events.push(summary);
   window.__HERMES_DASHBOARD_EVENTS__ = events.slice(-200);
-  console.info("[Hermes dashboard event]", summary);
+  console.info("[JingYuAI dashboard event]", summary);
 }
 
 export function usageFromPayload(payload: unknown): Partial<UsageState> | null {
   const usage = asRecord(asRecord(payload).usage);
-  // The Hermes gateway (`_get_usage` in tui_gateway/server.py) emits
+  // The JingYuAI gateway (`_get_usage` in tui_gateway/server.py) emits
   // snake-case, non-`_tokens` keys: input/output/prompt/completion/total plus
   // context_used/context_max/context_percent when the context compressor is
   // active. Older OpenAI-style payloads use prompt_tokens/promptTokens. Read
@@ -751,7 +786,7 @@ export function completionFailed(payload: unknown): boolean {
 function completionErrorMessage(payload: unknown): string {
   const row = asRecord(payload);
   const raw = String(row.error || row.text || row.rendered || "").trim();
-  return raw.replace(/^error\s*:\s*/i, "") || "Hermes reported an error";
+  return raw.replace(/^error\s*:\s*/i, "") || "JingYuAI reported an error";
 }
 
 function userContentById(
@@ -931,8 +966,19 @@ export function useDashboardChatTransport({
   const runtimeSessionIdRef = useRef<string | null>(null);
   const storedSessionIdRef = useRef<string | null>(hermesSessionId);
   const messagesRef = useRef<ChatMessage[]>(messages);
+  // Model changes can race a composer callback that was captured by the input
+  // before React replaced it. Keep the routing identity in a live ref so even
+  // that older callback switches/creates the runtime with the picker value
+  // visible in the latest render.
+  const selectedModelRef = useRef({ model, modelBaseUrl, provider });
+  selectedModelRef.current = { model, modelBaseUrl, provider };
   const reasoningSegmentClosedRef = useRef(false);
   const appliedModelRef = useRef<string | null>(null);
+  const createdWithSelectedModelRef = useRef<{
+    model: string;
+    provider: string;
+    sessionId: string;
+  } | null>(null);
   const recreateRuntimeSessionRef = useRef(false);
   const lastRuntimeSessionWasCreatedRef = useRef(false);
   const pendingClarifyRequestIdRef = useRef<string | null>(null);
@@ -964,6 +1010,7 @@ export function useDashboardChatTransport({
     runtimeSessionIdRef.current = null;
     reasoningSegmentClosedRef.current = false;
     appliedModelRef.current = null;
+    createdWithSelectedModelRef.current = null;
     recreateRuntimeSessionRef.current = false;
     lastRuntimeSessionWasCreatedRef.current = false;
     pendingClarifyRequestIdRef.current = null;
@@ -972,6 +1019,7 @@ export function useDashboardChatTransport({
 
   useEffect(() => {
     appliedModelRef.current = null;
+    createdWithSelectedModelRef.current = null;
   }, [model, provider]);
 
   useEffect(() => {
@@ -983,6 +1031,7 @@ export function useDashboardChatTransport({
     runtimeSessionIdRef.current = null;
     reasoningSegmentClosedRef.current = false;
     appliedModelRef.current = null;
+    createdWithSelectedModelRef.current = null;
     recreateRuntimeSessionRef.current = false;
     lastRuntimeSessionWasCreatedRef.current = false;
     pendingClarifyRequestIdRef.current = null;
@@ -1140,7 +1189,7 @@ export function useDashboardChatTransport({
       // Already known unavailable on this remote/SSH connection — fail fast so the
       // caller falls back to legacy without re-running the slow status+probe.
       if (dashboardUnavailableRef.current) {
-        throw new Error("Hermes dashboard transport is unavailable");
+        throw new Error("JingYuAI dashboard transport is unavailable");
       }
       if (connectingRef.current) return connectingRef.current;
 
@@ -1158,7 +1207,7 @@ export function useDashboardChatTransport({
         for (let attempt = 0; attempt < 3; attempt++) {
           const status = await window.hermesAPI.startDashboard(profile);
           if (clientGenerationRef.current !== generation) {
-            throw new Error("Hermes dashboard connection was superseded");
+            throw new Error("JingYuAI dashboard connection was superseded");
           }
           if (!status.running || !status.connection) {
             if (status.needsOAuthLogin) {
@@ -1177,11 +1226,11 @@ export function useDashboardChatTransport({
             ) {
               dashboardUnavailableRef.current = true;
               onDashboardUnavailable?.(
-                status.error || "Hermes dashboard transport is unavailable",
+                status.error || "JingYuAI dashboard transport is unavailable",
               );
             }
             throw new Error(
-              status.error || "Hermes dashboard transport is unavailable",
+              status.error || "JingYuAI dashboard transport is unavailable",
             );
           }
           const client: DashboardGatewayClient = new DashboardGatewayClient({
@@ -1197,14 +1246,16 @@ export function useDashboardChatTransport({
               ? await window.hermesAPI.freshDashboardWsUrl(profile)
               : status.connection.wsUrl;
             if (!freshUrl) {
-              throw new Error("Hermes dashboard WebSocket URL is unavailable");
+              throw new Error(
+                "JingYuAI dashboard WebSocket URL is unavailable",
+              );
             }
             await client.connect(freshUrl);
           } catch (err) {
             lastConnectErr = err;
             client.close();
             if (clientGenerationRef.current !== generation) {
-              throw new Error("Hermes dashboard connection was superseded");
+              throw new Error("JingYuAI dashboard connection was superseded");
             }
             // Transient connect failure while the dashboard IS up — back off and
             // retry (the tunnel may be re-establishing).
@@ -1213,7 +1264,7 @@ export function useDashboardChatTransport({
           }
           if (clientGenerationRef.current !== generation) {
             client.close();
-            throw new Error("Hermes dashboard connection was superseded");
+            throw new Error("JingYuAI dashboard connection was superseded");
           }
           clientRef.current = client;
           return client;
@@ -1223,8 +1274,8 @@ export function useDashboardChatTransport({
         // /v1 to the dashboard tunnel (which 405s).
         const err = new Error(
           lastConnectErr instanceof Error
-            ? `Hermes dashboard chat connection failed: ${lastConnectErr.message}`
-            : "Hermes dashboard chat connection failed",
+            ? `JingYuAI dashboard chat connection failed: ${lastConnectErr.message}`
+            : "JingYuAI dashboard chat connection failed",
         ) as Error & { dashboardWasReachable?: boolean };
         err.dashboardWasReachable = true;
         throw err;
@@ -1258,6 +1309,7 @@ export function useDashboardChatTransport({
       let justCreated = false;
 
       if (!targetSessionId) {
+        const selected = selectedModelRef.current;
         const stored = storedSessionIdRef.current;
         const excludeSeedUserId =
           options.excludeSeedUserId ?? activeTurnRef.current?.userId ?? null;
@@ -1267,7 +1319,10 @@ export function useDashboardChatTransport({
           excludeSeedUserId,
           forceCreate: options.forceCreate ?? false,
           messages: messagesRef.current,
+          model: selected.model,
+          modelBaseUrl: selected.modelBaseUrl,
           profile,
+          provider: selected.provider,
           storedSessionId: stored,
         });
 
@@ -1282,6 +1337,12 @@ export function useDashboardChatTransport({
         runtimeSessionIdRef.current = targetSessionId;
         lastRuntimeSessionWasCreatedRef.current = response.created;
         justCreated = response.created;
+        createdWithSelectedModelRef.current = response.createdModelOverride
+          ? {
+              ...response.createdModelOverride,
+              sessionId: targetSessionId,
+            }
+          : null;
         if (justCreated && contextFolder) {
           lastSyncedCwdRef.current = contextFolder;
         }
@@ -1318,8 +1379,21 @@ export function useDashboardChatTransport({
       client: DashboardGatewayClient,
       sessionId: string,
     ): Promise<string> => {
-      const command = dashboardModelCommand(provider, model);
+      const selected = selectedModelRef.current;
+      const selectedModel = selected.model;
+      const selectedProvider = selected.provider;
+      const selectedBaseUrl = selected.modelBaseUrl;
+      const command = dashboardModelCommand(selectedProvider, selectedModel);
       if (!command) return sessionId;
+      const createdWithModel = createdWithSelectedModelRef.current;
+      if (
+        createdWithModel?.sessionId === sessionId &&
+        createdWithModel.model === selectedModel
+      ) {
+        createdWithSelectedModelRef.current = null;
+        appliedModelRef.current = `${sessionId}\n${createdWithModel.provider}\n${selectedModel}`;
+        return sessionId;
+      }
       const resetRuntimeSession = async (
         targetSessionId: string,
       ): Promise<string> => {
@@ -1344,16 +1418,16 @@ export function useDashboardChatTransport({
           },
         );
         let dashboardProvider = resolveDashboardProviderForModel(
-          provider,
-          model,
-          modelBaseUrl,
+          selectedProvider,
+          selectedModel,
+          selectedBaseUrl,
           before,
         );
 
         if (
           storedSessionIdRef.current &&
-          !dashboardModelMatches(dashboardProvider, model, before) &&
-          (provider === "custom" ||
+          !dashboardModelMatches(dashboardProvider, selectedModel, before) &&
+          (selectedProvider === "custom" ||
             (before.provider || "").toLowerCase().startsWith("custom"))
         ) {
           targetSessionId = await resetRuntimeSession(targetSessionId);
@@ -1361,19 +1435,19 @@ export function useDashboardChatTransport({
             session_id: targetSessionId,
           });
           dashboardProvider = resolveDashboardProviderForModel(
-            provider,
-            model,
-            modelBaseUrl,
+            selectedProvider,
+            selectedModel,
+            selectedBaseUrl,
             before,
           );
-          if (dashboardModelMatches(dashboardProvider, model, before)) {
-            appliedModelRef.current = `${targetSessionId}\n${dashboardProvider}\n${model}`;
+          if (dashboardModelMatches(dashboardProvider, selectedModel, before)) {
+            appliedModelRef.current = `${targetSessionId}\n${dashboardProvider}\n${selectedModel}`;
             return targetSessionId;
           }
         }
 
         if (
-          provider === "custom" &&
+          selectedProvider === "custom" &&
           dashboardProvider === "custom" &&
           storedSessionIdRef.current
         ) {
@@ -1385,15 +1459,18 @@ export function useDashboardChatTransport({
               session_id: targetSessionId,
             },
           );
-          if (dashboardModelMatches("custom", model, rebuilt)) {
-            appliedModelRef.current = `${targetSessionId}\ncustom\n${model}`;
+          if (dashboardModelMatches("custom", selectedModel, rebuilt)) {
+            appliedModelRef.current = `${targetSessionId}\ncustom\n${selectedModel}`;
             return targetSessionId;
           }
         }
 
-        const resolvedCommand = dashboardModelCommand(dashboardProvider, model);
+        const resolvedCommand = dashboardModelCommand(
+          dashboardProvider,
+          selectedModel,
+        );
         if (!resolvedCommand) return targetSessionId;
-        const key = `${targetSessionId}\n${dashboardProvider}\n${model}`;
+        const key = `${targetSessionId}\n${dashboardProvider}\n${selectedModel}`;
         let slashResponse: SlashExecResponse | null = null;
         if (appliedModelRef.current !== key) {
           slashResponse = await client.request<SlashExecResponse>(
@@ -1411,7 +1488,7 @@ export function useDashboardChatTransport({
             session_id: targetSessionId,
           },
         );
-        if (!dashboardModelMatches(dashboardProvider, model, live)) {
+        if (!dashboardModelMatches(dashboardProvider, selectedModel, live)) {
           appliedModelRef.current = null;
           const warning = slashResponse?.warning
             ? `; /model warning: ${slashResponse.warning}`
@@ -1420,7 +1497,7 @@ export function useDashboardChatTransport({
             ? `; /model output: ${slashResponse.output}`
             : "";
           throw new Error(
-            `Hermes dashboard did not switch to ${dashboardProvider}/${model}; live model is ${live.provider || "unknown"}/${live.model || "unknown"}${warning}${output}; custom inventory: ${modelOptionsSummary(before)}`,
+            `JingYuAI dashboard did not switch to ${dashboardProvider}/${selectedModel}; live model is ${live.provider || "unknown"}/${live.model || "unknown"}${warning}${output}; custom inventory: ${modelOptionsSummary(before)}`,
           );
         }
         appliedModelRef.current = key;
@@ -1436,7 +1513,7 @@ export function useDashboardChatTransport({
         return switchAndValidate(freshSessionId);
       }
     },
-    [ensureRuntimeSession, model, modelBaseUrl, provider],
+    [ensureRuntimeSession],
   );
 
   const syncDashboardAttachments = useCallback(
@@ -1616,7 +1693,7 @@ export function useDashboardChatTransport({
         if (!syncedAttachments.handled) {
           if (fallbackOnUnavailable) return false;
           return failActiveTurn(
-            "Hermes dashboard could not attach the selected file. Use Auto or Legacy to fall back to the legacy attachment path.",
+            "JingYuAI dashboard could not attach the selected file. Use Auto or Legacy to fall back to the legacy attachment path.",
           );
         }
         const submitText = dashboardPromptTextWithAttachmentRefs(

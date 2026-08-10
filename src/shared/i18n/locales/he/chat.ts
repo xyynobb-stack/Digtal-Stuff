@@ -12,7 +12,7 @@ export default {
   reasoningEffort: {
     title: "רמת חשיבה",
     auto: "אוטומטי",
-    autoDescription: "תנו ל-Hermes ולמודל להחליט.",
+    autoDescription: "תנו ל-JingYuAI ולמודל להחליט.",
     hint: "אוטומטי הוא הבטוח ביותר. מודלים שאינם תומכים ברמת חשיבה עשויים להתעלם מרמות ידניות או לדחות אותן.",
     saveError: "לא ניתן היה לשמור את רמת החשיבה. הבחירה שוחזרה.",
     minimal: "מינימלי",
@@ -116,7 +116,7 @@ export default {
     model: "הצגה או החלפה של המודל הנוכחי",
     memory: "הצגת זיכרון הסוכן",
     persona: "הצגת הפרסונה הנוכחית",
-    version: "הצגת גרסת Hermes",
+    version: "הצגת גרסת JingYuAI",
   },
   queued: "{{count}} הודעות בתור - יישלחו בסיום עבודת הסוכן",
   worktree: {

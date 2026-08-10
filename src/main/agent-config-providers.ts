@@ -321,7 +321,7 @@ export function removeAgentUserProvider(
   );
 }
 
-// Hermes One's inference endpoint. Mirrored as a first-party user provider so
+// JingYuAI's inference endpoint. Mirrored as a first-party user provider so
 // the agent can route it by slug; must match `OPENAI_COMPATIBLE_BASE_URLS`
 // (renderer constants) and the `URL_KEY_MAP` host pattern.
 const HERMESONE_BASE_URL = "https://inference.hermesone.org/v1";
@@ -348,7 +348,7 @@ export function mirrorFirstPartyAgentProviders(profile?: string): void {
     if (!match || !match[1].trim()) return;
     upsertAgentUserProvider(profile, {
       slug: "hermesone",
-      name: "Hermes One",
+      name: "JingYuAI",
       baseUrl: HERMESONE_BASE_URL,
       keyEnv: "HERMESONE_API_KEY",
     });

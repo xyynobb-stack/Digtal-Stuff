@@ -30,10 +30,17 @@ Because no global loading state is set, the slash branch shows its own feedback:
 
 ## Transport connection lifecycle
 
-
 Every dashboard turn first connects a JSON-RPC WebSocket to the gateway; that handshake must be time-bounded or a stalled socket wedges the whole transport with no error and no fallback (issue #718).
 
 [[src/renderer/src/screens/Chat/dashboardGatewayClient.ts#DashboardGatewayClient#connect]] resolves on `open`, rejects on `error` or an early `close`, **and** rejects on a connect-timeout (default 10s). A WebSocket stuck in `CONNECTING` — TCP accepted but the upgrade never completing, e.g. when a busy renderer starves the handshake — fires none of those events on its own, so without the timer the connect promise never settles. When it never settles, `ensureClient` in [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] never resolves, its cached `connectingRef` promise poisons every later send, `setIsLoading(false)` never runs, and the user sees a permanent loading spinner. The timeout makes the promise reject so auto mode falls back to the legacy HTTP transport (and explicit-dashboard mode surfaces a real error) instead of hanging. Per-request calls are separately bounded by their own 30s timeout.
+
+## Cold-session model selection
+
+A new dashboard chat must build its first live Agent with the model selected in the composer, even when Python and Skill discovery are still cold on a newly installed computer.
+
+[[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#ensureDashboardRuntimeSession]] resolves a generic custom selection to its named Provider before `session.create`, then sends `model` and `provider` as the gateway's per-session build override. The first turn therefore waits for one correctly configured Agent instead of building the profile default and racing a later `/model` command. Bare `custom` remains on the live-switch path because it does not uniquely identify an endpoint.
+
+The desktop also hardens direct `/model` execution. [[src/main/hermes-agent-compat.ts#patchDashboardSlashModelSyncSource]] patches the installed gateway before a local dashboard starts, accepts both LF and Windows CRLF sources, waits for a deferred live Agent, and only then mirrors the slash-worker switch. `scripts/prepare-offline-runtime.mjs` applies the same overlay while staging fresh offline packages, preventing a successful command from leaving chat on the old Kimi model.
 
 ## Dashboard up ⇒ /api/ws only (never /v1 fallback)
 
@@ -93,6 +100,24 @@ A few non-local commands have dedicated desktop handling and must NOT be diverte
 
 The approval responses `/approve` and `/deny` (the `RENDERER_NATIVE_SLASH` set) are excluded from the pipeline and sent as prompt-level input, matching their dedicated button handlers — `slash.exec` rejects pending-input commands anyway.
 
+## Session Skill activation
+
+Bundled/system Skills are available in every conversation by default, while locally imported Skills live under `skills/custom` and require per-chat activation.
+
+Discover broadcasts a refresh after an add, so its list and the Capabilities Skills page show the same installed set.
+
+[[src/renderer/src/screens/Chat/SessionSkillPicker.tsx#SessionSkillPicker]] lets the user enable imported custom Skills for one chat. The selection remains until deselected. [[src/renderer/src/screens/Chat/hooks/useChatActions.ts#useChatActions]] sends an envelope on each ordinary turn; an empty selection means no custom Skills are enabled. The packaged runtime binds it to the active task, filters only custom entries from `skills_list`, and rejects `skill_view` only for unselected custom Skills. Bundled/system Skills bypass this allowlist and remain available. The allowlist is cleared after the turn and never changes the installed library; slash commands are unchanged.
+
+The picker intentionally lists only custom/employee-added Skills, not bundled Skills copied into the profile. [[src/main/skills.ts#importLocalSkill]] ignores an uploaded file's frontmatter category for storage and always installs it below `skills/custom`; [[src/main/skills.ts#listUserAddedSkills]] uses that category boundary and also recognizes the legacy user-added marker for imports created by older desktop builds. The complete installed library remains visible in Discover and Skills management.
+
+[[src/main/hermes.ts#buildGatewayEnv]] enables desktop custom-Skill gating for the Gateway. In that mode [[build/offline-runtime/hermes-agent/agent/prompt_builder.py#build_skills_system_prompt]] omits custom entries from the global Agent skill index but retains bundled/system entries. The runtime Skill tools use the same `custom` category boundary, plus the legacy import marker, so system Skills remain callable while unselected user imports are blocked. The picker shows an enabled label and clear-all action so persisted selections are visible and reversible.
+
+The selection envelope is private transport control data, never user-visible transcript content. [[src/renderer/src/screens/Chat/sessionSkillEnvelope.ts#buildSessionSkillEnvelope]] builds it for Hermes, while [[src/renderer/src/screens/Chat/sessionSkillEnvelope.ts#unwrapSessionSkillEnvelope]] recovers the employee's exact text when older database rows are hydrated. This also lets [[src/renderer/src/screens/Chat/sessionHistory.ts#reconcileStreamedWithDb]] match the optimistic user bubble to the canonical database row, preventing a second wrapped bubble from appearing after refresh.
+
+The packaged Agent uses its existing `persist_user_message` override when it detects this envelope: the full message remains available to the current model turn for allowlist enforcement, but only the clean suffix is written to state.db. `scripts/prepare-offline-runtime.mjs` reapplies that small runtime overlay whenever the offline Agent is staged, so rebuilding cannot silently lose the behavior.
+
+Packaged startup treats `run_agent.py`, `tools/skills_tool.py`, and `agent/prompt_builder.py` as managed desktop overlays. It refreshes them from the package on every launch, so an existing per-user runtime cannot retain the older all-Skills allowlist policy merely because its build marker already matches.
+
 ## Side questions (`/btw`)
 
 `/btw` (with aliases `/bg` and `/background`) is a side question that runs on a **concurrent background agent**, so it must never block or queue behind the main turn — that is the point of "ask without affecting context".
@@ -114,6 +139,8 @@ The command palette and executor share a catalog built by [[src/renderer/src/scr
 ### Desktop commands
 
 Desktop commands in [[src/renderer/src/screens/Chat/slash/desktopCommands.ts#DESKTOP_SLASH_COMMANDS]] handle local Electron/renderer UI operations such as opening settings, triggering the active chat's model picker, and switching navigation views without sending prompts.
+
+The employee build does not register `/office` or `/gateway` navigation commands because those management panes are intentionally absent from the visible shell. This matches [[sidebar-navigation#Employee-facing navigation]] and prevents hidden views from being reached through command autocomplete.
 
 Pure UI desktop actions are flagged `uiAction: true` (settings, model picker, navigation, `/new`, `/clear`, `/fast`). [[src/renderer/src/screens/Chat/hooks/useChatActions.ts#useChatActions]] reads that flag to suppress the echoed `/command` user bubble for them — their effect is the UI change itself, so a bubble would be a dangling artifact. Output-producing desktop commands (`/help`, `/memory`, `/usage`, …) are not flagged and still echo, so their output reads as a reply.
 

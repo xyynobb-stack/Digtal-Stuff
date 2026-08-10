@@ -109,7 +109,7 @@ export function agentCommandsFromCatalog(
     commands.push({
       name,
       description,
-      category: "Hermes Agent",
+      category: "JingYuAI Agent",
       source: "agent",
       target: "agent",
       allowWhileBusy: true,
@@ -167,8 +167,8 @@ export function reconcileSlashCatalog({
     )
     .map(([alias]) => ({
       name: alias,
-      description: `Hermes Agent command /${alias}`,
-      category: "Hermes Agent",
+      description: `JingYuAI Agent command /${alias}`,
+      category: "JingYuAI Agent",
       source: "agent",
       target: "agent",
       allowWhileBusy: true,

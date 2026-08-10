@@ -13,7 +13,7 @@ export default {
   newBoardTooltip: "יצירת לוח קנבן חדש",
 
   // Remote-mode unsupported notice
-  remoteUnsupportedTitle: "קנבן דורש התקנת Hermes מקומית או מצב מנהרת SSH.",
+  remoteUnsupportedTitle: "קנבן דורש התקנת JingYuAI מקומית או מצב מנהרת SSH.",
   remoteUnsupportedHint:
     "מצב מרוחק רגיל ‏(HTTP + מפתח API) עדיין אינו חושף את ה-API של הקנבן. עברו למצב מקומי או למצב מנהרת SSH בהגדרות כדי לנהל את הלוח.",
 

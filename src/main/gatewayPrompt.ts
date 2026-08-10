@@ -40,7 +40,7 @@ export async function promptSudoPassword(): Promise<string> {
       "Your password is sent only to the local sudo prompt and is never stored.",
     {
       title: "Administrator Password Required",
-      heading: "Hermes needs your sudo password",
+      heading: "JingYuAI needs your sudo password",
     },
   );
   return value ?? "";
@@ -62,8 +62,8 @@ export async function promptSecretValue(
   const value = await showPasswordDialog(parent, detail, {
     title: "Secret Required",
     heading: envVar
-      ? `Hermes needs a value for ${envVar}`
-      : "Hermes needs a secret value",
+      ? `JingYuAI needs a value for ${envVar}`
+      : "JingYuAI needs a secret value",
   });
   return value ?? "";
 }

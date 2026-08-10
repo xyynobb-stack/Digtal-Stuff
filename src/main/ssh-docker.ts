@@ -37,7 +37,7 @@ const MANAGED_LAUNCHER_PATH = REMOTE_HERMES_LAUNCHER_CANDIDATES[0];
 // Marker parsed back during inspection to show which container the hook
 // currently routes to, and to distinguish Desktop-managed hooks from
 // user-authored ones (which provisioning must not overwrite).
-const LAUNCHER_MARKER_PREFIX = "# managed by Hermes Desktop (docker:";
+const LAUNCHER_MARKER_PREFIX = "# managed by JingYuAI Desktop (docker:";
 
 // docker container names: [a-zA-Z0-9][a-zA-Z0-9_.-]*. Names reach us from
 // `docker ps` output relayed through the renderer, so validate before
@@ -86,8 +86,8 @@ export function buildDockerLauncherScript(
   return [
     "#!/bin/sh",
     `${LAUNCHER_MARKER_PREFIX}${containerName})`,
-    "# Routes the Hermes CLI into the Docker container running Hermes Agent.",
-    "# Regenerate from Hermes Desktop: Settings -> Connection -> SSH.",
+    "# Routes the Hermes CLI into the Docker container running JingYuAI Agent.",
+    "# Regenerate from JingYuAI Desktop: Settings -> Connection -> SSH.",
     "set -eu",
     `container=${shellQuote(containerName)}`,
     'tty_args=""',

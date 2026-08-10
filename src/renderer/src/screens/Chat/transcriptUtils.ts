@@ -21,7 +21,7 @@ export function buildChatTranscript(
   return messages
     .filter(shouldCopyToTranscript)
     .map((m) => {
-      const speaker = m.role === "user" ? "You" : "Hermes";
+    const speaker = m.role === "user" ? "You" : "JingYuAI";
       const content = displayTextForTranscript(m);
       return format === "markdown"
         ? `**${speaker}:**\n\n${content}`

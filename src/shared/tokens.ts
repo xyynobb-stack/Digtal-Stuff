@@ -6,7 +6,7 @@
 export interface KnownToken {
   /** Stable identifier, e.g. "eth", "hd". */
   id: string;
-  /** Human-readable name, e.g. "Hermes Desktop". */
+  /** Human-readable name, e.g. "JingYuAI Desktop". */
   name: string;
   /** Ticker symbol, e.g. "HD". */
   symbol: string;
@@ -46,7 +46,7 @@ export const BASE_TOKENS: KnownToken[] = [
   },
   {
     id: "hd",
-    name: "Hermes Desktop",
+    name: "JingYuAI Desktop",
     symbol: "HD",
     contractAddress: "0xfda75f77a22b4f4b783bbbb21915ef64d149bba3",
     decimals: 18,

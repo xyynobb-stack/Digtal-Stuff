@@ -400,7 +400,7 @@ function Welcome({
   }
 
   return (
-    <OnboardHero intro eyebrow="HERMES ONE" title={t("welcome.title")}>
+    <OnboardHero intro eyebrow="JINGYUAI" title={t("welcome.title")}>
       <p className="onboard-subtitle">{t("welcome.subtitle")}</p>
 
       <div className="onboard-cta-row">

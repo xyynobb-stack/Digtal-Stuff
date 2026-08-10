@@ -10,6 +10,8 @@ import type {
 } from "../slash/types";
 import type { ActiveTurn, Attachment, ChatMessage } from "../types";
 import type { SessionModelOverride } from "../../../../../shared/model-override";
+import type { WritingTemplate } from "../../../../../shared/writing-templates";
+import { buildSessionSkillEnvelope } from "../sessionSkillEnvelope";
 
 /** Slash commands the desktop handles through its own renderer flow rather
  *  than the gateway slash pipeline: the approval responses, which the gateway
@@ -54,6 +56,10 @@ interface UseChatActionsArgs {
   activeTurnRef: React.MutableRefObject<ActiveTurn | null>;
   /** Working folder bound to this conversation (issue #27), or null. */
   contextFolder: string | null;
+  /** Skills explicitly enabled by the user for this chat session. */
+  activeSkills?: string[];
+  /** Original template file selected for this chat; the Agent interprets it. */
+  activeWritingTemplate?: WritingTemplate | null;
   /** Session-local model override — selected via the chat picker without
    *  persisting to config.yaml (issue #688). Carries the full identity so a
    *  cross-provider switch routes to the right backend, not just the model. */
@@ -121,6 +127,8 @@ export function useChatActions({
   onOpenSettings,
   activeTurnRef,
   contextFolder,
+  activeSkills = [],
+  activeWritingTemplate = null,
   sessionModel,
   sendViaDashboard,
   execSlashViaDashboard,
@@ -132,10 +140,14 @@ export function useChatActions({
   const messagesRef = useRef(messages);
   const isLoadingRef = useRef(isLoading);
   const sessionModelRef = useRef(sessionModel);
+  const activeSkillsRef = useRef(activeSkills);
+  const activeWritingTemplateRef = useRef(activeWritingTemplate);
   useEffect(() => {
     messagesRef.current = messages;
     isLoadingRef.current = isLoading;
     sessionModelRef.current = sessionModel;
+    activeSkillsRef.current = activeSkills;
+    activeWritingTemplateRef.current = activeWritingTemplate;
   });
 
   const pushUser = useCallback(
@@ -158,20 +170,41 @@ export function useChatActions({
 
   const sendToAgent = useCallback(
     async (text: string, attachments?: Attachment[]): Promise<void> => {
+      const selected = activeSkillsRef.current;
+      const selectedTemplate = activeWritingTemplateRef.current;
+      const agentText = !text.startsWith("/")
+        ? buildSessionSkillEnvelope(text, selected, selectedTemplate)
+        : text;
+      const agentAttachments =
+        !text.startsWith("/") && selectedTemplate
+          ? [
+              ...(attachments ?? []).filter(
+                (attachment) => attachment.path !== selectedTemplate.path,
+              ),
+              {
+                id: `writing-template-${selectedTemplate.id}`,
+                kind: "path-ref" as const,
+                name: selectedTemplate.fileName,
+                mime: selectedTemplate.mime,
+                size: selectedTemplate.size,
+                path: selectedTemplate.path,
+              },
+            ]
+          : attachments;
       try {
         if (sendViaDashboard) {
-          const handled = await sendViaDashboard(text, attachments);
+          const handled = await sendViaDashboard(agentText, agentAttachments);
           if (handled) return;
         }
         await window.hermesAPI.sendMessage(
-          text,
+          agentText,
           profile,
           hermesSessionId || undefined,
           messagesRef.current.filter(shouldSendToAgent).map((m) => ({
             role: m.role,
             content: m.content,
           })),
-          attachments,
+          agentAttachments,
           contextFolder ?? undefined,
           runId,
           sessionModelRef.current || undefined,
@@ -305,7 +338,7 @@ export function useChatActions({
             (async () => ({
               kind: "error",
               message:
-                "This command requires the Hermes Agent gateway. Switch chat transport to Auto or Dashboard and try again.",
+                "This command requires the JingYuAI Agent gateway. Switch chat transport to Auto or Dashboard and try again.",
             })),
           submitPrompt: async (submission: PreparedModelSubmission) => {
             removePending();

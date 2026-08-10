@@ -274,7 +274,7 @@ function Install({
             <span />
             <span />
           </div>
-          <span className="onboard-terminal-title">hermes-installer</span>
+          <span className="onboard-terminal-title">JingYuAI Installer</span>
         </div>
         <div className="onboard-terminal-body" ref={logRef} data-selectable>
           {progress.log || t("install.waitingToStart")}

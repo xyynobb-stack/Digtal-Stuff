@@ -1,6 +1,6 @@
 ---
 name: youtube-content
-description: "YouTube transcripts to summaries, threads, blogs."
+description: 将 YouTube 字幕整理为摘要、讨论串和博客文章。
 platforms: [linux, macos, windows]
 ---
 

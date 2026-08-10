@@ -12,5 +12,5 @@ export default {
   stopFailed: "無法停止網關。",
   startExited: "網關已啟動，但在就緒前又停止了。",
   checkLog: "請檢查網關記錄：",
-  gatewayHint: "將 Hermes 連線到 Telegram、Discord、Slack 等平台",
+  gatewayHint: "將 JingYuAI 連線到 Telegram、Discord、Slack 等平台",
 } as const;

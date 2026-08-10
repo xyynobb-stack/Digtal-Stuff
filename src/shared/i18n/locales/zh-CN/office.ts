@@ -23,7 +23,7 @@ export default {
   startingClaw3dService: "正在启动 Claw3D 服务...",
   clickToStart: '点击"启动"来运行 Claw3D',
   setupDesc1:
-    "Claw3D 是你的 Hermes 代理的 3D 可视化环境。它让你可以看到代理在交互式办公空间中工作。",
+    "Claw3D 是你的 JingYuAI 代理的 3D 可视化环境。它让你可以看到代理在交互式办公空间中工作。",
   setupDesc2: "点击下方自动下载并设置 Claw3D。这将克隆仓库并安装所有依赖。",
   // Enterable building interiors
   enter_office: "进入办公室",
@@ -48,7 +48,7 @@ export default {
   repComingSoon: "敬请期待",
   repLoading: "处理中…",
   repErrorGeneric: "出了点问题，请重试。",
-  repStatusSignedOut: "请登录您的 Hermes 账户以使用银行。",
+  repStatusSignedOut: "请登录您的 JingYuAI 账户以使用银行。",
   repStatusUnlinked: "该智能体尚未关联云端智能体。请登录后重试。",
   repWalletsNone: "还没有账户 — 先开设一个吧。",
   repBadgeTransactable: "可交易",
@@ -58,5 +58,5 @@ export default {
   repBalanceTotal: "总计",
   repCreateSuccess: "账户已开设",
   repCreateExists: "该智能体已有银行账户。",
-  repStatusForeign: "该智能体已关联到另一个 Hermes One 账户。",
+  repStatusForeign: "该智能体已关联到另一个 JingYuAI 账户。",
 } as const;

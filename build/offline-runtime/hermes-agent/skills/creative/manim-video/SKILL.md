@@ -1,6 +1,6 @@
 ---
 name: manim-video
-description: "Manim CE animations: 3Blue1Brown math/algo videos."
+description: 使用 Manim CE 制作类似 3Blue1Brown 风格的数学和算法动画。
 version: 1.0.0
 platforms: [linux, macos, windows]
 ---

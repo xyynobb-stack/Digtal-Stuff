@@ -1,5 +1,5 @@
-appId: com.nousresearch.hermes
-productName: Hermes One
+appId: com.jingyuai.desktop
+productName: JingYuAI
 directories:
   buildResources: build
 files:
@@ -18,21 +18,21 @@ extraResources:
     filter:
       - "**/*"
 win:
-  executableName: hermes-agent
+  executableName: JingYuAI
   target:
     - nsis
     - portable
 portable:
-  artifactName: ${name}-${version}-portable.${ext}
+  artifactName: JingYuAI-${version}-portable.${ext}
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  artifactName: JingYuAI-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
   oneClick: true
   perMachine: false
 mac:
-  artifactName: ${name}-${version}-${arch}-${os}.${ext}
+  artifactName: JingYuAI-${version}-${arch}-${os}.${ext}
   icon: build/icon.icns
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
@@ -45,7 +45,7 @@ mac:
   gatekeeperAssess: false
   notarize: true
 dmg:
-  artifactName: ${name}-${version}-${arch}.${ext}
+  artifactName: JingYuAI-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage
@@ -57,18 +57,18 @@ linux:
   category: Utility
   synopsis: Self-improving AI assistant desktop app
   description: >-
-    Hermes One is a native desktop app for installing, configuring, and chatting
-    with Hermes Agent — a self-improving AI assistant with tool use, multi-platform
+    JingYuAI is a native desktop app for installing, configuring, and chatting
+    with the JingYuAI Agent, a self-improving AI assistant with tool use, multi-platform
     messaging, and a closed learning loop.
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: JingYuAI-${version}.${ext}
 deb:
   # Run chmod 4755 on chrome-sandbox so Electron's setuid sandbox helper
   # works on modern Linux distros that disable unprivileged user
   # namespaces (Ubuntu 24.04+, etc.). Closes #395.
   afterInstall: build/linux-after-install.sh
 rpm:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: JingYuAI-${version}.${ext}
   # Same SUID fix for .rpm consumers (Fedora 40+ also restricts userns).
   afterInstall: build/linux-after-install.sh
 npmRebuild: false

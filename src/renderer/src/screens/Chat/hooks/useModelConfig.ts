@@ -102,35 +102,48 @@ export function useModelConfig(profile?: string): UseModelConfigResult {
   const [currentBaseUrl, setCurrentBaseUrl] = useState("");
   const [modelGroups, setModelGroups] = useState<ModelGroup[]>([]);
   const [savedModels, setSavedModels] = useState<SavedModelForPicker[]>([]);
+  const [employeeAccessActive, setEmployeeAccessActive] = useState(false);
   const loadSeqRef = useRef(0);
 
   const ollamaCloudDiscovery = useDiscoveredModels({
     provider: OLLAMA_CLOUD_PROVIDER,
     profile,
-    enabled: true,
+    enabled: !employeeAccessActive,
   });
 
   const modelsForPicker = useMemo(
     () =>
-      mergeLiveOllamaCloudModels(
-        savedModels,
-        ollamaCloudDiscovery.models,
-        ollamaCloudDiscovery.status,
-      ),
-    [savedModels, ollamaCloudDiscovery.models, ollamaCloudDiscovery.status],
+      employeeAccessActive
+        ? savedModels
+        : mergeLiveOllamaCloudModels(
+            savedModels,
+            ollamaCloudDiscovery.models,
+            ollamaCloudDiscovery.status,
+          ),
+    [
+      employeeAccessActive,
+      savedModels,
+      ollamaCloudDiscovery.models,
+      ollamaCloudDiscovery.status,
+    ],
   );
 
   const reload = useCallback(async (): Promise<void> => {
     const seq = ++loadSeqRef.current;
-    const [mc, savedModels] = await Promise.all([
+    const employeeAccessPromise = window.hermesAPI.getEmployeeModelAccess
+      ? window.hermesAPI.getEmployeeModelAccess()
+      : Promise.resolve({ active: false });
+    const [mc, savedModels, employeeAccess] = await Promise.all([
       window.hermesAPI.getModelConfig(profile),
       window.hermesAPI.listModels(),
+      employeeAccessPromise,
     ]);
     if (seq !== loadSeqRef.current) return;
     setCurrentModel(mc.model);
     setCurrentProvider(mc.provider);
     setCurrentBaseUrl(mc.baseUrl);
     setSavedModels(savedModels);
+    setEmployeeAccessActive(employeeAccess.active);
   }, [profile]);
 
   // Initial load + reload whenever the profile changes (canonical

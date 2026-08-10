@@ -26,8 +26,6 @@ import SidebarRecentSessions from "./SidebarRecentSessions";
 import Skills from "../Skills/Skills";
 import Memory from "../Memory/Memory";
 import Tools from "../Tools/Tools";
-import Gateway from "../Gateway/Gateway";
-import Office from "../Office/Office";
 import Providers from "../Providers/Providers";
 import Schedules from "../Schedules/Schedules";
 import Kanban from "../Kanban/Kanban";
@@ -39,8 +37,6 @@ import {
   Settings as SettingsIcon,
   Brain,
   Workflow,
-  Signal,
-  Building,
   KeyRound,
   Timer,
   Kanban as KanbanIcon,
@@ -56,20 +52,17 @@ type View =
   | "chat"
   | "discover"
   | "agents"
-  | "office"
   | "providers"
   | "skills"
   | "memory"
   | "tools"
   | "schedules"
-  | "kanban"
-  | "gateway";
+  | "kanban";
 
 const PINNED_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
   { view: "discover", icon: Compass, labelKey: "navigation.discover" },
   // "agents" (Profiles) is reached from the sidebar-footer ProfileSwitcher's
   // "Manage profiles" action rather than a top-level nav item.
-  { view: "office", icon: Building, labelKey: "navigation.office" },
   { view: "kanban", icon: KanbanIcon, labelKey: "navigation.kanban" },
   // "skills" lives under the Discover tab (installed + community), so it's no
   // longer a top-level nav item.
@@ -78,7 +71,6 @@ const PINNED_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
 
 const FOOTER_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
   { view: "providers", icon: KeyRound, labelKey: "navigation.providers" },
-  { view: "gateway", icon: Signal, labelKey: "navigation.gateway" },
   { view: "tools", icon: Workflow, labelKey: "navigation.tools" },
   { view: "memory", icon: Brain, labelKey: "navigation.memory" },
 ];
@@ -928,21 +920,12 @@ function Layout({
             </div>
           )}
 
-          {visitedViews.has("office") && (
-            <div style={paneStyle("office")}>
-              <Office profile={activeProfile} visible={view === "office"} />
-            </div>
-          )}
-
           {visitedViews.has("providers") && (
             <div style={paneStyle("providers")}>
               {remoteMode ? (
                 <RemoteNotice feature="Providers" />
               ) : (
-                <Providers
-                  profile={activeProfile}
-                  visible={view === "providers"}
-                />
+                <Providers />
               )}
             </div>
           )}
@@ -996,15 +979,6 @@ function Layout({
             </div>
           )}
 
-          {visitedViews.has("gateway") && (
-            <div style={paneStyle("gateway")}>
-              {remoteMode ? (
-                <RemoteNotice feature="Gateway" />
-              ) : (
-                <Gateway profile={activeProfile} />
-              )}
-            </div>
-          )}
         </main>
       </div>
       <StatusBar activeProfile={activeProfile} />

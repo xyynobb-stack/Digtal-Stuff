@@ -12445,7 +12445,24 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
         return f"session busy — /interrupt the current turn before running /{name}"
 
     try:
-        if name == "model" and arg and agent:
+        if name == "model" and arg:
+            # session.create returns before the deferred AIAgent build finishes.
+            # A slash worker can therefore report a successful /model switch
+            # while there is no live gateway agent to mirror it to. Build and
+            # wait here so the command cannot become a silent no-op on a cold
+            # install or slower machine.
+            if agent is None:
+                _start_agent_build(sid, session)
+                init_error = _wait_agent(session, f"__slash_model_sync__{sid}")
+                if init_error:
+                    message = str(
+                        (init_error.get("error") or {}).get("message")
+                        or "agent initialization failed"
+                    )
+                    return f"live session sync failed: {message}"
+                agent = session.get("agent")
+            if agent is None:
+                return "live session sync failed: agent initialization failed"
             result = _apply_model_switch(sid, session, arg)
             return result.get("warning", "")
         elif name == "personality" and arg and agent:

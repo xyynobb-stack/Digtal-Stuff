@@ -14,7 +14,7 @@ export default {
   newBoardTooltip: "Utwórz nową tablicę kanban",
 
   remoteUnsupportedTitle:
-    "Kanban wymaga lokalnej instalacji Hermes albo trybu tunelu SSH.",
+    "Kanban wymaga lokalnej instalacji JingYuAI albo trybu tunelu SSH.",
   remoteUnsupportedHint:
     "Zwykły tryb zdalny (HTTP + klucz API) nie udostępnia jeszcze API kanban. Przełącz na tryb lokalny lub tunel SSH w Ustawieniach, aby zarządzać tablicą.",
 

@@ -279,7 +279,7 @@ describe("providerRouteForEnvKey", () => {
     }
   });
 
-  it("orders Hermes One first and AIML API last among LLM keys", () => {
+  it("orders JingYuAI first and AIML API last among LLM keys", () => {
     const llm = SETTINGS_SECTIONS.find(
       (s) => s.title === "constants.sectionLlmProviders",
     )!;
@@ -309,7 +309,7 @@ describe("providerRouteForEnvKey", () => {
     });
   });
 
-  // The provider cards/picker show plain provider names ("Hermes One"), not
+  // The provider cards/picker show plain provider names ("JingYuAI"), not
   // the FieldDef's "… API Key" label. Every LLM-section key must resolve to a
   // name so no card falls back to the noisy label.
   it("resolves a plain provider name for every LLM-provider key", () => {

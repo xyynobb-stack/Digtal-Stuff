@@ -21,7 +21,7 @@ import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
 import { setupUpdater } from "./updater";
 
-const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "Hermes One";
+const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "JingYuAI";
 const OPEN_DEVTOOLS_ON_START =
   process.env.HERMES_OPEN_DEVTOOLS === "1" ||
   process.env.HERMES_DESKTOP_OPEN_DEVTOOLS === "1";
@@ -50,7 +50,7 @@ export function startMainProcess(): void {
   setupUpdater({ getMainWindow: () => mainWindow });
 
   app.whenReady().then(() => {
-    electronApp.setAppUserModelId("com.hermes.desktop");
+    electronApp.setAppUserModelId("com.jingyuai.desktop");
 
     app.on("browser-window-created", (_, window) => {
       optimizer.watchWindowShortcuts(window);
@@ -182,7 +182,9 @@ function createWindow(): void {
           backgroundColor: "#00000000",
         }
       : {}),
-    ...(process.platform === "linux" ? { icon } : {}),
+    // Packaged Windows builds get the same mark from build/icon.ico. Setting
+    // the PNG here also replaces Electron's default title-bar icon in dev.
+    ...(process.platform !== "darwin" ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       nodeIntegration: false,

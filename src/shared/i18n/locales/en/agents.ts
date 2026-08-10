@@ -1,7 +1,7 @@
 export default {
   title: "Profiles",
   subtitle:
-    "Each profile is an isolated Hermes workspace with its own config, memory, and skills",
+    "Each profile is an isolated JingYuAI workspace with its own config, memory, and skills",
   newAgent: "New Agent",
   namePlaceholder: "Agent name (e.g. coder)",
   createTitle: "New profile",
@@ -78,7 +78,7 @@ export default {
   walletCreateFailed: "Couldn't add wallet",
   walletRecoveryTitle: "Recovery phrase",
   walletRecoveryInfo:
-    "Save this phrase now. Hermes will not show it again after this modal closes.",
+    "Save this phrase now. JingYuAI will not show it again after this modal closes.",
   walletCopyRecovery: "Copy phrase",
   walletDone: "I've saved it",
   walletBalanceLoading: "Loading…",
@@ -86,21 +86,21 @@ export default {
   walletBalanceRefresh: "Refresh",
   walletDeleteTitle: "Remove wallet",
   walletDeleteWarning:
-    "This will permanently remove this wallet from Hermes. Make sure you have backed up the recovery phrase — you won't be able to recover the wallet without it.",
+    "This will permanently remove this wallet from JingYuAI. Make sure you have backed up the recovery phrase — you won't be able to recover the wallet without it.",
   walletDeleteConfirmLabel: "Remove wallet",
   sync: "Sync",
   syncing: "Syncing…",
   syncSignedOut: "Not synced",
   syncSignedOutHint:
-    "Sign in to your Hermes One account on the Providers page to back agents up to the cloud.",
-  syncUpToDate: "Synced with your Hermes One account",
+    "Sign in to your JingYuAI account on the Providers page to back agents up to the cloud.",
+  syncUpToDate: "Synced with your JingYuAI account",
   syncSummary: "Synced — {{pushed}} pushed, {{pulled}} pulled, {{created}} new",
   syncErrors: "Sync finished with {{count}} error(s)",
   syncUnauthorized: "Session expired — sign in again on the Providers page",
   syncFailed: "Sync failed",
   syncTitle: "Cloud sync",
   syncPaneSubtitle:
-    "Back this agent up to your Hermes One account and pull changes made in the console.",
+    "Back this agent up to your JingYuAI account and pull changes made in the console.",
   syncNow: "Sync now",
   syncAccount: "Account",
   syncLink: "Cloud agent",
@@ -108,7 +108,7 @@ export default {
   syncNotLinked: "Not linked yet — sync to create it",
   syncLastResult: "Last sync",
   syncSignInHint:
-    "Sign in to your Hermes One account on the Providers page to sync this agent.",
+    "Sign in to your JingYuAI account on the Providers page to sync this agent.",
   syncAction: {
     "up-to-date": "Up to date",
     pushed: "Pushed to cloud",
@@ -124,9 +124,9 @@ export default {
   walletSourceCloud: "Cloud",
   walletManagedEmpty: "No wallets yet",
   walletSyncedHint:
-    "Wallets are managed in your Hermes One account and appear here once this agent syncs.",
+    "Wallets are managed in your JingYuAI account and appear here once this agent syncs.",
   walletSignInHint:
-    "Sign in to your Hermes One account on the Providers page to see this agent's wallets.",
+    "Sign in to your JingYuAI account on the Providers page to see this agent's wallets.",
   walletForeignHint:
-    "This agent is linked to a different Hermes One account, so its wallets stay untouched here.",
+    "This agent is linked to a different JingYuAI account, so its wallets stay untouched here.",
 } as const;

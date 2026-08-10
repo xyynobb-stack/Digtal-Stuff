@@ -1,7 +1,7 @@
 {
   "name": "hermes-desktop",
   "version": "0.7.4",
-  "description": "Hermes Agent Desktop — self-improving AI assistant",
+  "description": "JingYuAI Desktop — self-improving AI assistant",
   "main": "./out/main/index.js",
   "author": "fathah",
   "homepage": "https://github.com/fathah/hermes-desktop",
@@ -23,7 +23,9 @@
     "dev:fresh": "HERMES_HOME=$(mktemp -d -t hermes-fresh) electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "prepare:offline-runtime": "node scripts/prepare-offline-runtime.mjs",
+    "prepare:offline-runtime-mac": "node scripts/prepare-offline-runtime-mac.mjs",
     "build:offline-win": "npm run prepare:offline-runtime && npm run build && electron-builder --win",
+    "build:offline-mac": "npm run prepare:offline-runtime-mac && npm run build && electron-builder --config electron-builder.mac.yml --mac dmg zip --publish never",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",

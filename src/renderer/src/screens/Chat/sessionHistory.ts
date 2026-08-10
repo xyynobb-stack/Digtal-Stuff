@@ -5,6 +5,7 @@ import {
   normalizeMessageText,
 } from "./chatMessages";
 import { isLossyChunkCopy } from "./lossyText";
+import { unwrapSessionSkillEnvelope } from "./sessionSkillEnvelope";
 import type { ActiveTurn, ChatMessage, ChatBubbleMessage } from "./types";
 
 /**
@@ -50,7 +51,10 @@ export function dbItemsToChatMessages(
           return {
             id: `db-${it.id}`,
             role: "user",
-            content: it.content || "",
+            // Skill selection is transported to Hermes in a private envelope.
+            // Older builds persisted that envelope verbatim; always hydrate the
+            // user-authored text so history refreshes cannot leak or duplicate it.
+            content: unwrapSessionSkillEnvelope(it.content || ""),
             ...(typeof it.timestamp === "number"
               ? { timestamp: it.timestamp }
               : {}),

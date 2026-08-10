@@ -1,5 +1,5 @@
 export default {
-  title: "Bem-vindo ao Hermes",
+  title: "Bem-vindo ao JingYuAI",
   subtitle:
     "O seu agente de IA que se auto-aperfeiçoa, executado localmente na sua máquina. Privado, poderoso e sempre a aprender.",
   installIssueTitle: "Problema na Instalação",
@@ -11,10 +11,10 @@ export default {
   installSizeHint: "Isto irá instalar os componentes necessários (~2 GB)",
   copyInstallCommand: "Copiar comando de instalação",
   dividerOr: "ou",
-  connectRemote: "Ligar a Hermes Remoto",
-  connectRemoteTitle: "Ligar a Hermes Remoto",
+  connectRemote: "Ligar a JingYuAI Remoto",
+  connectRemoteTitle: "Ligar a JingYuAI Remoto",
   connectRemoteSubtitle:
-    "Introduza o URL de um servidor da API do Hermes em execução.",
+    "Introduza o URL de um servidor da API do JingYuAI em execução.",
   remoteServerUrl: "URL do Servidor",
   remoteApiKey: "Chave da API (opcional)",
   remoteApiKeyPlaceholder: "Token Bearer (API_SERVER_KEY)",

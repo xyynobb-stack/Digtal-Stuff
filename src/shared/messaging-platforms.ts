@@ -115,7 +115,7 @@ export const MESSAGING_TOOLSET_DEFINITIONS: MessagingToolsetDefinition[] = [
     key: "web",
     label: "Web search",
     description:
-      "Use the configured Hermes web/search backend. This still requires a working web backend in config.",
+      "Use the configured JingYuAI web/search backend. This still requires a working web backend in config.",
   },
   {
     key: "browser",
@@ -134,7 +134,7 @@ export const MESSAGING_TOOLSET_DEFINITIONS: MessagingToolsetDefinition[] = [
     key: "file",
     label: "Files",
     description:
-      "Read and write files reachable by Hermes from the messaging platform.",
+      "Read and write files reachable by JingYuAI from the messaging platform.",
     risk: "high",
   },
   {
@@ -161,17 +161,17 @@ export const MESSAGING_TOOLSET_DEFINITIONS: MessagingToolsetDefinition[] = [
   {
     key: "skills",
     label: "Skills",
-    description: "List, inspect, and manage Hermes skills.",
+    description: "List, inspect, and manage JingYuAI skills.",
   },
   {
     key: "memory",
     label: "Memory",
-    description: "Read and update Hermes memory.",
+    description: "Read and update JingYuAI memory.",
   },
   {
     key: "session_search",
     label: "Session search",
-    description: "Search previous Hermes sessions.",
+    description: "Search previous JingYuAI sessions.",
   },
   {
     key: "clarify",
@@ -196,7 +196,7 @@ export const MESSAGING_TOOLSET_DEFINITIONS: MessagingToolsetDefinition[] = [
   {
     key: "kanban",
     label: "Kanban",
-    description: "Read and manage Hermes kanban tasks.",
+    description: "Read and manage JingYuAI kanban tasks.",
   },
   {
     key: "delegation",
@@ -612,7 +612,7 @@ const ENV_DEFINITIONS: Record<string, MessagingEnvDefinition> = {
   API_SERVER_ENABLED: {
     key: "API_SERVER_ENABLED",
     prompt: "Enable API server",
-    description: "Expose Hermes through its OpenAI-compatible HTTP API",
+    description: "Expose JingYuAI through its OpenAI-compatible HTTP API",
     advanced: true,
   },
   API_SERVER_KEY: {
@@ -755,7 +755,7 @@ export const MESSAGING_PLATFORM_CATALOG: MessagingPlatformDefinition[] = [
   {
     id: "email",
     name: "Email",
-    description: "Talk to Hermes through an IMAP/SMTP mailbox.",
+    description: "Talk to JingYuAI through an IMAP/SMTP mailbox.",
     docs_url: messagingDocs("email"),
     env_vars: [
       "EMAIL_ADDRESS",
@@ -875,7 +875,7 @@ export const MESSAGING_PLATFORM_CATALOG: MessagingPlatformDefinition[] = [
     id: "api_server",
     name: "API server",
     description:
-      "Expose Hermes as an OpenAI-compatible HTTP API for tools like Open WebUI.",
+      "Expose JingYuAI as an OpenAI-compatible HTTP API for tools like Open WebUI.",
     docs_url: messagingDocs("open-webui"),
     env_vars: [
       "API_SERVER_ENABLED",

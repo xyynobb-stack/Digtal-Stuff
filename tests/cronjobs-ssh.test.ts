@@ -98,6 +98,8 @@ describe("SSH profile cron jobs", () => {
       "Daily brief",
       "discord",
       "biz-office",
+      "kimi-k2.5",
+      "kimi-coding",
     );
 
     expect(result).toEqual({ success: true, error: undefined });
@@ -111,6 +113,10 @@ describe("SSH profile cron jobs", () => {
         "Daily brief",
         "--deliver",
         "discord",
+        "--model",
+        "kimi-k2.5",
+        "--provider",
+        "kimi-coding",
       ],
       { profile: "biz-office", timeoutMs: 15000 },
     );

@@ -16,7 +16,7 @@ export default {
 
   // Remote-mode unsupported notice
   remoteUnsupportedTitle:
-    "Kanban, yerel bir Hermes kurulumu veya SSH tünel modu gerektirir.",
+    "Kanban, yerel bir JingYuAI kurulumu veya SSH tünel modu gerektirir.",
   remoteUnsupportedHint:
     "Düz uzak (HTTP + API anahtarı) modu henüz kanban API'sini sunmamaktadır. Panoyu yönetmek için Ayarlar'dan yerel veya SSH tünel moduna geçin.",
 

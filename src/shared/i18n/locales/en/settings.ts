@@ -1,7 +1,7 @@
 export default {
   title: "Settings",
   sections: {
-    hermesAgent: "Hermes Agent",
+    hermesAgent: "JingYuAI Agent",
     appearance: "Appearance",
     privacy: "Privacy",
     credentialPool: "Credential Pool",
@@ -9,7 +9,7 @@ export default {
   nav: {
     groups: {
       general: "General",
-      hermes: "Hermes One",
+      hermes: "JingYuAI",
     },
     appearance: "Appearance",
     language: "Language",
@@ -22,7 +22,7 @@ export default {
     logs: "Logs & Diagnostics",
   },
   agentSubtitle: "The local AI engine",
-  desktopTitle: "Hermes One Desktop",
+  desktopTitle: "JingYuAI Desktop",
   desktopSubtitle: "This desktop app",
   statusUpToDate: "Up to date",
   statusUpdateAvailable: "Update available",
@@ -74,11 +74,11 @@ export default {
   },
   analytics: {
     label: "Send anonymous usage analytics",
-    hint: "Collected anonymously and used only to improve Hermes One — never your chats, files, prompts, or any personal data.",
+    hint: "Collected anonymously and used only to improve JingYuAI — never your chats, files, prompts, or any personal data.",
   },
   notDetected: "Not detected",
   updatedSuccessfully: "Updated successfully!",
-  updateSuccess: "Hermes updated successfully.",
+  updateSuccess: "JingYuAI updated successfully.",
   updateFailed: "Update failed.",
   version: "v{{version}}",
   proxyPlaceholder: "e.g. socks5://127.0.0.1:1080 or http://proxy:8080",
@@ -107,14 +107,14 @@ export default {
   compatApiKeyHint:
     "Stored as {{envVar}} — required for remote endpoints, optional for localhost.",
   poolHint:
-    "Add multiple API Keys for the same provider for automatic rotation and load balancing. Hermes will cycle through them.",
+    "Add multiple API Keys for the same provider for automatic rotation and load balancing. JingYuAI will cycle through them.",
   add: "Add",
   remove: "Remove",
   keyLabel: "Key",
   empty: "(empty)",
   dataSection: "Data",
   dataHint:
-    "Export or import your Hermes configuration, sessions, skills, and memory.",
+    "Export or import your JingYuAI configuration, sessions, skills, and memory.",
   backingUp: "Backing up...",
   exportBackup: "Export Backup",
   importing: "Importing...",
@@ -127,17 +127,17 @@ export default {
   latestVersion: "Already up to date",
   autoUpgradeDesktop: "Auto-upgrade desktop app",
   autoUpgradeDesktopHint:
-    "Automatically download new Hermes One releases from GitHub when the app starts. Turn this off to show the startup upgrade button without downloading until you click it.",
+    "Automatically download new JingYuAI releases from GitHub when the app starts. Turn this off to show the startup upgrade button without downloading until you click it.",
   runningDiagnosis: "Running diagnosis...",
   runDiagnosis: "Run Diagnosis",
   running: "Running...",
   debugDump: "Debug Dump",
   migrationDetected: "OpenClaw Installation Detected",
   migrationDesc:
-    "Found OpenClaw at <code>{{path}}</code>. You can migrate your configuration, API keys, sessions, and skills to Hermes.",
+    "Found OpenClaw at <code>{{path}}</code>. You can migrate your configuration, API keys, sessions, and skills to JingYuAI.",
   migrationDismiss: "Don't show again",
   migrating: "Migrating...",
-  migrateToHermes: "Migrate to Hermes",
+  migrateToHermes: "Migrate to JingYuAI",
   skip: "Skip",
   appearanceHint: "Choose your preferred interface appearance",
   apiKeyPlaceholder: "API Key",
@@ -145,11 +145,11 @@ export default {
   connectionSection: "Connection",
   modeLocal: "Local",
   modeRemote: "Remote",
-  modeLocalHint: "Using Hermes installed on this device",
-  modeRemoteHint: "Connect to a Hermes API server on your network or cloud",
+  modeLocalHint: "Using JingYuAI installed on this device",
+  modeRemoteHint: "Connect to a JingYuAI API server on your network or cloud",
   remoteUrl: "Remote URL",
   remoteUrlHint:
-    "The Hermes API server URL (must expose /health and /v1/chat/completions)",
+    "The JingYuAI API server URL (must expose /health and /v1/chat/completions)",
   remoteApiKey: "API Key",
   remoteApiKeyHint:
     "Matches API_SERVER_KEY on the remote host. Leave empty if the server accepts unauthenticated requests.",
@@ -173,30 +173,30 @@ export default {
   save: "Save",
   serverConfigTitle: "Server Configuration",
   serverConfigHint:
-    "You&apos;re connected to a remote Hermes server. Model selection, provider API keys, and credentials are managed on the server&apos;s <code>~/.hermes/.env</code> and <code>config.yaml</code>. Edit them on the host (e.g. <code>docker exec -it hermes vi /opt/data/.env</code>) and restart the container.",
+    "You&apos;re connected to a remote JingYuAI server. Model selection, provider API keys, and credentials are managed on the server&apos;s <code>~/.hermes/.env</code> and <code>config.yaml</code>. Edit them on the host (e.g. <code>docker exec -it hermes vi /opt/data/.env</code>) and restart the container.",
   connectionMode: "Connection Mode",
   switchedToLocal: "Switched to local mode",
 
   // Community
   communityTitle: "Community",
   communityHint:
-    "Join our Discord channel to ask questions, report issues, and chat with other Hermes users.",
+    "Join our Discord channel to ask questions, report issues, and chat with other JingYuAI users.",
   joinDiscord: "Join Discord Channel",
   communityLinksHint:
-    "Connect with the Hermes One community, get help, and stay up to date.",
+    "Connect with the JingYuAI community, get help, and stay up to date.",
   linkWebsite: "Website",
   linkDiscord: "Discord",
   linkX: "X",
   linkTelegram: "Telegram",
   supportTitle: "Support the developer",
   supportHint:
-    "Hermes One is free and open source — if it helps you, consider supporting its development.",
+    "JingYuAI is free and open source — if it helps you, consider supporting its development.",
   supportKofi: "Support on Ko-fi",
 
   // SSH & Server Config
   modeSsh: "SSH Tunnel",
   modeSshHint:
-    "Tunnel to a remote Hermes over SSH — no exposed ports or API keys needed.",
+    "Tunnel to a remote JingYuAI over SSH — no exposed ports or API keys needed.",
   sessionDisabledTitle: "Session history disabled — API_SERVER_KEY not set",
   sessionDisabledDesc:
     "Without an API server key the gateway cannot authenticate session continuation requests. Messages will still send, but conversation history won't be preserved across restarts.",
@@ -206,13 +206,13 @@ export default {
   remoteEnvSshDesc:
     "SSH mode: add API_SERVER_KEY=<your-key> to ~/.hermes/profiles/<profile>/.env on the remote host, then restart the gateway there.",
   remoteEnvDesc:
-    "Remote mode: add API_SERVER_KEY=<your-key> to the .env on your remote Hermes server, then restart the gateway.",
+    "Remote mode: add API_SERVER_KEY=<your-key> to the .env on your remote JingYuAI server, then restart the gateway.",
   sshHost: "SSH Host",
   sshPort: "SSH Port",
   sshUsername: "Username",
   sshKeyPath: "Private Key Path",
   sshKeyPathOptional: "(optional, defaults to ~/.ssh/id_rsa)",
-  sshRemotePort: "Remote Hermes Port",
+  sshRemotePort: "Remote JingYuAI Port",
   sshRemotePortDefault: "(default 8642)",
   sshHint:
     "Make sure you can run ssh {{cmd}} without a password prompt. The first connection trusts the host key and stores it in ~/.ssh/known_hosts; SSH will fail closed if that key changes later.",
@@ -223,47 +223,48 @@ export default {
   connectSsh: "Connect via SSH",
   sshTitle: "Connect via SSH",
   sshSubtitle:
-    "Tunnel to a remote Hermes over SSH — no exposed ports or API keys needed.",
+    "Tunnel to a remote JingYuAI over SSH — no exposed ports or API keys needed.",
   sshHostPlaceholder: "192.168.1.100 or myserver.local",
   sshUsernamePlaceholder: "hermes",
   sshErrorRequired: "Host and username are required.",
   sshErrorConnection:
-    "Could not connect via SSH or reach Hermes on the remote. Make sure:\n• SSH key is correct (or default ~/.ssh/id_rsa works)\n• Hermes gateway is running on the remote\n• The remote port is correct (default 8642)",
+    "Could not connect via SSH or reach JingYuAI on the remote. Make sure:\n• SSH key is correct (or default ~/.ssh/id_rsa works)\n• JingYuAI gateway is running on the remote\n• The remote port is correct (default 8642)",
   sshErrorFailed: "SSH connection test failed: {{msg}}",
   sshErrorFailedSimple: "SSH connection test failed.",
   remoteErrorUrl: "Please enter a URL.",
   remoteErrorConnection:
-    "Could not reach Hermes at this URL. Check the URL and API key.\n\nLeave the key empty if the server accepts unauthenticated requests (e.g. via SSH tunnel to localhost).",
+    "Could not reach JingYuAI at this URL. Check the URL and API key.\n\nLeave the key empty if the server accepts unauthenticated requests (e.g. via SSH tunnel to localhost).",
   remoteErrorFailed: "Connection test failed.",
   sshSuccess: "SSH tunnel connected!",
   sshErrorRequiredSimple: "Host and username are required",
-  sshDockerTitle: "Remote Hermes install",
+  sshDockerTitle: "Remote JingYuAI install",
   sshDockerDetect: "Detect remote install",
   sshDockerDetecting: "Detecting…",
   sshDockerDetectHint:
-    "Checks the SSH host for a Hermes install — including Hermes running inside a Docker container (Coolify, Compose, NAS).",
-  sshDockerHostInstall: "Hermes CLI found on the host — no extra setup needed.",
+    "Checks the SSH host for a JingYuAI install — including JingYuAI running inside a Docker container (Coolify, Compose, NAS).",
+  sshDockerHostInstall:
+    "JingYuAI CLI found on the host — no extra setup needed.",
   sshDockerNoDocker:
-    "No host Hermes install found, and Docker is not available for this SSH user.",
+    "No host JingYuAI install found, and Docker is not available for this SSH user.",
   sshDockerNoContainers:
-    "No host Hermes install found, and no running Hermes Docker containers were detected.",
-  sshDockerContainersFound: "Hermes Docker containers on this host:",
+    "No host JingYuAI install found, and no running JingYuAI Docker containers were detected.",
+  sshDockerContainersFound: "JingYuAI Docker containers on this host:",
   sshDockerSelectPrompt:
-    "Several Hermes containers are running — pick the one this connection should use.",
+    "Several JingYuAI containers are running — pick the one this connection should use.",
   sshDockerNoDataMount: "no data volume mounted at /opt/data",
   sshDockerPortMatch: "publishes port {{port}}",
   sshDockerConfigured:
-    'Docker access is set up for container "{{name}}" — the Hermes CLI and data are reachable over SSH.',
+    'Docker access is set up for container "{{name}}" — the JingYuAI CLI and data are reachable over SSH.',
   sshDockerConfiguredOther:
     'The remote launcher currently routes to container "{{name}}". Run setup again to switch it.',
   sshDockerCustomLauncher:
-    "A custom remote launcher exists on this host (~/.config/hermes-desktop/remote-hermes). Hermes Desktop will use it as-is and won't overwrite it.",
+    "A custom remote launcher exists on this host (~/.config/hermes-desktop/remote-hermes). JingYuAI Desktop will use it as-is and won't overwrite it.",
   sshDockerHomeDirConflict:
     "~/.hermes exists as a real directory on the host, so it can't be linked to the container data volume. Move it aside (e.g. mv ~/.hermes ~/.hermes.host-backup) and detect again.",
   sshDockerSetup: "Set up Docker access",
   sshDockerSettingUp: "Setting up…",
   sshDockerSetupHint:
-    "Writes two files on the SSH host as {{user}}: a launcher at ~/.config/hermes-desktop/remote-hermes that runs the Hermes CLI inside the selected container, and a ~/.hermes symlink to the container's data volume. Nothing inside the container is modified.",
+    "Writes two files on the SSH host as {{user}}: a launcher at ~/.config/hermes-desktop/remote-hermes that runs the JingYuAI CLI inside the selected container, and a ~/.hermes symlink to the container's data volume. Nothing inside the container is modified.",
   sshDockerSetupDone: "Docker access ready — {{version}}",
   sshDockerSetupFailed: "Setup failed: {{msg}}",
   sshDockerInspectFailed: "Could not inspect the remote host: {{msg}}",

@@ -18,11 +18,23 @@ Crucially, each model row keeps its **raw** `provider`/`baseUrl` for selection �
 
 A **Configure** button is pinned at the bottom of the provider rail (below the scrollable brand list), replacing the old free-text model input: it closes the picker and dispatches the `navigation:goto` window event (detail `"providers"`) that [[src/renderer/src/screens/Layout/Layout.tsx]] listens for, taking the user to the Providers screen to manage keys and the model library.
 
+## Employee phone model allowlist
+
+Phone-provisioned local users see only the OpenAI-chat models granted by the latest employee lookup response.
+
+The main process persists the grant through [[src/main/employee-model-access.ts#writeEmployeeModelAccess]] and applies it to `list-models`; unrelated rows remain stored but are not returned. [[src/renderer/src/screens/Chat/hooks/useModelConfig.ts#useModelConfig]] also suppresses Ollama Cloud discovery merging while the grant is active, preventing live models from bypassing the allowlist. Remote and SSH catalogs, and local installs without a phone grant, retain their normal behavior.
+
 ## Full identity, not just the model name
 
 The override is a `SessionModelOverride` (`{provider, model, baseUrl}`), not a bare model string — because switching across providers must change routing, not only the `model` field.
 
 The picker builds it via [[src/renderer/src/screens/Chat/hooks/useModelConfig.ts#effectiveOverrideBaseUrl]], the same baseUrl rule `selectModel` applies (keep the URL only for `custom`/`ollama-cloud`; clear it for named providers that have a canonical base URL), so the session pick and a persisted save can't drift. It is threaded renderer → preload IPC → main `sendMessage` as `modelOverride`.
+
+## Latest picker identity wins
+
+Every dashboard send resolves its model, provider, and base URL from the latest rendered picker state, even if the composer invokes a send callback captured before the user changed models.
+
+[[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] keeps that routing identity in a live ref and reads it when creating, switching, and validating the runtime session. This prevents a previous conversation model from being reused by a stale UI callback while the picker already displays the new model.
 
 ## Desktop-only persistence
 

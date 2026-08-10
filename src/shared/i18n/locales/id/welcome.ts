@@ -1,5 +1,5 @@
 export default {
-  title: "Selamat datang di Hermes",
+  title: "Selamat datang di JingYuAI",
   subtitle:
     "Asisten AI yang terus berkembang dan berjalan lokal di mesin Anda. Privat, kuat, dan selalu belajar.",
   installIssueTitle: "Masalah Instalasi",
@@ -11,9 +11,10 @@ export default {
   installSizeHint: "Ini akan menginstal komponen yang diperlukan (~2 GB)",
   copyInstallCommand: "Salin perintah instalasi",
   dividerOr: "atau",
-  connectRemote: "Hubungkan ke Hermes Remote",
-  connectRemoteTitle: "Hubungkan ke Hermes Remote",
-  connectRemoteSubtitle: "Masukkan URL server Hermes API yang sedang berjalan.",
+  connectRemote: "Hubungkan ke JingYuAI Remote",
+  connectRemoteTitle: "Hubungkan ke JingYuAI Remote",
+  connectRemoteSubtitle:
+    "Masukkan URL server JingYuAI API yang sedang berjalan.",
   remoteServerUrl: "URL Server",
   remoteApiKey: "API Key (opsional)",
   remoteApiKeyPlaceholder: "Bearer token (API_SERVER_KEY)",

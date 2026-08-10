@@ -2,7 +2,7 @@ import { Bot } from "../../assets/icons";
 import claudeLogo from "../../assets/logos/claude-color.svg";
 import geminiLogo from "../../assets/logos/gemini-color.svg";
 import nousLogo from "../../assets/logos/nousresearch.svg";
-import hermesoneLogo from "../../assets/hermes-icon.svg";
+import jingyuaiLogo from "../../assets/jingyuai-icon.png";
 import openaiLogo from "../../assets/logos/openai.svg";
 import openrouterLogo from "../../assets/logos/openrouter.svg";
 import moonshotLogo from "../../assets/logos/moonshot.svg";
@@ -98,7 +98,7 @@ type BrandKey =
   | "unknown";
 
 const LOGOS: Record<Exclude<BrandKey, "unknown">, string> = {
-  hermesone: hermesoneLogo,
+  hermesone: jingyuaiLogo,
   claude: claudeLogo,
   gemini: geminiLogo,
   nous: nousLogo,
@@ -239,7 +239,7 @@ function BrandLogo({
 
   const classes = [
     "brand-logo",
-    matchTheme ? "brand-logo--match-theme" : "",
+    matchTheme && brand !== "hermesone" ? "brand-logo--match-theme" : "",
     className,
   ]
     .filter(Boolean)
@@ -251,7 +251,7 @@ function BrandLogo({
       width={size}
       height={size}
       className={classes}
-      alt={brand}
+      alt={brand === "hermesone" ? "JingYuAI" : brand}
     />
   );
 }

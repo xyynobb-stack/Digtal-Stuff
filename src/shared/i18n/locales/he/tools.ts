@@ -88,7 +88,7 @@ export default {
   mcpNoResults: "אין שרתי MCP שתואמים לסינון שלכם.",
   mcpEmptyTitle: "לא הוגדרו שרתי MCP",
   mcpEmptyDescription:
-    "הוסיפו שרת HTTP או stdio מותאם אישית, או התקינו אחד מקטלוג ה-MCP של Hermes.",
+    "הוסיפו שרת HTTP או stdio מותאם אישית, או התקינו אחד מקטלוג ה-MCP של JingYuAI.",
   mcpLoadFailed: "טעינת שרתי ה-MCP נכשלה.",
   mcpAddFailed: "הוספת שרת ה-MCP נכשלה.",
   mcpRemoveFailed: "הסרת שרת ה-MCP נכשלה.",

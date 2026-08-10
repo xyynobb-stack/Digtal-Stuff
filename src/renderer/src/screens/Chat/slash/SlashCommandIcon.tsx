@@ -152,6 +152,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
 const CATEGORY_DEFAULTS: Record<string, LucideIcon> = {
   chat: MessageSquarePlus,
   agent: Bot,
+  "jingyuai agent": Bot,
   "hermes agent": Bot,
   tools: Wrench,
   "tools & skills": Wrench,

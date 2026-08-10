@@ -1,6 +1,6 @@
 ---
 name: nano-pdf
-description: "Edit text in existing PDFs via natural-language prompts."
+description: 使用自然语言提示编辑现有 PDF 中的文本。
 version: 1.0.0
 author: community
 license: MIT

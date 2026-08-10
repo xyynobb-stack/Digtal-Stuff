@@ -26,45 +26,129 @@ import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
 
 const IS_WINDOWS = process.platform === "win32";
 
+/**
+ * Paths inside the relocatable Python runtime bundled with an offline build.
+ * Windows ships the embeddable interpreter at the runtime root, whereas the
+ * macOS standalone distribution follows the conventional `bin/python3`
+ * layout. Keeping this in one helper prevents a macOS package from receiving
+ * a Windows-only `python.exe` path in its repaired virtual-environment file.
+ */
+export function bundledPythonRuntimeLayout(
+  runtimeRoot: string,
+  platform = process.platform,
+): { home: string; executable: string; launcherDirectory: string } {
+  if (platform === "win32") {
+    return {
+      home: runtimeRoot,
+      executable: join(runtimeRoot, "python.exe"),
+      launcherDirectory: "Scripts",
+    };
+  }
+  return {
+    home: join(runtimeRoot, "bin"),
+    executable: join(runtimeRoot, "bin", "python3"),
+    launcherDirectory: "bin",
+  };
+}
+
 // Packaged builds can carry a complete Hermes/Python runtime in
-// resources/hermes-runtime.  Copy it to a writable per-user location on the
+// resources/hermes-runtime. Copy it to a writable per-user location on the
 // first launch so Python's venv metadata can be repaired for the machine's
 // actual install path and the read-only Electron resources remain untouched.
+//
+// A prior package can leave a partial tree in userData (for example, a
+// hermes-agent directory without its venv). Never treat the presence of the
+// repository directory alone as proof that the runtime is complete: repair
+// missing runtime directories from the new package on every packaged launch.
 function bundledRuntimeRepo(): string {
   if (!app.isPackaged) return "";
   const sourceRoot = join(process.resourcesPath, "hermes-runtime");
   const targetRoot = join(app.getPath("userData"), "hermes-runtime");
   const sourceRepo = join(sourceRoot, "hermes-agent");
   const targetRepo = join(targetRoot, "hermes-agent");
+  const sourceVenv = join(sourceRepo, "venv");
+  const targetVenv = join(targetRepo, "venv");
+  const sourcePython = join(sourceRoot, "python-runtime");
   const targetPython = join(targetRoot, "python-runtime");
+  const sourceBuildMarker = join(sourceRoot, "desktop-runtime-build.json");
+  const targetBuildMarker = join(targetRoot, "desktop-runtime-build.json");
   try {
-    if (existsSync(sourceRepo) && !existsSync(targetRepo)) {
+    if (existsSync(sourceRepo)) {
       mkdirSync(targetRoot, { recursive: true });
-      cpSync(sourceRepo, targetRepo, { recursive: true });
-      cpSync(join(sourceRoot, "python-runtime"), targetPython, {
-        recursive: true,
-      });
+      const packagedBuildMarker = existsSync(sourceBuildMarker)
+        ? readFileSync(sourceBuildMarker, "utf8")
+        : "";
+      const installedBuildMarker = existsSync(targetBuildMarker)
+        ? readFileSync(targetBuildMarker, "utf8")
+        : "";
+      const runtimeBuildChanged =
+        Boolean(packagedBuildMarker) &&
+        packagedBuildMarker !== installedBuildMarker;
+
+      if (!existsSync(targetRepo) || runtimeBuildChanged) {
+        // All Python modules in a packaged runtime are one compatibility unit.
+        // Updating only run_agent.py can leave it importing symbols that do not
+        // exist in an older tools/skills_tool.py. Refresh the complete managed
+        // tree once for each packaged runtime build.
+        cpSync(sourceRepo, targetRepo, { recursive: true, force: true });
+        if (existsSync(sourcePython)) {
+          cpSync(sourcePython, targetPython, { recursive: true, force: true });
+        }
+        if (packagedBuildMarker) {
+          writeFileSync(targetBuildMarker, packagedBuildMarker, "utf8");
+        }
+      } else if (existsSync(sourceVenv) && !existsSync(targetVenv)) {
+        // Preserve the existing agent tree, but restore a missing venv from
+        // the package. This is the tree used by Kanban and scheduled tasks.
+        cpSync(sourceVenv, targetVenv, { recursive: true });
+      } else if (existsSync(sourceVenv)) {
+        // A partially copied venv can lack its launchers. Merge only missing
+        // files so an existing runtime is not overwritten. macOS uses `bin`,
+        // while Windows uses `Scripts`.
+        const { launcherDirectory } = bundledPythonRuntimeLayout(targetPython);
+        const sourceLaunchers = join(sourceVenv, launcherDirectory);
+        if (existsSync(sourceLaunchers)) {
+          cpSync(sourceLaunchers, join(targetVenv, launcherDirectory), {
+            recursive: true,
+            force: false,
+          });
+        }
+      }
+
+      if (
+        !runtimeBuildChanged &&
+        existsSync(sourcePython) &&
+        !existsSync(targetPython)
+      ) {
+        cpSync(sourcePython, targetPython, { recursive: true });
+      }
     }
-    // Runtime source overlays can change between desktop test builds even
-    // while the app version stays the same. Refresh the browser tool on every
-    // packaged launch so installing a newer setup over an older test build
-    // reliably applies the configured default search entry.
-    const sourceBrowserTool = join(sourceRepo, "tools", "browser_tool.py");
-    const targetBrowserTool = join(targetRepo, "tools", "browser_tool.py");
-    if (existsSync(sourceBrowserTool) && existsSync(targetRepo)) {
-      cpSync(sourceBrowserTool, targetBrowserTool);
+    // These small desktop overlays are still repaired on every launch within
+    // one build. Cross-build changes use the marker above and refresh the full
+    // managed tree so module interfaces cannot become skewed.
+    const managedRuntimeOverlays = [
+      join("tools", "browser_tool.py"),
+      join("tools", "skills_tool.py"),
+      join("agent", "prompt_builder.py"),
+      "run_agent.py",
+    ];
+    if (existsSync(targetRepo)) {
+      for (const relativePath of managedRuntimeOverlays) {
+        const sourceFile = join(sourceRepo, relativePath);
+        if (existsSync(sourceFile)) {
+          cpSync(sourceFile, join(targetRepo, relativePath));
+        }
+      }
     }
     const cfg = join(targetRepo, "venv", "pyvenv.cfg");
     if (existsSync(cfg) && existsSync(targetPython)) {
+      const { executable, home } = bundledPythonRuntimeLayout(targetPython);
       const text = readFileSync(cfg, "utf-8")
-        .replace(/^home\s*=.*$/m, `home = ${targetPython}`)
-        .replace(
-          /^executable\s*=.*$/m,
-          `executable = ${join(targetPython, "python.exe")}`,
-        )
+        .replace(/^home\s*=.*$/m, `home = ${home}`)
+        .replace(/^executable\s*=.*$/m, `executable = ${executable}`)
         .replace(
           /^command\s*=.*$/m,
-          `command = ${join(targetPython, "python.exe")} -m venv ${join(targetRepo, "venv")}`,
+          `command = ${executable} -m venv ${join(targetRepo, "venv")}`,
         );
       writeFileSync(cfg, text, "utf-8");
     }
@@ -213,6 +297,44 @@ function installBundledLookupToken(): void {
 }
 
 installBundledLookupToken();
+
+const COMPANY_SOUL_RULES_MARKER = "<!-- AGENT_WINDOWS_PYTHON_RULES -->";
+
+/**
+ * Install the package's company-wide tool preference exactly once without
+ * replacing the user's own SOUL.md content.  SOUL.md is loaded by Hermes as
+ * part of every new agent system prompt, making this more reliable than an
+ * optionally-invoked skill for the no-Git-Bash Windows runtime.
+ */
+function installBundledSoulRules(): void {
+  if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
+  const bundledRules = join(
+    process.resourcesPath,
+    "hermes-runtime",
+    "employee-default-soul.md",
+  );
+  const targetSoul = join(HERMES_HOME, "SOUL.md");
+  try {
+    if (!existsSync(bundledRules)) return;
+    const rules = readFileSync(bundledRules, "utf-8").trim();
+    if (!rules) return;
+    const existing = existsSync(targetSoul)
+      ? readFileSync(targetSoul, "utf-8")
+      : "";
+    if (existing.includes(COMPANY_SOUL_RULES_MARKER)) return;
+    mkdirSync(HERMES_HOME, { recursive: true });
+    writeFileSync(
+      targetSoul,
+      `${existing.trimEnd()}${existing.trimEnd() ? "\n\n" : ""}${rules}\n`,
+      "utf-8",
+    );
+  } catch {
+    // The agent still starts with its normal identity if this best-effort
+    // company-rule installation cannot write the user's Hermes home.
+  }
+}
+
+installBundledSoulRules();
 export const HERMES_REPO =
   BUNDLED_RUNTIME_REPO || join(HERMES_HOME, "hermes-agent");
 export const HERMES_VENV = join(HERMES_REPO, "venv");
@@ -227,8 +349,12 @@ export const HERMES_VENV = join(HERMES_REPO, "venv");
 // for it regardless of creation flags. It's a bit-identical interpreter
 // otherwise — same modules, same stdout/stderr behaviour over piped stdio
 // (which is what every call site here uses).
+const WINDOWS_PYTHONW = join(HERMES_VENV, "Scripts", "pythonw.exe");
+const WINDOWS_PYTHON = join(HERMES_VENV, "Scripts", "python.exe");
 export const HERMES_PYTHON = IS_WINDOWS
-  ? join(HERMES_VENV, "Scripts", "pythonw.exe")
+  ? existsSync(WINDOWS_PYTHONW)
+    ? WINDOWS_PYTHONW
+    : WINDOWS_PYTHON
   : join(HERMES_VENV, "bin", "python");
 export const HERMES_SCRIPT = IS_WINDOWS
   ? join(HERMES_VENV, "Scripts", "hermes.exe")
@@ -704,7 +830,7 @@ export function clearVersionCache(): void {
 
 export function runHermesDoctor(): string {
   if (!canInvokeHermesCli()) {
-    return "Hermes is not installed.";
+    return "JingYuAI is not installed.";
   }
   try {
     const output = execFileSync(HERMES_PYTHON, hermesCliArgs(["doctor"]), {
@@ -767,7 +893,7 @@ export async function runClawMigrate(
   onProgress: (progress: InstallProgress) => void,
 ): Promise<void> {
   if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
-    throw new Error("Hermes is not installed.");
+    throw new Error("JingYuAI is not installed.");
   }
 
   const openclaw = checkOpenClawExists();
@@ -832,7 +958,7 @@ export async function runHermesUpdate(
   onProgress: (progress: InstallProgress) => void,
 ): Promise<void> {
   if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
-    throw new Error("Hermes is not installed. Please install it first.");
+    throw new Error("JingYuAI is not installed. Please install it first.");
   }
 
   let log = "";
@@ -841,7 +967,7 @@ export async function runHermesUpdate(
     onProgress({
       step: 1,
       totalSteps: 1,
-      title: "Updating Hermes Agent",
+      title: "Updating JingYuAI Agent",
       detail: text.trim().slice(0, 120),
       log,
     });
@@ -922,7 +1048,7 @@ const STAGE_MARKERS: { pattern: RegExp; step: number; title: string }[] = [
     pattern:
       /Cloning|cloning|Updating.*repository|Repository|Installing to .*hermes-agent|Downloading PortableGit/i,
     step: 4,
-    title: "Downloading Hermes Agent",
+    title: "Downloading JingYuAI Agent",
   },
   {
     pattern: /Creating virtual|virtual environment|uv venv|\bvenv\b/i,
@@ -977,7 +1103,7 @@ export async function runInstall(
     });
   }
 
-  emit("Running official Hermes install script...\n");
+  emit("Running the JingYuAI install script...\n");
 
   if (IS_WINDOWS) {
     return runInstallWindows(emit);
@@ -1059,7 +1185,7 @@ export async function runInstall(
           // If Hermes is actually installed and working, treat as success.
           if (existsSync(HERMES_PYTHON) && existsSync(HERMES_SCRIPT)) {
             emit(
-              "\nInstall script exited with warnings, but Hermes is installed successfully.\n",
+              "\nInstall script exited with warnings, but JingYuAI is installed successfully.\n",
             );
             resolve();
           } else {
@@ -1221,7 +1347,7 @@ async function runInstallWindows(emit: (t: string) => void): Promise<void> {
       // Same tolerance as the bash path: if the binary tree exists, count it.
       if (existsSync(HERMES_PYTHON) && existsSync(HERMES_SCRIPT)) {
         emit(
-          "\nInstall script exited with warnings, but Hermes is installed successfully.\n",
+          "\nInstall script exited with warnings, but JingYuAI is installed successfully.\n",
         );
         resolve();
       } else {
@@ -1257,7 +1383,7 @@ export async function runHermesBackup(
   profile?: string,
 ): Promise<{ success: boolean; path?: string; error?: string }> {
   if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
-    return { success: false, error: "Hermes is not installed." };
+    return { success: false, error: "JingYuAI is not installed." };
   }
   const args = hermesCliArgs();
   if (profile && profile !== "default") args.push("-p", profile);
@@ -1311,7 +1437,7 @@ export async function runHermesImport(
   }
 
   if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
-    return { success: false, error: "Hermes is not installed." };
+    return { success: false, error: "JingYuAI is not installed." };
   }
   const args = hermesCliArgs();
   if (profile && profile !== "default") args.push("-p", profile);
@@ -1376,7 +1502,7 @@ export function validateImportArchivePath(
 
 export function runHermesDump(): Promise<string> {
   if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
-    return Promise.resolve("Hermes is not installed.");
+    return Promise.resolve("JingYuAI is not installed.");
   }
   return new Promise((resolve) => {
     execFile(

@@ -191,6 +191,7 @@ describe("Legacy APIs preserved (backward compat)", () => {
     "setToolsetEnabled",
     // Skills
     "listInstalledSkills",
+    "listUserAddedSkills",
     "listBundledSkills",
     "getSkillContent",
     "installSkill",

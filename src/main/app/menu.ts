@@ -97,7 +97,7 @@ export function buildMenu({ getMainWindow, openExternalUrl }: MenuDeps): void {
             ]
           : []),
         {
-          label: "Hermes Agent on GitHub",
+          label: "JingYuAI Agent on GitHub",
           click: () =>
             openExternalUrl("https://github.com/NousResearch/hermes-agent/"),
         },

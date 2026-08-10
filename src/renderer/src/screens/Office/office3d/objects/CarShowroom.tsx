@@ -70,47 +70,47 @@ export const DISPLAY_CARS: DisplayCar[] = [
     rotY: Math.PI / 2 - 0.3,
     url: car1GlbUrl,
     tint: "#b03a2e",
-    name: "Hermes S1 Crimson",
+    name: "JingYuAI S1 Crimson",
   },
   {
     pos: [-4, 0, -2.5],
     rotY: Math.PI / 2 + 0.25,
     url: car2GlbUrl,
     tint: "#1f618d",
-    name: "Hermes GT Azure",
+    name: "JingYuAI GT Azure",
   },
   {
     pos: [-4, 0, 2.5],
     rotY: Math.PI / 2 - 0.25,
     url: car1GlbUrl,
     tint: "#e8e8e8",
-    name: "Hermes S1 Pearl",
+    name: "JingYuAI S1 Pearl",
   },
   {
     pos: [-4, 0, 7],
     rotY: Math.PI / 2 + 0.3,
     url: car2GlbUrl,
     tint: "#39414f",
-    name: "Hermes GT Gunmetal",
+    name: "JingYuAI GT Gunmetal",
   },
   {
     pos: [2.5, 0, -6.5],
     rotY: Math.PI / 2,
     url: car2GlbUrl,
     tint: "#ca6f1e",
-    name: "Hermes GT Sunset",
+    name: "JingYuAI GT Sunset",
   },
   {
     pos: [2.5, 0, 6.5],
     rotY: Math.PI / 2,
     url: car1GlbUrl,
     tint: "#239b56",
-    name: "Hermes S1 Emerald",
+    name: "JingYuAI S1 Emerald",
   },
 ];
 
 export const HERO_CAR: ShowroomCar = {
-  name: "Hermes S1 Aurum",
+  name: "JingYuAI S1 Aurum",
   tint: "#d4ac0d",
 };
 /** The hero car's pedestal position in showroom-local coordinates. */
@@ -228,7 +228,7 @@ export const CarShowroom = memo(function CarShowroom({
         anchorY="middle"
         letterSpacing={0.12}
       >
-        HERMES MOTORS
+        JINGYUAI MOTORS
       </Text>
       {/* Display pedestal + rotating hero car near the storefront */}
       <mesh position={[1.5, 0.08, 0]} castShadow receiveShadow>

@@ -17091,8 +17091,8 @@ app.include_router(_dashboard_auth_router)
 
 
 # --- HERMES_ONE_MODEL_LIBRARY_COMPAT_V1 -------------------------------------
-# Compatibility endpoint installed by Hermes One. Upstream Hermes Agent exposes
-# /api/model/options and /api/model/set, but Hermes One also needs a small
+# Compatibility endpoint installed by JingYuAI. Upstream JingYuAI Agent exposes
+# /api/model/options and /api/model/set, but JingYuAI also needs a small
 # configured-model shortcut library for remote/SSH model pickers. The library is
 # deliberately stored in this agent's HERMES_HOME so remote shortcuts stay on
 # the remote host and survive desktop restarts without changing upstream model

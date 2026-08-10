@@ -1,6 +1,6 @@
 ---
 name: serving-llms-vllm
-description: "vLLM: high-throughput LLM serving, OpenAI API, quantization."
+description: 使用 vLLM 部署高吞吐量 LLM 服务、OpenAI API 和量化推理。
 version: 1.0.1
 author: Orchestra Research
 license: MIT

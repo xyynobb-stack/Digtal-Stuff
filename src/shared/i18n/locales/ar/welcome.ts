@@ -1,5 +1,5 @@
 export default {
-  title: "مرحباً بك في Hermes One",
+  title: "مرحباً بك في JingYuAI",
   subtitle:
     "مساعد الذكاء الاصطناعي المتطور الذي يعمل محلياً على جهازك. خاص، قوي، ويتعلم دائماً.",
   installIssueTitle: "مشكلة في التثبيت",
@@ -11,9 +11,9 @@ export default {
   installSizeHint: "سيؤدي هذا إلى تثبيت المكونات المطلوبة (~2 جيجابايت)",
   copyInstallCommand: "نسخ أمر التثبيت",
   dividerOr: "أو",
-  connectRemote: "الاتصال بـ Hermes عن بُعد",
-  connectRemoteTitle: "الاتصال بـ Hermes عن بُعد",
-  connectRemoteSubtitle: "أدخل رابط خادم Hermes API قيد التشغيل.",
+  connectRemote: "الاتصال بـ JingYuAI عن بُعد",
+  connectRemoteTitle: "الاتصال بـ JingYuAI عن بُعد",
+  connectRemoteSubtitle: "أدخل رابط خادم JingYuAI API قيد التشغيل.",
   remoteServerUrl: "رابط الخادم",
   remoteApiKey: "مفتاح API (اختياري)",
   remoteApiKeyPlaceholder: "رمز Bearer (API_SERVER_KEY)",

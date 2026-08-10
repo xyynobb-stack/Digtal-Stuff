@@ -656,12 +656,12 @@ function unsupportedMcpApiMessage(
   feature: "catalog" | "install" | "test",
 ): string {
   if (feature === "catalog") {
-    return "MCP catalog is not available from this Hermes Agent gateway yet. Add a custom MCP server manually.";
+    return "MCP catalog is not available from this JingYuAI Agent gateway yet. Add a custom MCP server manually.";
   }
   if (feature === "install") {
-    return "MCP catalog install is not available from this Hermes Agent gateway yet. Add a custom MCP server manually.";
+    return "MCP catalog install is not available from this JingYuAI Agent gateway yet. Add a custom MCP server manually.";
   }
-  return "MCP server testing is not available from this Hermes Agent gateway yet.";
+  return "MCP server testing is not available from this JingYuAI Agent gateway yet.";
 }
 
 export async function listMcpServers(

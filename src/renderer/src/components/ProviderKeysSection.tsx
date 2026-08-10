@@ -526,7 +526,7 @@ export function ProviderKeysSection({
 
   // The generic "Custom" env key is handled by the dedicated custom flow, not
   // as a normal key card — drop it from the key-based lists. Well-known
-  // providers are ordered first (Hermes One leads, AIML last) via a stable
+  // providers are ordered first (JingYuAI leads, AIML last) via a stable
   // sort on `providerKeyRank`, so the cards + Add-provider picker aren't
   // ordered by the FieldDef declaration order.
   const keyItems = useMemo(

@@ -1,14 +1,16 @@
 import { execFile, ExecFileOptions } from "child_process";
-import { join } from "path";
+import { existsSync } from "fs";
 import {
   HERMES_HOME,
   HERMES_PYTHON,
+  HERMES_REPO,
   hermesCliArgs,
   getEnhancedPath,
 } from "./installer";
 import { isRemoteOnlyMode } from "./hermes";
 import { getConnectionConfig } from "./config";
 import { sshRunKanban, sshListClaw3dHqTasks } from "./ssh-remote";
+import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
 
 export interface KanbanTask {
   id: string;
@@ -125,20 +127,34 @@ async function runKanban(
   }
   cliArgs.push("kanban", ...args);
 
+  if (!existsSync(HERMES_PYTHON)) {
+    return {
+      success: false,
+      error: `JingYuAI Agent 内置 Python 不存在：${HERMES_PYTHON}。请重新安装完整离线安装包。`,
+    };
+  }
+
   const execOpts: ExecFileOptions = {
-    cwd: join(HERMES_HOME, "hermes-agent"),
+    cwd: HERMES_REPO,
     timeout: opts.timeoutMs ?? KANBAN_TIMEOUT_MS,
-    env: { ...process.env, PATH: getEnhancedPath() },
+    env: {
+      ...process.env,
+      PATH: getEnhancedPath(),
+      HERMES_HOME,
+    },
     maxBuffer: 16 * 1024 * 1024,
+    ...HIDDEN_SUBPROCESS_OPTIONS,
   };
 
   return new Promise((resolve) => {
     execFile(HERMES_PYTHON, cliArgs, execOpts, (err, stdout, stderr) => {
       const out = (stdout || "").toString();
       if (err) {
+        const stderrText = (stderr || "").toString().trim();
+        const stdoutText = out.trim();
         resolve({
           success: false,
-          error: (stderr || err.message || "").toString().trim(),
+          error: stderrText || stdoutText || err.message,
           stdout: out,
         });
         return;
@@ -165,9 +181,9 @@ export function unsupportedInRemote<T>(): KanbanResult<T> {
     success: false,
     unsupportedMode: true,
     error:
-      "Kanban requires either a local Hermes install or SSH tunnel mode. " +
+      "Kanban requires either a local JingYuAI install or SSH tunnel mode. " +
       "Plain remote (HTTP+API key) mode does not yet expose the kanban API. " +
-      "Switch to SSH tunnel mode in Settings to use the board against a remote Hermes.",
+      "Switch to SSH tunnel mode in Settings to use the board against a remote JingYuAI.",
   };
 }
 

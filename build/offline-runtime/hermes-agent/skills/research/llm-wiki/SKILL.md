@@ -1,6 +1,6 @@
 ---
 name: llm-wiki
-description: "Karpathy's LLM Wiki: build/query interlinked markdown KB."
+description: 构建和查询 Karpathy 风格的相互链接 Markdown 知识库。
 version: 2.1.0
 author: Hermes Agent
 license: MIT

@@ -1,4 +1,9 @@
 export default {
+  writingTemplates: "Writing templates",
+  writingTemplateSearch: "Search writing templates...",
+  writingTemplateEmptyTitle: "No writing templates yet",
+  writingTemplateEmptyDescription:
+    "Writing templates you add later will appear here.",
   title: "Tools",
   subtitle:
     "Enable or disable the toolsets your agent can use during conversations",
@@ -106,7 +111,7 @@ export default {
   mcpNoResults: "No MCP servers match your filter.",
   mcpEmptyTitle: "No MCP servers configured",
   mcpEmptyDescription:
-    "Add a custom HTTP or stdio server, or install one from the Hermes MCP catalog.",
+    "Add a custom HTTP or stdio server, or install one from the JingYuAI MCP catalog.",
   mcpLoadFailed: "Failed to load MCP servers.",
   mcpAddFailed: "Failed to add MCP server.",
   mcpRemoveFailed: "Failed to remove MCP server.",

@@ -1,10 +1,17 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useI18n } from "../../components/useI18n";
-import { Wrench, Plug, Puzzle, Search, X } from "../../assets/icons";
+import {
+  Wrench,
+  Puzzle,
+  Search,
+  X,
+  TitleIcon as WritingTemplateIcon,
+} from "../../assets/icons";
 import { TOOL_ICONS, FALLBACK_TOOL_ICON } from "../../components/toolMeta";
 import Skills from "../Skills/Skills";
 import RemoteNotice from "../../components/RemoteNotice";
 import { OrbLoader } from "../../components/OrbLoader";
+import type { WritingTemplate } from "../../../../shared/writing-templates";
 
 interface ToolsetInfo {
   key: string;
@@ -27,7 +34,9 @@ interface ToolsProps {
   onBrowseMcps?: () => void;
 }
 
-type CapabilityTab = "tools" | "mcp" | "skills";
+type CapabilityTab = "tools" | "mcp" | "skills" | "templates";
+
+// @lat: [[discover#Capabilities writing templates entry]]
 
 function ToolIcon({ toolKey }: { toolKey: string }): React.JSX.Element {
   return (
@@ -318,7 +327,11 @@ function Tools({
 }: ToolsProps): React.JSX.Element {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<CapabilityTab>(
-    showPlatformToolsets ? "tools" : "mcp",
+    showPlatformToolsets ? "tools" : "skills",
+  );
+  const [writingTemplateSearch, setWritingTemplateSearch] = useState("");
+  const [writingTemplates, setWritingTemplates] = useState<WritingTemplate[]>(
+    [],
   );
   const [toolsets, setToolsets] = useState<ToolsetInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -364,14 +377,16 @@ function Tools({
     setLoading(true);
     setMcpError("");
     try {
-      const [list, mcp] = await Promise.all([
+      const [list, mcp, templates] = await Promise.all([
         showPlatformToolsets
           ? window.hermesAPI.getToolsets(profile)
           : Promise.resolve([]),
         window.hermesAPI.listMcpServers(profile),
+        window.hermesAPI.listWritingTemplates(profile),
       ]);
       setToolsets(list);
       setMcpServers(mcp);
+      setWritingTemplates(templates);
     } catch (err) {
       setMcpError((err as Error).message || t("tools.mcpLoadFailed"));
     } finally {
@@ -382,6 +397,13 @@ function Tools({
   useEffect(() => {
     if (visible) loadToolsets();
   }, [visible, loadToolsets]);
+
+  useEffect(() => {
+    const refresh = (): void => void loadToolsets();
+    window.addEventListener("hermes-writing-templates-changed", refresh);
+    return () =>
+      window.removeEventListener("hermes-writing-templates-changed", refresh);
+  }, [loadToolsets]);
 
   async function handleToggle(
     key: string,
@@ -594,6 +616,16 @@ function Tools({
       })
     : mcpServers;
 
+  const filteredWritingTemplates = writingTemplateSearch.trim()
+    ? writingTemplates.filter((template) => {
+        const query = writingTemplateSearch.trim().toLowerCase();
+        return (
+          template.name.toLowerCase().includes(query) ||
+          template.fileName.toLowerCase().includes(query)
+        );
+      })
+    : writingTemplates;
+
   if (loading) {
     return (
       <div className="tools-container">
@@ -620,20 +652,20 @@ function Tools({
         )}
         <button
           type="button"
-          className={`tools-tab ${activeTab === "mcp" ? "active" : ""}`}
-          onClick={() => setActiveTab("mcp")}
-        >
-          <Plug size={16} />
-          {t("tools.mcpServers")}
-          <span className="tools-tab-count">{mcpServers.length}</span>
-        </button>
-        <button
-          type="button"
           className={`tools-tab ${activeTab === "skills" ? "active" : ""}`}
           onClick={() => setActiveTab("skills")}
         >
           <Puzzle size={16} />
           {t("navigation.skills")}
+        </button>
+        <button
+          type="button"
+          className={`tools-tab ${activeTab === "templates" ? "active" : ""}`}
+          onClick={() => setActiveTab("templates")}
+        >
+          <WritingTemplateIcon size={16} />
+          {t("tools.writingTemplates")}
+          <span className="tools-tab-count">{writingTemplates.length}</span>
         </button>
       </div>
 
@@ -644,6 +676,68 @@ function Tools({
           ) : (
             <Skills profile={profile} embedded onBrowse={onBrowseSkills} />
           )}
+        </div>
+      ) : activeTab === "templates" ? (
+        <div className="tools-pane" data-testid="writing-templates-pane">
+          <div className="tools-section">
+            <div className="tools-header tools-header-row">
+              <div className="tools-mcp-search">
+                <Search size={15} />
+                <input
+                  className="tools-mcp-search-input"
+                  type="text"
+                  placeholder={t("tools.writingTemplateSearch")}
+                  value={writingTemplateSearch}
+                  onChange={(event) =>
+                    setWritingTemplateSearch(event.target.value)
+                  }
+                />
+                {writingTemplateSearch && (
+                  <button
+                    type="button"
+                    className="tools-icon-btn"
+                    aria-label={t("tools.close")}
+                    onClick={() => setWritingTemplateSearch("")}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {filteredWritingTemplates.length === 0 && (
+              <div className="tools-empty">
+                <div className="tools-card-icon">
+                  <WritingTemplateIcon size={18} />
+                </div>
+                <div>
+                  <div className="tools-card-label">
+                    {t("tools.writingTemplateEmptyTitle")}
+                  </div>
+                  <div className="tools-card-description">
+                    {t("tools.writingTemplateEmptyDescription")}
+                  </div>
+                </div>
+              </div>
+            )}
+            {filteredWritingTemplates.length > 0 && (
+              <div className="tools-toolset-grid">
+                {filteredWritingTemplates.map((template) => (
+                  <div className="tools-toolset-row is-on" key={template.id}>
+                    <div className="tools-card-icon">
+                      <WritingTemplateIcon size={18} />
+                    </div>
+                    <div className="tools-toolset-info">
+                      <div className="tools-card-label">{template.name}</div>
+                      <div className="tools-card-description">
+                        {template.fileName} · {template.extension.toUpperCase()}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="tools-pane">

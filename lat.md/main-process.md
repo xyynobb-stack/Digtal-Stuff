@@ -56,11 +56,21 @@ Release builds keep a Help-menu Developer Tools toggle as a production diagnosti
 
 Windows offline builds stage Python and the Hermes Agent with the installer so employee machines do not need a separate runtime download.
 
-`scripts/prepare-offline-runtime.mjs` copies the tested Python installation and Hermes Agent (including its virtual environment) into `build/offline-runtime`; `electron-builder.yml` places that directory under `resources/hermes-runtime`. In packaged mode, [[src/main/installer.ts#bundledRuntimeRepo]] copies the staged files to Electron `userData`, repairs `pyvenv.cfg` to the relocated Python path, and makes the bundled repository the active runtime. Development installs retain the existing `%LOCALAPPDATA%\\hermes` discovery behavior.
+`scripts/prepare-offline-runtime.mjs` copies the tested Python installation and Hermes Agent (including its virtual environment) into `build/offline-runtime`; `electron-builder.yml` places that directory under `resources/hermes-runtime`. The staging script writes `desktop-runtime-build.json` with a unique build ID. In packaged mode, [[src/main/installer.ts#bundledRuntimeRepo]] compares that marker with the writable copy under Electron `userData`; a new or legacy unmarked package refreshes the complete managed Agent and Python trees before recording the marker. Treating all Python modules as one compatibility unit prevents a new `run_agent.py` from importing symbols from an older tool module. Same-build launches still repair a missing `venv`, runtime, or launcher, repair `pyvenv.cfg` for the relocated Python path, and use the bundled repository as the active runtime. Development installs retain the existing `%LOCALAPPDATA%\\hermes` discovery behavior.
 
 The internal test bundle also stages `EMPLOYEE_LOOKUP_ADMIN_TOKEN` from the builder's Hermes environment and installs it into the user's `.env` on first launch so phone provisioning works on a clean test machine. The same offline marker disables the GitHub auto-update check; this is intentional for test packages and should be removed before a security-hardened release.
 
-The offline runtime preparation also overlays the bundled browser navigation behavior: keyword input, blank/new-tab navigation, and Google/Bing/DuckDuckGo search URLs resolve to Baidu, while ordinary destination URLs remain unchanged. This keeps Chromium as the automation engine but makes Baidu the default search entry for the packaged Windows client. [[src/main/installer.ts#bundledRuntimeRepo]] refreshes this browser overlay on every packaged launch so reinstalling a same-version test build updates an existing per-user runtime.
+Offline builds also stage `resources/employee-default-soul.md`. On packaged startup, [[src/main/installer.ts#installBundledSoulRules]] appends that marked company rule to the user's `%LOCALAPPDATA%\\hermes\\SOUL.md` exactly once. This preserves user-written SOUL content while ensuring the bundled Windows runtime prefers Python's standard HTTP tools when Git Bash, curl, and wget are absent.
+
+The offline runtime preparation also overlays the bundled browser navigation behavior: keyword input, blank/new-tab navigation, and Google/Bing/DuckDuckGo search URLs resolve to Baidu, while ordinary destination URLs remain unchanged. This keeps Chromium as the automation engine but makes Baidu the default search entry for the packaged Windows client. [[src/main/installer.ts#bundledRuntimeRepo]] repairs the small managed browser and Agent-turn overlays on every launch; when the build marker changes, the complete runtime refresh keeps those overlays and their Python dependencies on the same revision.
+
+## Offline macOS package builds
+
+macOS packages use their own offline-runtime preparation path so an Apple device never receives Windows Python binaries.
+
+[[scripts/prepare-offline-runtime-mac.mjs]] runs only on a native macOS GitHub Actions runner. It copies the versioned Agent source without its Windows virtual environment, downloads the pinned standalone CPython release for that runner's architecture, creates a matching macOS virtual environment, installs the Agent dependencies, and stages the employee provisioning secret from the Actions secret store. [[electron-builder.mac.yml]] maps that output to the same `resources/hermes-runtime` destination used by [[src/main/installer.ts#bundledRuntimeRepo]], while retaining unsigned internal-test packaging.
+
+[[.github/workflows/build-macos.yml]] manually produces both Intel and Apple Silicon artifacts. It uses native x64 and arm64 macOS runners because the Python virtual environment and native extensions must be built for the architecture that will run them. The workflow uploads each `.dmg` and `.zip` as a 14-day artifact; Apple Developer signing and notarization remain deliberately outside this test workflow.
 
 ## IPC Registry
 
@@ -69,6 +79,14 @@ Renderer IPC handlers are isolated from app bootstrap so the registry can be spl
 [[src/main/ipc/register.ts#registerIpcHandlers]] currently preserves the existing handler behavior behind one registration function. It receives app-level callbacks for the main window, model-library notifications, connection-config notifications, external URL opening, and active chat abort handles.
 
 Wallet and token-balance handlers sit in the same registry: `list-wallets`, `create-wallet`, `import-wallet`, `rename-wallet`, `delete-wallet` (backed by [[wallet-token-balances#Wallet Store]]) and `get-token-balances` (backed by [[wallet-token-balances#Token Balances]]).
+
+## Local cron command execution
+
+Local scheduled-task actions invoke the managed Hermes CLI with the same runtime and profile data directories used by chat, including in offline Windows packages.
+
+[[src/main/cronjobs.ts#runCronCommand]] runs from `HERMES_REPO` rather than assuming the Agent lives below `HERMES_HOME`, explicitly passes the resolved `HERMES_HOME` and enhanced PATH, and preserves CLI stdout when stderr is empty. Ordinary management commands retain a short timeout; `cron run` has no desktop-imposed wall-clock timeout because it synchronously performs a full Agent task and the Python scheduler already owns inactivity detection.
+
+The schedule creation form requires one saved model and passes its model/provider pair through preload and IPC to [[src/main/cronjobs.ts#createCronJob]], which stores the pair with the job through Hermes CLI `--model` and `--provider` flags. Chat model changes therefore do not leave scheduled execution dependent on an empty global default. For legacy local or named-profile SSH jobs whose stored model is empty, [[src/main/cronjobs.ts#triggerCronJob]] first applies the currently selected model with `cron edit`, stops if that edit fails, and only then executes `cron run`.
 
 ## Voice transcription IPC
 

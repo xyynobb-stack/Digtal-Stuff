@@ -111,7 +111,7 @@ export function isLocalBaseUrl(url: string | null | undefined): boolean {
 export const OPENAI_COMPAT_PROVIDERS: ReadonlySet<string> = new Set([
   // Generic
   "custom",
-  // Hermes One's own gateway (OpenAI-compatible)
+  // JingYuAI's own gateway (OpenAI-compatible)
   "hermesone",
   // Local LLMs
   "lmstudio",

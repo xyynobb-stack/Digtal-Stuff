@@ -1,11 +1,6 @@
 ---
 name: computer-use
-description: |
-  Drive the user's desktop in the background — clicking, typing,
-  scrolling, dragging — without stealing the cursor, keyboard focus,
-  or switching virtual desktops / Spaces. Cross-platform: macOS,
-  Windows, Linux. Works with any tool-capable model. Load this skill
-  whenever the `computer_use` tool is available.
+description: 在后台驱动用户桌面，可点击、输入、滚动和拖拽，不抢占鼠标键盘焦点。
 version: 2.0.0
 platforms: [macos, windows, linux]
 metadata:

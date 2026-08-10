@@ -14,5 +14,5 @@ export default {
   startExited: "ゲートウェイは起動しましたが、準備完了前に停止しました。",
   checkLog: "ゲートウェイログを確認してください:",
   gatewayHint:
-    "Hermes を Telegram・Discord・Slack などのプラットフォームに接続します",
+    "JingYuAI を Telegram・Discord・Slack などのプラットフォームに接続します",
 } as const;

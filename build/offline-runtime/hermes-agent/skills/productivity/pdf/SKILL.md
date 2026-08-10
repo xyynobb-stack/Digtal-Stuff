@@ -1,6 +1,6 @@
 ---
 name: pdf
-description: "Create, merge, split, fill, and secure PDF files."
+description: 创建、合并、拆分、填写和保护 PDF 文件。
 version: 1.0.0
 author: Anthropic (adapted by Nous Research)
 license: Proprietary. LICENSE.txt has complete terms

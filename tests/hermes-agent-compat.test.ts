@@ -80,7 +80,7 @@ async def start_server(
     expect(result.source).toBe(source);
   });
 
-  it("installs the Hermes One configured model library endpoint when model REST exists", () => {
+  it("installs the JingYuAI configured model library endpoint when model REST exists", () => {
     const source = `
 @app.post("/api/model/set")
 async def set_model_assignment(body):

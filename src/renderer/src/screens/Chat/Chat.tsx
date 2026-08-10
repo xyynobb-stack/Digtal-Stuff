@@ -9,6 +9,8 @@ import { ReasoningEffortPicker } from "./ReasoningEffortPicker";
 import { ContextFolderChip } from "./ContextFolderChip";
 import { WorktreePanel } from "./WorktreePanel";
 import { RemoteFolderPicker } from "./RemoteFolderPicker";
+import { SessionSkillPicker } from "./SessionSkillPicker";
+import { SessionTemplatePicker } from "./SessionTemplatePicker";
 import { WebPreviewPanel } from "./WebPreviewPanel";
 import { useChatScroll } from "./hooks/useChatScroll";
 import { useChatIPC } from "./hooks/useChatIPC";
@@ -30,6 +32,7 @@ import { ConfigHealthBanner } from "../../components/ConfigHealthBanner";
 import FollowUsModal from "../../components/FollowUsModal";
 import type { Attachment } from "../../../../shared/attachments";
 import type { SessionModelOverride } from "../../../../shared/model-override";
+import type { WritingTemplate } from "../../../../shared/writing-templates";
 import type { ActiveTurn, ChatMessage, UsageState } from "./types";
 import type { ContextUsage } from "./ContextGauge";
 import { contextWindowForModel } from "./contextWindows";
@@ -140,6 +143,57 @@ function Chat({
   const [messages, setMessages] = useState<ChatMessage[]>(
     initialMessages ?? [],
   );
+  const sessionSkillStorageKey = useCallback(
+    (sessionId: string | null): string =>
+      `hermes.session-active-skills.${sessionId ?? runId}`,
+    [runId],
+  );
+  const readStoredSkills = (key: string): string[] => {
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
+      return Array.isArray(parsed)
+        ? [
+            ...new Set(
+              parsed.filter(
+                (value): value is string =>
+                  typeof value === "string" && value.trim().length > 0,
+              ),
+            ),
+          ]
+        : [];
+    } catch {
+      return [];
+    }
+  };
+  const [activeSkills, setActiveSkills] = useState<string[]>(() =>
+    readStoredSkills(sessionSkillStorageKey(initialSessionId ?? null)),
+  );
+  const sessionTemplateStorageKey = useCallback(
+    (sessionId: string | null): string =>
+      `hermes.session-writing-template.${sessionId ?? runId}`,
+    [runId],
+  );
+  const [activeWritingTemplate, setActiveWritingTemplate] =
+    useState<WritingTemplate | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void window.hermesAPI
+      .listWritingTemplates(profile)
+      .then((templates) => {
+        if (cancelled) return;
+        const key = sessionTemplateStorageKey(initialSessionId ?? null);
+        const storedId = localStorage.getItem(key);
+        setActiveWritingTemplate(
+          templates.find((template) => template.id === storedId) ?? null,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setActiveWritingTemplate(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, initialSessionId, sessionTemplateStorageKey]);
   const [isLoading, setIsLoading] = useState(false);
   useEffect(() => {
     onLoadingChange?.(runId, isLoading);
@@ -157,6 +211,36 @@ function Chat({
   const [hermesSessionId, setHermesSessionId] = useState<string | null>(
     initialSessionId ?? null,
   );
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        sessionSkillStorageKey(hermesSessionId ?? initialSessionId ?? null),
+        JSON.stringify(activeSkills),
+      );
+    } catch {
+      // Session skills still work for the current mounted chat if storage is
+      // unavailable (for example a restricted browser profile).
+    }
+  }, [activeSkills, hermesSessionId, initialSessionId, sessionSkillStorageKey]);
+  useEffect(() => {
+    try {
+      const key = sessionTemplateStorageKey(
+        hermesSessionId ?? initialSessionId ?? null,
+      );
+      if (activeWritingTemplate) {
+        localStorage.setItem(key, activeWritingTemplate.id);
+      } else {
+        localStorage.removeItem(key);
+      }
+    } catch {
+      // The current mounted chat still retains the selected template.
+    }
+  }, [
+    activeWritingTemplate,
+    hermesSessionId,
+    initialSessionId,
+    sessionTemplateStorageKey,
+  ]);
   // Surface the gateway session id upward whenever it resolves/changes.
   useEffect(() => {
     onSessionIdChange?.(runId, hermesSessionId);
@@ -571,6 +655,7 @@ function Chat({
     setMessages([]);
     setHermesSessionId(null);
     setContextFolder(null);
+    setActiveWritingTemplate(null);
     // Clearing the conversation reverts to the global default model — the
     // session-scoped pick belongs to the conversation being cleared (#688).
     setSessionModelOverride(undefined);
@@ -718,6 +803,8 @@ function Chat({
     onOpenSettings: onOpenDiagnose,
     activeTurnRef,
     contextFolder,
+    activeSkills,
+    activeWritingTemplate,
     sessionModel: sessionModelOverride,
     sendViaDashboard: dashboardTransport.enabled
       ? dashboardTransport.sendMessage
@@ -1068,6 +1155,11 @@ function Chat({
                 value={reasoningEffort}
                 onChange={setReasoningEffort}
               />
+              <SessionSkillPicker
+                profile={profile}
+                activeSkills={activeSkills}
+                onChange={setActiveSkills}
+              />
               <div className="chat-fast-wrapper">
                 <button
                   type="button"
@@ -1128,6 +1220,11 @@ function Chat({
               >
                 <Globe size={14} />
               </button>
+              <SessionTemplatePicker
+                profile={profile}
+                activeTemplate={activeWritingTemplate}
+                onChange={setActiveWritingTemplate}
+              />
             </>
           }
         />

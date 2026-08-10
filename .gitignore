@@ -32,6 +32,10 @@ pnpm-debug.log*
 release/
 .claude/worktrees
 
+# Generated from resources/employee-default-soul.md by the offline runtime
+# staging script. The source template, not this generated copy, is versioned.
+/build/offline-runtime/employee-default-soul.md
+
 # Tauri
 **/src-tauri/target/
 **/src-tauri/gen/

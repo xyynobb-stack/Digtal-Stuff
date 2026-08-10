@@ -1,7 +1,7 @@
 export default {
   title: "Profiller",
   subtitle:
-    "Her profil, kendi yapılandırması, belleği ve yetenekleriyle izole bir Hermes çalışma alanıdır",
+    "Her profil, kendi yapılandırması, belleği ve yetenekleriyle izole bir JingYuAI çalışma alanıdır",
   newAgent: "Yeni Ajan",
   namePlaceholder: "Ajan adı (örn. kodcu)",
   createTitle: "Yeni profil",
@@ -55,7 +55,7 @@ export default {
   walletCreateFailed: "Couldn't add wallet",
   walletRecoveryTitle: "Recovery phrase",
   walletRecoveryInfo:
-    "Save this phrase now. Hermes will not show it again after this modal closes.",
+    "Save this phrase now. JingYuAI will not show it again after this modal closes.",
   walletCopyRecovery: "Copy phrase",
   walletDone: "I've saved it",
   walletBalanceLoading: "Loading…",
@@ -63,6 +63,6 @@ export default {
   walletBalanceRefresh: "Refresh",
   walletDeleteTitle: "Remove wallet",
   walletDeleteWarning:
-    "This will permanently remove this wallet from Hermes. Make sure you have backed up the recovery phrase — you won't be able to recover the wallet without it.",
+    "This will permanently remove this wallet from JingYuAI. Make sure you have backed up the recovery phrase — you won't be able to recover the wallet without it.",
   walletDeleteConfirmLabel: "Remove wallet",
 } as const;

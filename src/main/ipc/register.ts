@@ -242,6 +242,13 @@ import {
   removeModelDefinition,
   type SavedModel,
 } from "../models";
+import {
+  filterModelsForEmployeeAccess,
+  normalizeEmployeeChatModels,
+  readEmployeeModelAccess,
+  writeEmployeeModelAccess,
+  type EmployeeAvailableModelPayload,
+} from "../employee-model-access";
 import { upsertAgentUserProvider } from "../agent-config-providers";
 import { validateChatReadiness } from "../validation";
 import {
@@ -303,11 +310,17 @@ import {
 } from "../registry";
 import {
   listInstalledSkills,
+  listUserAddedSkills,
   listBundledSkills,
   getSkillContent,
+  importLocalSkill,
   installSkill,
   uninstallSkill,
 } from "../skills";
+import {
+  importWritingTemplate,
+  listWritingTemplates,
+} from "../writing-templates";
 import {
   listCronJobs,
   createCronJob,
@@ -418,7 +431,7 @@ export interface IpcContext {
   openExternalUrl: (rawUrl: unknown) => void;
 }
 
-const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "Hermes One";
+const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "JingYuAI";
 
 type RemoteSessionBridgeConfig = RemoteSessionConfig;
 
@@ -439,7 +452,7 @@ async function getSshDashboardSessionConfig(
   const dash = await sshEnsureDashboard(conn.ssh, profile);
   if (!dash)
     throw new Error(
-      "Hermes dashboard is unavailable on this SSH remote (needs Node + the dashboard web dist).",
+      "JingYuAI dashboard is unavailable on this SSH remote (needs Node + the dashboard web dist).",
     );
   await ensureSshTunnel({ ...conn.ssh, remotePort: dash.port });
   const remoteUrl = getSshTunnelUrl();
@@ -752,7 +765,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         event.sender.send("install-progress", {
           step: 1,
           totalSteps: 1,
-          title: "Updating remote Hermes Agent",
+          title: "Updating remote JingYuAI Agent",
           detail: "Running hermes update over SSH...",
           log: "Running hermes update over SSH...\n",
         });
@@ -762,7 +775,7 @@ export function registerIpcHandlers(context: IpcContext): void {
           event.sender.send("install-progress", {
             step: 1,
             totalSteps: 1,
-            title: "Updating remote Hermes Agent",
+            title: "Updating remote JingYuAI Agent",
             detail: "Dashboard compatibility check needs attention.",
             log: `Dashboard compatibility warning: ${
               compat.error ? `${compat.detail}: ${compat.error}` : compat.detail
@@ -785,7 +798,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         event.sender.send("install-progress", {
           step: 1,
           totalSteps: 1,
-          title: "Updating Hermes Agent",
+          title: "Updating JingYuAI Agent",
           detail: "Dashboard compatibility check needs attention.",
           log: `Dashboard compatibility warning: ${
             compat.error ? `${compat.detail}: ${compat.error}` : compat.detail
@@ -880,7 +893,7 @@ export function registerIpcHandlers(context: IpcContext): void {
     clearAllAccounts();
     return { success: true };
   });
-  // Auto-provision a Hermes One Inference key from the signed-in account when
+  // Auto-provision a JingYuAI Inference key from the signed-in account when
   // the profile has none (idempotent — an existing key is never replaced, the
   // backend shows the raw key only once). Local mode only: the key is written
   // to the local profile `.env`, which remote/SSH chat doesn't read — issuing
@@ -894,7 +907,7 @@ export function registerIpcHandlers(context: IpcContext): void {
   // The signed-in account's AI-credit balance, shown on the account card.
   ipcMain.handle("hermesone-credits", () => fetchHermesOneCredits());
 
-  // Cloud agent sync — reconciles local profiles with the signed-in Hermes One
+  // Cloud agent sync — reconciles local profiles with the signed-in JingYuAI
   // account's cloud agents. `agent-sync-updated` tells the renderer to reload
   // its profile list (pull-created profiles appear without a manual refresh).
   ipcMain.handle("agent-sync-run", async (event) => {
@@ -991,35 +1004,71 @@ export function registerIpcHandlers(context: IpcContext): void {
     if (!/^1\d{10}$/.test(normalized)) throw new Error("请输入 11 位手机号。");
     const adminToken = (readEnv().EMPLOYEE_LOOKUP_ADMIN_TOKEN || "").trim();
     if (!adminToken) throw new Error("未配置 EMPLOYEE_LOOKUP_ADMIN_TOKEN。");
-    const response = await fetch("http://183.230.227.39:18600/api/admin/users/lookup-by-phone", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: normalized }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) throw new Error(`员工查询失败（HTTP ${response.status}）。`);
-    const employee = await response.json() as { api_key?: unknown; real_name?: unknown; available_models?: Array<{ name?: unknown; display_name?: unknown; api_formats?: unknown; config?: { context_limit?: unknown } }> };
-    const apiKey = typeof employee.api_key === "string" ? employee.api_key.trim() : "";
+    const response = await fetch(
+      "http://183.230.227.39:18600/api/admin/users/lookup-by-phone",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ phone: normalized }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!response.ok)
+      throw new Error(`员工查询失败（HTTP ${response.status}）。`);
+    const employee = (await response.json()) as {
+      api_key?: unknown;
+      real_name?: unknown;
+      available_models?: EmployeeAvailableModelPayload[];
+    };
+    const apiKey =
+      typeof employee.api_key === "string" ? employee.api_key.trim() : "";
     if (!apiKey) throw new Error("查询结果未包含员工 API Key。");
-    const available = (employee.available_models || []).filter((entry) => {
-      const formats = Array.isArray(entry.api_formats) ? entry.api_formats : [entry.api_formats];
-      return typeof entry.name === "string" && formats.some((format) => format === "openai:chat");
-    });
-    const model = available.some((m) => m.name === "Kimi-2.6") ? "Kimi-2.6" : String(available[0]?.name || "");
+    const available = normalizeEmployeeChatModels(employee.available_models);
+    const model = available.some((m) => m.model === "Kimi-2.6")
+      ? "Kimi-2.6"
+      : String(available[0]?.model || "");
     if (!model) throw new Error("该员工没有可用于聊天的 OpenAI 模型。");
     const baseUrl = "http://183.230.227.39:18600/v1";
     const envKey = "CUSTOM_PROVIDER_COMPANY_PLATFORM_KEY";
     setEnvValue(envKey, apiKey);
-    upsertAgentUserProvider(undefined, { name: "Company Platform", baseUrl, keyEnv: envKey });
+    upsertAgentUserProvider(undefined, {
+      name: "Company Platform",
+      baseUrl,
+      keyEnv: envKey,
+    });
     for (const entry of available) {
-      const name = String(entry.name);
-      const displayName = typeof entry.display_name === "string" ? entry.display_name : name;
-      const contextLimit = typeof entry.config?.context_limit === "number" ? entry.config.context_limit : undefined;
-      addModel(displayName, "custom", name, baseUrl, contextLimit, "Company Platform");
+      addModel(
+        entry.name,
+        "custom",
+        entry.model,
+        baseUrl,
+        entry.contextLength,
+        "Company Platform",
+      );
     }
+    // Persist the endpoint grant separately from models.json. The model library
+    // remains intact, but every renderer-facing local model list is restricted
+    // to the latest phone lookup response.
+    writeEmployeeModelAccess(
+      "custom",
+      baseUrl,
+      available.map((entry) => entry.model),
+    );
     setModelConfig("custom", model, baseUrl);
     if (isGatewayRunning()) restartGateway();
-    return { ok: true, name: typeof employee.real_name === "string" ? employee.real_name : "" };
+    return {
+      ok: true,
+      name: typeof employee.real_name === "string" ? employee.real_name : "",
+    };
+  });
+
+  ipcMain.handle("get-employee-model-access", () => {
+    const conn = getConnectionConfig();
+    const isLocal = conn.mode !== "remote" && conn.mode !== "ssh";
+    return { active: isLocal && readEmployeeModelAccess() !== null };
   });
 
   ipcMain.handle("get-config", (_event, key: string, profile?: string) => {
@@ -1791,7 +1840,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         success: false,
         running: false,
         error:
-          "Remote mode points at an already-running Hermes server. Start or restart the gateway on that remote host.",
+          "Remote mode points at an already-running JingYuAI server. Start or restart the gateway on that remote host.",
       };
     }
     return startGatewayDetailed();
@@ -2366,11 +2415,61 @@ export function registerIpcHandlers(context: IpcContext): void {
       return remoteListInstalledSkills(activeSshProfile(profile));
     return listInstalledSkills(profile);
   });
+  ipcMain.handle("list-user-added-skills", (_event, profile?: string) => {
+    const conn = getConnectionConfig();
+    // Local import is a desktop-managed capability. Remote installations do
+    // not expose the desktop marker metadata, so do not mislabel every remote
+    // bundled skill as employee-added.
+    if (conn.mode === "ssh" || conn.mode === "remote") return [];
+    return listUserAddedSkills(profile);
+  });
   ipcMain.handle("list-bundled-skills", () => {
     const conn = getConnectionConfig();
     if (conn.mode === "ssh" && conn.ssh) return sshListBundledSkills(conn.ssh);
     return listBundledSkills();
   });
+  ipcMain.handle("import-local-skill", async (_event, profile?: string) => {
+    const picked = await dialog.showOpenDialog({
+      title: "导入本地 SKILL",
+      properties: ["openFile"],
+      filters: [{ name: "JingYuAI SKILL", extensions: ["md"] }],
+    });
+    if (picked.canceled || !picked.filePaths[0]) {
+      return { success: false, canceled: true };
+    }
+    return importLocalSkill(picked.filePaths[0], profile);
+  });
+  ipcMain.handle("list-writing-templates", (_event, profile?: string) => {
+    const conn = getConnectionConfig();
+    if (conn.mode === "ssh" || conn.mode === "remote") return [];
+    return listWritingTemplates(profile);
+  });
+  ipcMain.handle(
+    "import-writing-template",
+    async (_event, profile?: string) => {
+      const conn = getConnectionConfig();
+      if (conn.mode === "ssh" || conn.mode === "remote") {
+        return {
+          success: false,
+          error: "当前仅支持从本机导入写作模板。",
+        };
+      }
+      const picked = await dialog.showOpenDialog({
+        title: "导入写作模板",
+        properties: ["openFile"],
+        filters: [
+          {
+            name: "写作模板",
+            extensions: ["doc", "docx", "md", "odt", "pdf", "rtf", "txt"],
+          },
+        ],
+      });
+      if (picked.canceled || !picked.filePaths[0]) {
+        return { success: false, canceled: true };
+      }
+      return importWritingTemplate(picked.filePaths[0], profile);
+    },
+  );
   ipcMain.handle("get-skill-content", (_event, skillPath: string) => {
     const conn = getConnectionConfig();
     if (conn.mode === "ssh" && conn.ssh)
@@ -2528,7 +2627,9 @@ export function registerIpcHandlers(context: IpcContext): void {
     }
     // Pass the active profile so terminal-added `custom_providers:` entries in
     // that profile's config.yaml are merged into the library on read.
-    return listModels(getActiveProfileNameSync());
+    return filterModelsForEmployeeAccess(
+      listModels(getActiveProfileNameSync()),
+    );
   });
   ipcMain.handle(
     "add-model",
@@ -2750,7 +2851,10 @@ export function registerIpcHandlers(context: IpcContext): void {
       name?: string,
       deliver?: string,
       profile?: string,
-    ) => createCronJob(schedule, prompt, name, deliver, profile),
+      model?: string,
+      provider?: string,
+    ) =>
+      createCronJob(schedule, prompt, name, deliver, profile, model, provider),
   );
   ipcMain.handle("remove-cron-job", (_event, jobId: string, profile?: string) =>
     removeCronJob(jobId, profile),
@@ -2763,7 +2867,13 @@ export function registerIpcHandlers(context: IpcContext): void {
   );
   ipcMain.handle(
     "trigger-cron-job",
-    (_event, jobId: string, profile?: string) => triggerCronJob(jobId, profile),
+    (
+      _event,
+      jobId: string,
+      profile?: string,
+      fallbackModel?: string,
+      fallbackProvider?: string,
+    ) => triggerCronJob(jobId, profile, fallbackModel, fallbackProvider),
   );
 
   // Kanban

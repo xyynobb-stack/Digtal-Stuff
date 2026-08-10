@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  dbItemsToChatMessages,
   reconcileAfterDbRefresh,
   reconcileStreamedWithDb,
 } from "../src/renderer/src/screens/Chat/sessionHistory";
@@ -173,6 +174,29 @@ const LIVE_TOOL_CALL = (
 });
 
 describe("reconcileStreamedWithDb", () => {
+  it("reconciles a persisted skill envelope with the one visible user bubble", () => {
+    const streamed = [STREAMED_USER("你好", "user-visible")];
+    const db = dbItemsToChatMessages([
+      {
+        kind: "user",
+        id: 91,
+        content:
+          "[Active session skills: ]\n" +
+          "Only the listed skills are available to this chat. Load and follow each listed skill with the skill_view tool before answering. An empty list means no skills are available.\n\n" +
+          "[User message]\n你好",
+      },
+    ]);
+
+    const merged = reconcileStreamedWithDb(streamed, db);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: "user-visible",
+      role: "user",
+      content: "你好",
+    });
+  });
+
   it("today: gateway doesn't stream reasoning — merge inserts reasoning from DB", () => {
     // Streamed transcript: user msg + assistant content (no reasoning).
     const streamed: ChatMessage[] = [

@@ -1,6 +1,7 @@
 export default {
   title: "Memória",
-  subtitle: "O que o Hermes se lembra sobre si e o seu ambiente entre sessões.",
+  subtitle:
+    "O que o JingYuAI se lembra sobre si e o seu ambiente entre sessões.",
   sessions: "Sessões",
   messages: "Mensagens",
   memories: "Memórias",
@@ -19,15 +20,15 @@ export default {
   noProvidersFound: "Nenhum fornecedor de memória encontrado nesta instalação.",
   openProviderWebsite: "Abrir site do fornecedor",
   noMemoriesYet:
-    "Ainda sem memórias. O Hermes guardará factos importantes à medida que conversam.",
+    "Ainda sem memórias. O JingYuAI guardará factos importantes à medida que conversam.",
   noMemoryEntries: "Ainda sem entradas de memória.",
   noToolsetsFound: "Nenhum conjunto de ferramentas encontrado.",
   addManuallyHint:
     "Também pode adicionar memórias manualmente usando o botão acima.",
   userProfileHint:
-    "Fale ao Hermes sobre si — nome, cargo, preferências, estilo de comunicação.",
+    "Fale ao JingYuAI sobre si — nome, cargo, preferências, estilo de comunicação.",
   providersHint:
-    "Fornecedores de memória modular dão ao Hermes uma memória de longo prazo avançada. A memória integrada (acima) está sempre activa em conjunto com o fornecedor seleccionado.",
+    "Fornecedores de memória modular dão ao JingYuAI uma memória de longo prazo avançada. A memória integrada (acima) está sempre activa em conjunto com o fornecedor seleccionado.",
   providersHintActive: "Activo: <strong>{{provider}}</strong>",
   providersHintInactive:
     "Nenhum fornecedor externo activo — a usar apenas a integrada.",

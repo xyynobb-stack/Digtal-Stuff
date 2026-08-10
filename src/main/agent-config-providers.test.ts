@@ -133,7 +133,7 @@ describe("agent-config providers (config.yaml bridge)", () => {
     );
     const m = await mod();
     m.upsertAgentUserProvider("default", {
-      name: "Hermes One",
+      name: "JingYuAI",
       slug: "hermesone",
       baseUrl: "https://inference.hermesone.org/v1",
       keyEnv: "HERMESONE_API_KEY",
@@ -145,7 +145,7 @@ describe("agent-config providers (config.yaml bridge)", () => {
     expect(m.listAgentUserProviders("default")).toEqual([
       {
         slug: "hermesone",
-        name: "Hermes One",
+        name: "JingYuAI",
         baseUrl: "https://inference.hermesone.org/v1",
         keyEnv: "HERMESONE_API_KEY",
       },
@@ -160,7 +160,7 @@ describe("agent-config providers (config.yaml bridge)", () => {
     writeConfig(before);
     const m = await mod();
     m.upsertAgentUserProvider("default", {
-      name: "Hermes One",
+      name: "JingYuAI",
       baseUrl: "https://inference.hermesone.org/v1",
       keyEnv: "HERMESONE_API_KEY",
     });

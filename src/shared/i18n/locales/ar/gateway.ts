@@ -12,8 +12,8 @@ export default {
   stopFailed: "تعذر إيقاف البوابة.",
   startExited: "تم بدء تشغيل البوابة، لكنها توقفت مرة أخرى قبل أن تصبح جاهزة.",
   checkLog: "تفقّد سجل البوابة:",
-  gatewayHint: "يربط Hermes بـ Telegram و Discord و Slack ومنصات أخرى",
-  subtitle: "إدارة منصات المراسلة التي يمكن لوكيل Hermes الاتصال بها.",
+  gatewayHint: "يربط JingYuAI بـ Telegram و Discord و Slack ومنصات أخرى",
+  subtitle: "إدارة منصات المراسلة التي يمكن لوكيل JingYuAI الاتصال بها.",
   refreshTooltip: "تحديث حالة المنصة",
   refresh: "تحديث",
   configHint:

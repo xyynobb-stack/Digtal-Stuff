@@ -14,7 +14,7 @@ import { HERMES_HOME, HERMES_REPO } from "./installer";
 import { sshExec } from "./ssh-remote";
 
 export const HERMES_AGENT_COMPAT_VERSION =
-  "2026-06-11.dashboard-chat-model-library.v2";
+  "2026-08-07.dashboard-live-model-sync.v3";
 
 export interface HermesAgentCompatResult {
   ok: boolean;
@@ -50,12 +50,36 @@ const MODEL_LIBRARY_COMPAT_START =
 const MODEL_LIBRARY_COMPAT_END =
   "# --- /HERMES_ONE_MODEL_LIBRARY_COMPAT_V1 ------------------------------------";
 const DASHBOARD_SPA_MOUNT_ANCHOR = "mount_spa(app)";
+const SLASH_MODEL_SYNC_MARKER =
+  "A slash worker can therefore report a successful /model switch";
+const LAZY_MODEL_MIRROR_BLOCK_RE =
+  /        if name == "model" and arg and agent:\r?\n            result = _apply_model_switch\(sid, session, arg\)\r?\n            return result\.get\("warning", ""\)/;
+const READY_MODEL_MIRROR_BLOCK = `        if name == "model" and arg:
+            # session.create returns before the deferred AIAgent build finishes.
+            # A slash worker can therefore report a successful /model switch
+            # while there is no live gateway agent to mirror it to. Build and
+            # wait here so the command cannot become a silent no-op on a cold
+            # install or slower machine.
+            if agent is None:
+                _start_agent_build(sid, session)
+                init_error = _wait_agent(session, f"__slash_model_sync__{sid}")
+                if init_error:
+                    message = str(
+                        (init_error.get("error") or {}).get("message")
+                        or "agent initialization failed"
+                    )
+                    return f"live session sync failed: {message}"
+                agent = session.get("agent")
+            if agent is None:
+                return "live session sync failed: agent initialization failed"
+            result = _apply_model_switch(sid, session, arg)
+            return result.get("warning", "")`;
 
 const MODEL_LIBRARY_COMPAT_SOURCE = `
 
 # --- HERMES_ONE_MODEL_LIBRARY_COMPAT_V1 -------------------------------------
-# Compatibility endpoint installed by Hermes One. Upstream Hermes Agent exposes
-# /api/model/options and /api/model/set, but Hermes One also needs a small
+# Compatibility endpoint installed by JingYuAI. Upstream JingYuAI Agent exposes
+# /api/model/options and /api/model/set, but JingYuAI also needs a small
 # configured-model shortcut library for remote/SSH model pickers. The library is
 # deliberately stored in this agent's HERMES_HOME so remote shortcuts stay on
 # the remote host and survive desktop restarts without changing upstream model
@@ -254,7 +278,8 @@ export function patchDashboardEmbeddedChatSource(
       compatible: true,
       changed: false,
       source,
-      detail: "Dashboard embedded chat is always enabled by this Hermes Agent.",
+      detail:
+        "Dashboard embedded chat is always enabled by this JingYuAI Agent.",
     };
   }
 
@@ -273,7 +298,7 @@ export function patchDashboardEmbeddedChatSource(
       changed: false,
       source,
       detail:
-        "Could not find the Hermes Agent embedded_chat default in web_server.py.",
+        "Could not find the JingYuAI Agent embedded_chat default in web_server.py.",
     };
   }
 
@@ -281,7 +306,7 @@ export function patchDashboardEmbeddedChatSource(
     compatible: true,
     changed: true,
     source: source.replace(EMBEDDED_CHAT_FALSE_RE, "$1True"),
-    detail: "Patched Hermes Agent dashboard embedded_chat default to True.",
+    detail: "Patched JingYuAI Agent dashboard embedded_chat default to True.",
   };
 }
 
@@ -295,7 +320,7 @@ export function patchDashboardModelLibrarySource(
       changed: false,
       source,
       detail:
-        "Could not find Hermes Agent model REST endpoints in web_server.py.",
+        "Could not find JingYuAI Agent model REST endpoints in web_server.py.",
     };
   }
 
@@ -305,7 +330,7 @@ export function patchDashboardModelLibrarySource(
       compatible: true,
       changed: false,
       source,
-      detail: "Hermes One model library endpoint is already installed.",
+      detail: "JingYuAI model library endpoint is already installed.",
     };
   }
 
@@ -314,8 +339,42 @@ export function patchDashboardModelLibrarySource(
     changed: true,
     source: patched,
     detail: withoutExisting.removed
-      ? "Moved Hermes One model library endpoint before the dashboard catch-all route."
-      : "Installed Hermes One model library endpoint.",
+      ? "Moved JingYuAI model library endpoint before the dashboard catch-all route."
+      : "Installed JingYuAI model library endpoint.",
+  };
+}
+
+export function patchDashboardSlashModelSyncSource(
+  source: string,
+): DashboardSourcePatchResult {
+  if (source.includes(SLASH_MODEL_SYNC_MARKER)) {
+    return {
+      compatible: true,
+      changed: false,
+      source,
+      detail: "Dashboard live-session model sync is already installed.",
+    };
+  }
+
+  if (!LAZY_MODEL_MIRROR_BLOCK_RE.test(source)) {
+    return {
+      compatible: false,
+      changed: false,
+      source,
+      detail:
+        "Could not find the dashboard slash-worker model mirror in tui_gateway/server.py.",
+    };
+  }
+
+  const newline = source.includes("\r\n") ? "\r\n" : "\n";
+  const replacement = READY_MODEL_MIRROR_BLOCK.replace(/\n/g, newline);
+
+  return {
+    compatible: true,
+    changed: true,
+    source: source.replace(LAZY_MODEL_MIRROR_BLOCK_RE, replacement),
+    detail:
+      "Installed dashboard live-session model synchronization for /model.",
   };
 }
 
@@ -398,6 +457,7 @@ export function writeCompatFileAtomically(path: string, source: string): void {
 
 export function ensureLocalDashboardCompatibility(): HermesAgentCompatResult {
   const path = join(HERMES_REPO, "hermes_cli", "web_server.py");
+  const gatewayPath = join(HERMES_REPO, "tui_gateway", "server.py");
   try {
     const source = readFileSync(path, "utf-8");
     const patched = patchDashboardCompatibilitySource(source);
@@ -419,13 +479,32 @@ export function ensureLocalDashboardCompatibility(): HermesAgentCompatResult {
       writeCompatFileAtomically(path, patched.source);
     }
 
+    const gatewaySource = readFileSync(gatewayPath, "utf-8");
+    const gatewayPatched = patchDashboardSlashModelSyncSource(gatewaySource);
+    if (!gatewayPatched.compatible) {
+      const result: HermesAgentCompatResult = {
+        ok: false,
+        target: "local",
+        compatible: false,
+        applied: patched.changed,
+        version: HERMES_AGENT_COMPAT_VERSION,
+        detail: `${patched.detail} ${gatewayPatched.detail}`,
+        path: gatewayPath,
+      };
+      writeLocalMarker(result);
+      return result;
+    }
+    if (gatewayPatched.changed) {
+      writeCompatFileAtomically(gatewayPath, gatewayPatched.source);
+    }
+
     const result: HermesAgentCompatResult = {
       ok: true,
       target: "local",
       compatible: true,
-      applied: patched.changed,
+      applied: patched.changed || gatewayPatched.changed,
       version: HERMES_AGENT_COMPAT_VERSION,
-      detail: patched.detail,
+      detail: `${patched.detail} ${gatewayPatched.detail}`,
       path,
     };
     writeLocalMarker(result);
@@ -437,7 +516,7 @@ export function ensureLocalDashboardCompatibility(): HermesAgentCompatResult {
       compatible: false,
       applied: false,
       version: HERMES_AGENT_COMPAT_VERSION,
-      detail: "Could not inspect local Hermes Agent dashboard source.",
+      detail: "Could not inspect local JingYuAI Agent dashboard source.",
       path,
       error: err instanceof Error ? err.message : String(err),
     };
@@ -489,7 +568,7 @@ if not path:
         "compatible": False,
         "applied": False,
         "version": version,
-        "detail": "Could not find Hermes Agent hermes_cli/web_server.py on the SSH host.",
+        "detail": "Could not find JingYuAI Agent hermes_cli/web_server.py on the SSH host.",
     }))
     sys.exit(0)
 with open(path, "r", encoding="utf-8") as f:
@@ -520,7 +599,7 @@ def insert_model_library_compat_block(text):
     return text.rstrip() + "\n" + block + "\n"
 if re.search(r"\b_DASHBOARD_EMBEDDED_CHAT_ENABLED\s*=\s*True\b", source):
     compatible = True
-    details.append("Dashboard embedded chat is always enabled by this Hermes Agent.")
+    details.append("Dashboard embedded chat is always enabled by this JingYuAI Agent.")
 elif re.search(r"\bembedded_chat\s*:\s*bool\s*=\s*True\b", source):
     compatible = True
     details.append("Dashboard embedded chat is already enabled by default.")
@@ -528,10 +607,10 @@ elif re.search(r"(\bembedded_chat\s*:\s*bool\s*=\s*)False\b", source):
     source = re.sub(r"(\bembedded_chat\s*:\s*bool\s*=\s*)False\b", r"\1True", source, count=1)
     changed = True
     compatible = True
-    details.append("Patched Hermes Agent dashboard embedded_chat default to True.")
+    details.append("Patched JingYuAI Agent dashboard embedded_chat default to True.")
 else:
     compatible = False
-    details.append("Could not find the Hermes Agent embedded_chat default in web_server.py.")
+    details.append("Could not find the JingYuAI Agent embedded_chat default in web_server.py.")
 if compatible:
     original_source = source
     source_without_model_library, removed_model_library = remove_model_library_compat_block(source)
@@ -540,14 +619,14 @@ if compatible:
         if source != original_source:
             changed = True
             if removed_model_library:
-                details.append("Moved Hermes One model library endpoint before the dashboard catch-all route.")
+                details.append("Moved JingYuAI model library endpoint before the dashboard catch-all route.")
             else:
-                details.append("Installed Hermes One model library endpoint.")
+                details.append("Installed JingYuAI model library endpoint.")
         else:
-            details.append("Hermes One model library endpoint is already installed.")
+            details.append("JingYuAI model library endpoint is already installed.")
     else:
         compatible = False
-        details.append("Could not find Hermes Agent model REST endpoints in web_server.py.")
+        details.append("Could not find JingYuAI Agent model REST endpoints in web_server.py.")
 if changed and compatible:
     backup_path = path + ".orig"
     tmp_path = path + ".hermes-one-%s.tmp" % os.getpid()
@@ -601,7 +680,7 @@ print(json.dumps({
       compatible: false,
       applied: false,
       version: HERMES_AGENT_COMPAT_VERSION,
-      detail: "Could not apply Hermes Agent compatibility patch over SSH.",
+      detail: "Could not apply JingYuAI Agent compatibility patch over SSH.",
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -615,6 +694,6 @@ export function remoteHttpCompatibilityResult(): HermesAgentCompatResult {
     applied: false,
     version: HERMES_AGENT_COMPAT_VERSION,
     detail:
-      "Plain remote HTTP can be probed but not patched by Hermes One. Use SSH mode for deployable compatibility fixes or update the remote Hermes Agent directly.",
+      "Plain remote HTTP can be probed but not patched by JingYuAI. Use SSH mode for deployable compatibility fixes or update the remote JingYuAI Agent directly.",
   };
 }

@@ -1,6 +1,6 @@
 ---
 name: github-auth
-description: "GitHub auth setup: HTTPS tokens, SSH keys, gh CLI login."
+description: 配置 GitHub 身份验证，包括 HTTPS Token、SSH 密钥和 gh CLI 登录。
 version: 1.1.0
 author: Hermes Agent
 license: MIT

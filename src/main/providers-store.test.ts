@@ -183,14 +183,14 @@ describe("providers store", () => {
   });
 
   // @lat: [[provider-setup#Provider setup#Agent config sync for named providers#First-party brands mirror as user providers]]
-  it("mirrors a keyed Hermes One into config.yaml providers: without a custom card", async () => {
+  it("mirrors a keyed JingYuAI into config.yaml providers: without a custom card", async () => {
     const { writeFileSync } = await import("fs");
     writeFileSync(
       join(mockState.hermesHome, ".env"),
       "HERMESONE_API_KEY=hs-live-abc\n",
     );
     const s = await store();
-    // No custom-provider card — Hermes One owns a dedicated brand card.
+    // No custom-provider card — JingYuAI owns a dedicated brand card.
     expect(s.listCustomProviders("default")).toEqual([]);
     const config = readFileSync(
       join(mockState.hermesHome, "config.yaml"),
@@ -201,7 +201,7 @@ describe("providers store", () => {
     expect(config).toContain('key_env: "HERMESONE_API_KEY"');
   });
 
-  it("does not create a providers: entry without a Hermes One key", async () => {
+  it("does not create a providers: entry without a JingYuAI key", async () => {
     const s = await store();
     s.listCustomProviders("default");
     expect(existsSync(join(mockState.hermesHome, "config.yaml"))).toBe(false);

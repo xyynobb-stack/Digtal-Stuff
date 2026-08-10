@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "../useI18n";
 import BrandLogo from "../common/BrandLogo";
-import hermesIcon from "../../assets/hermes-icon.svg";
+import jingyuaiIcon from "../../assets/jingyuai-icon.png";
 import pythonLogo from "../../assets/logos/python.svg";
 import openaiLogo from "../../assets/logos/openai.svg";
 import { ConfigHealth } from "../../screens/Settings/ConfigHealth";
@@ -59,7 +59,7 @@ export default function AboutPane(): React.JSX.Element {
     <div className="settings-modal-pane">
       <ConfigHealth />
 
-      {/* ── Hermes Agent (engine) ─────────────────────────────── */}
+      {/* ── JingYuAI Agent (engine) ───────────────────────────── */}
       <section className="settings-card">
         <header className="settings-card-head">
           <span className="settings-card-icon">
@@ -197,15 +197,15 @@ export default function AboutPane(): React.JSX.Element {
         </div>
       </section>
 
-      {/* ── Hermes Desktop (this app) ─────────────────────────── */}
+      {/* ── JingYuAI Desktop (this app) ───────────────────────── */}
       <section className="settings-card">
         <header className="settings-card-head">
           <span className="settings-card-icon">
             <img
-              src={hermesIcon}
+              src={jingyuaiIcon}
               width={20}
               height={20}
-              className="brand-logo brand-logo--match-theme"
+              className="brand-logo"
               alt={t("settings.desktopTitle")}
             />
           </span>

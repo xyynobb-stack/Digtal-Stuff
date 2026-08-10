@@ -19,7 +19,7 @@ export default {
 
   // Remote-mode unsupported notice
   remoteUnsupportedTitle:
-    "Kanban requires a local Hermes install or SSH tunnel mode.",
+    "Kanban requires a local JingYuAI install or SSH tunnel mode.",
   remoteUnsupportedHint:
     "Plain remote (HTTP + API key) mode does not yet expose the kanban API. Switch to local or SSH tunnel mode in Settings to manage the board.",
 

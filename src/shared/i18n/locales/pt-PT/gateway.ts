@@ -13,5 +13,6 @@ export default {
   stopFailed: "Não foi possível parar o gateway.",
   startExited: "O gateway foi iniciado, mas parou antes de ficar pronto.",
   checkLog: "Verifique o registo do gateway:",
-  gatewayHint: "Liga o Hermes ao Telegram, Discord, Slack e outras plataformas",
+  gatewayHint:
+    "Liga o JingYuAI ao Telegram, Discord, Slack e outras plataformas",
 } as const;

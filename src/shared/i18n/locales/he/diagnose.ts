@@ -18,7 +18,7 @@ export default {
   apiKeyModal: {
     title: "הגדרת מפתח שרת API",
     description:
-      "‏API_SERVER_KEY נדרש כדי ששער ה-Hermes יוכל לאמת בקשות. הגדירו אותו עכשיו כדי לאפשר צ'אט.",
+      "‏API_SERVER_KEY נדרש כדי ששער ה-JingYuAI יוכל לאמת בקשות. הגדירו אותו עכשיו כדי לאפשר צ'אט.",
     label: "מפתח שרת API",
     placeholder: "‏sk-… או כל סוד אחר",
     autoGenerate: "יצירה אוטומטית",

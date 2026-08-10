@@ -103,6 +103,60 @@ _SKILLS_CACHE_TTL_SECONDS = 30.0
 _SKILLS_CACHE_KEY_DISABLED = "with_disabled"
 _SKILLS_CACHE_KEY_FILTERED = "filtered"
 
+# Desktop chat selections are enforced per task. This never changes the
+# globally installed library or leaks a selection into a separate chat.
+_TASK_SKILL_ALLOWLIST: dict[str, set[str]] = {}
+_TASK_SKILL_ALLOWLIST_LOCK = threading.Lock()
+_USER_ADDED_SKILL_MARKER = ".hermes-desktop-user-added"
+
+
+def set_task_skill_allowlist(task_id: str, names: List[str]) -> None:
+    if not task_id:
+        return
+    with _TASK_SKILL_ALLOWLIST_LOCK:
+        _TASK_SKILL_ALLOWLIST[task_id] = {
+            name.strip() for name in names if isinstance(name, str) and name.strip()
+        }
+
+
+def clear_task_skill_allowlist(task_id: str) -> None:
+    if task_id:
+        with _TASK_SKILL_ALLOWLIST_LOCK:
+            _TASK_SKILL_ALLOWLIST.pop(task_id, None)
+
+
+def _is_user_added_custom_skill(skill_path: Optional[Path]) -> bool:
+    if skill_path is None:
+        return False
+    category = _get_category_from_path(skill_path)
+    return (
+        (category or "").lower() == "custom"
+        or (skill_path.parent / _USER_ADDED_SKILL_MARKER).exists()
+    )
+
+
+def _task_allows_skill(
+    task_id: Optional[str], name: str, skill_path: Optional[Path] = None
+) -> bool:
+    if not _is_user_added_custom_skill(skill_path):
+        return True
+    if not task_id:
+        return True
+    with _TASK_SKILL_ALLOWLIST_LOCK:
+        allowed = _TASK_SKILL_ALLOWLIST.get(task_id)
+    if allowed is None:
+        return True
+    candidates = {name, name.rsplit("/", 1)[-1], name.rsplit(":", 1)[-1]}
+    return bool(candidates & allowed)
+
+
+def _task_allowlist_cache_key(task_id: Optional[str]) -> Optional[tuple[str, ...]]:
+    if not task_id:
+        return None
+    with _TASK_SKILL_ALLOWLIST_LOCK:
+        allowed = _TASK_SKILL_ALLOWLIST.get(task_id)
+    return tuple(sorted(allowed)) if allowed is not None else None
+
 
 def _skills_scan_signature(dirs_to_scan, disabled) -> tuple:
     """Cheap change-signature for the skill scan inputs.
@@ -667,7 +721,9 @@ def _is_skill_disabled(name: str, platform: str = None) -> bool:
         return False
 
 
-def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
+def _find_all_skills(
+    *, skip_disabled: bool = False, task_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """Recursively find all skills in ~/.hermes/skills/ and external dirs.
 
     Args:
@@ -684,7 +740,10 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
     """
     from agent.skill_utils import get_external_skills_dirs, iter_skill_index_files
 
-    cache_key = _SKILLS_CACHE_KEY_DISABLED if skip_disabled else _SKILLS_CACHE_KEY_FILTERED
+    cache_key = (
+        _SKILLS_CACHE_KEY_DISABLED if skip_disabled else _SKILLS_CACHE_KEY_FILTERED,
+        _task_allowlist_cache_key(task_id),
+    )
 
     # Load disabled set once (not per-skill). Part of the cache signature:
     # disabling a skill is a config change with no filesystem mtime bump.
@@ -740,6 +799,9 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
                     continue
                 if name in disabled:
                     continue
+                category = _get_category_from_path(skill_md)
+                if not _task_allows_skill(task_id, name, skill_md):
+                    continue
 
                 description = frontmatter.get("description", "")
                 if not description:
@@ -751,8 +813,6 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
 
                 if len(description) > MAX_DESCRIPTION_LENGTH:
                     description = description[:MAX_DESCRIPTION_LENGTH - 3] + "..."
-
-                category = _get_category_from_path(skill_md)
 
                 seen_names.add(name)
                 skills.append({
@@ -812,7 +872,7 @@ def skills_list(category: str = None, task_id: str = None) -> str:
             )
 
         # Find all skills
-        all_skills = _find_all_skills()
+        all_skills = _find_all_skills(task_id=task_id)
 
         if not all_skills:
             return json.dumps(
@@ -1215,6 +1275,16 @@ def skill_view(
                     "error": f"Skill '{name}' not found.",
                     "available_skills": available,
                     "hint": "Use skills_list to see all available skills",
+                },
+                ensure_ascii=False,
+            )
+
+        if not _task_allows_skill(task_id, name, skill_md):
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": f"Custom skill '{name}' is not enabled for this chat.",
+                    "hint": "Use the desktop SKILL button to enable it for this chat.",
                 },
                 ensure_ascii=False,
             )

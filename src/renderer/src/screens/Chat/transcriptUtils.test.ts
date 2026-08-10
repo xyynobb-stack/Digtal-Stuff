@@ -17,7 +17,7 @@ describe("buildChatTranscript (issue #298)", () => {
       [msg("user", "hi"), msg("agent", "hello there")],
       "text",
     );
-    expect(out).toBe("You: hi\n\nHermes: hello there");
+    expect(out).toBe("You: hi\n\nJingYuAI: hello there");
   });
 
   it("formats markdown with bold speaker headers", () => {
@@ -25,7 +25,7 @@ describe("buildChatTranscript (issue #298)", () => {
       [msg("user", "hi"), msg("agent", "hello there")],
       "markdown",
     );
-    expect(out).toBe("**You:**\n\nhi\n\n**Hermes:**\n\nhello there");
+    expect(out).toBe("**You:**\n\nhi\n\n**JingYuAI:**\n\nhello there");
   });
 
   it("trims surrounding whitespace from message content", () => {
@@ -34,8 +34,8 @@ describe("buildChatTranscript (issue #298)", () => {
     );
   });
 
-  it("maps the agent role to Hermes and user to You", () => {
-    expect(buildChatTranscript([msg("agent", "x")], "text")).toBe("Hermes: x");
+  it("maps the agent role to JingYuAI and user to You", () => {
+    expect(buildChatTranscript([msg("agent", "x")], "text")).toBe("JingYuAI: x");
     expect(buildChatTranscript([msg("user", "x")], "text")).toBe("You: x");
   });
 });

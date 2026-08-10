@@ -67,7 +67,7 @@ describe("I18nProvider", () => {
     });
 
     expect(
-      await screen.findByText("Welcome to Hermes One"),
+      await screen.findByText("Welcome to JingYuAI"),
     ).toBeInTheDocument();
   });
 
@@ -85,7 +85,7 @@ describe("I18nProvider", () => {
     });
 
     expect(setLocale).toHaveBeenLastCalledWith("es");
-    expect(await screen.findByText("Bienvenido a Hermes")).toBeInTheDocument();
+    expect(await screen.findByText("Bienvenido a JingYuAI")).toBeInTheDocument();
   });
 
   it("does not overwrite the main-process locale with the startup fallback", async () => {
@@ -111,6 +111,6 @@ describe("I18nProvider", () => {
     });
 
     expect(setLocale).toHaveBeenLastCalledWith("es");
-    expect(await screen.findByText("Bienvenido a Hermes")).toBeInTheDocument();
+    expect(await screen.findByText("Bienvenido a JingYuAI")).toBeInTheDocument();
   });
 });

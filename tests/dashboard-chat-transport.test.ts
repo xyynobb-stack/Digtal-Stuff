@@ -231,7 +231,7 @@ describe("dashboardModelMatches", () => {
     ).toBe(true);
   });
 
-  it("accepts Hermes Agent custom provider slugs for Hermes One custom rows", () => {
+  it("accepts Hermes Agent custom provider slugs for JingYuAI custom rows", () => {
     expect(
       dashboardModelMatches("custom", "deepseek-v4-pro", {
         provider: "custom:deepseek-v4-pro",
@@ -628,7 +628,7 @@ describe("resolveDashboardProviderForModel", () => {
     ).toBe("custom");
   });
 
-  it("maps Hermes One custom rows on known built-in endpoints to dashboard built-in providers", () => {
+  it("maps JingYuAI custom rows on known built-in endpoints to dashboard built-in providers", () => {
     expect(
       resolveDashboardProviderForModel(
         "custom",
@@ -670,7 +670,7 @@ describe("resolveDashboardProviderForModel", () => {
 
   // Regression: `/model hermesone-swift --provider custom` let the agent bind
   // "custom" to the session's *current* base URL — a session sitting on Nous
-  // sent the Hermes One model to the Nous proxy (404 "not in our configuration
+  // sent the JingYuAI model to the Nous proxy (404 "not in our configuration
   // or OpenRouter catalog"). A named user-provider row on the same endpoint
   // (the mirrored config.yaml `providers: hermesone:` entry) must win.
   it("resolves custom rows to a named user provider on the same endpoint", () => {
@@ -690,7 +690,7 @@ describe("resolveDashboardProviderForModel", () => {
             },
             {
               slug: "hermesone",
-              name: "Hermes One",
+              name: "JingYuAI",
               api_url: "https://inference.hermesone.org/v1/",
               models: [],
             },
@@ -700,7 +700,7 @@ describe("resolveDashboardProviderForModel", () => {
     ).toBe("hermesone");
   });
 
-  it("resolves Hermes One custom rows to dashboard custom provider slugs by base URL", () => {
+  it("resolves JingYuAI custom rows to dashboard custom provider slugs by base URL", () => {
     expect(
       resolveDashboardProviderForModel(
         "custom",

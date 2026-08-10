@@ -876,15 +876,16 @@ body:has(.shell-vibrant),
   );
 }
 
-.onboard-emblem svg {
+.onboard-emblem img {
   position: relative;
   width: 84px;
   height: 84px;
-  fill: #f2f4fa;
+  object-fit: cover;
+  border-radius: 18px;
   filter: drop-shadow(0 4px 22px rgba(120, 150, 255, 0.35));
 }
 
-/* ---- Flying / intro logo (big centre → draws → flies to the slot) ---- */
+/* ---- Flying / intro logo (big centre → flies to the slot) ---- */
 .onboard-fly {
   position: fixed;
   left: 50%;
@@ -917,49 +918,14 @@ body:has(.shell-vibrant),
     onboardBreath 3.2s ease 2s infinite;
 }
 
-.onboard-fly svg {
+.onboard-fly img {
   position: relative;
   width: 100%;
   height: 100%;
-  overflow: visible;
+  object-fit: cover;
+  border-radius: 34px;
   filter: drop-shadow(0 0 26px rgba(130, 160, 255, 0.35));
-}
-
-.onboard-fly path {
-  fill: #f2f4fa;
-  fill-opacity: 0;
-  stroke: #dfe6ff;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
-}
-
-.onboard-fp1 {
-  stroke-width: 13;
-  animation:
-    onboardDraw 1.05s cubic-bezier(0.4, 0, 0.2, 1) 0.3s both,
-    onboardFill 0.7s ease 1.15s both,
-    onboardStrokeOut 0.5s ease 1.5s both;
-}
-.onboard-fp2 {
-  stroke-width: 13;
-  animation:
-    onboardDraw 1.05s cubic-bezier(0.4, 0, 0.2, 1) 0.45s both,
-    onboardFill 0.7s ease 1.25s both,
-    onboardStrokeOut 0.5s ease 1.6s both;
-}
-.onboard-fp3 {
-  stroke-width: 11;
-  animation:
-    onboardDraw 1.05s cubic-bezier(0.4, 0, 0.2, 1) 0.6s both,
-    onboardFill 0.7s ease 1.4s both,
-    onboardStrokeOut 0.5s ease 1.75s both;
-}
-.onboard-fp4 {
-  stroke-width: 11;
-  animation:
-    onboardDraw 1.05s cubic-bezier(0.4, 0, 0.2, 1) 0.75s both,
-    onboardFill 0.7s ease 1.5s both,
-    onboardStrokeOut 0.5s ease 1.85s both;
+  animation: onboardFade 0.8s ease-out both;
 }
 
 /* ---- Eyebrow + title ---- */
@@ -1425,11 +1391,6 @@ body:has(.shell-vibrant),
   }
   .onboard-fly {
     display: none;
-  }
-  .onboard-fly path {
-    fill-opacity: 1;
-    stroke-opacity: 0;
-    stroke-dashoffset: 0;
   }
 }
 
@@ -4850,26 +4811,10 @@ body:has(.shell-vibrant),
 .chat-empty-icon {
   width: 80px;
   height: 80px;
-  border-radius: 50%;
-  background: #000;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 4px;
-}
-
-/* The wordmark SVG ships with a black fill; recolour it to white via masking so
-   it reads on the black circle, regardless of the source artwork's colours. */
-.chat-empty-logo {
-  width: 52px;
-  height: 40px;
-  background-color: #fff;
-  mask-repeat: no-repeat;
-  mask-position: center;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  -webkit-mask-size: contain;
 }
 
 .chat-empty-text {
@@ -16067,13 +16012,29 @@ body:has(.shell-vibrant),
   background: #000;
 }
 
-.splash-logo {
+.splash-brand {
   position: relative;
   z-index: 1;
-  width: 600px;
-  max-width: 60%;
+  display: flex;
+  align-items: center;
+  gap: 28px;
   opacity: 0;
   animation: splashFadeIn 1.1s ease-out forwards;
+}
+
+.splash-logo {
+  width: 160px;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 30px;
+  box-shadow: 0 14px 50px rgba(33, 170, 235, 0.28);
+}
+
+.splash-brand span {
+  color: #fff;
+  font-size: clamp(42px, 6vw, 78px);
+  font-weight: 650;
+  letter-spacing: -0.035em;
 }
 
 .splash-status {
@@ -17001,4 +16962,134 @@ body:has(.shell-vibrant),
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 24px 60px -16px rgba(0, 0, 0, 0.6),
     0 8px 24px -12px rgba(0, 0, 0, 0.45);
+}
+
+/* Per-chat skill selector in the composer. Installed skills remain global;
+   selected skills are only active for the current conversation. */
+.session-skill-picker {
+  position: relative;
+}
+
+.session-template-popover {
+  right: 0;
+  left: auto;
+}
+
+.discover-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-skill-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.session-skill-trigger-active {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent-text) 12%, transparent);
+}
+
+.session-skill-popover {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: min(330px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.38);
+}
+
+.session-skill-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px 3px 13px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.session-skill-popover-actions,
+.session-skill-selected-label {
+  display: flex;
+  align-items: center;
+}
+
+.session-skill-popover-actions {
+  gap: 3px;
+}
+
+.session-skill-clear {
+  padding: 3px 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.session-skill-selected-label {
+  flex: 0 0 auto;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.session-skill-help,
+.session-skill-empty {
+  margin: 0;
+  padding: 5px 13px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.session-skill-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.session-skill-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 13px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.session-skill-option:hover,
+.session-skill-option-selected {
+  background: color-mix(in srgb, var(--accent-text) 9%, transparent);
+}
+
+.session-skill-option-selected {
+  color: var(--accent-text);
+}
+
+.session-skill-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.session-skill-option-copy small {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

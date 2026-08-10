@@ -1349,7 +1349,7 @@ _SKILLS_PROMPT_CACHE: OrderedDict[tuple, str] = OrderedDict()
 _SKILLS_PROMPT_CACHE_LOCK = threading.Lock()
 # v2: entries gained org provenance fields (org_id/org_author/rel_dir) for M2
 # org-shared skills; older snapshots are discarded and rebuilt.
-_SKILLS_SNAPSHOT_VERSION = 2
+_SKILLS_SNAPSHOT_VERSION = 3
 
 
 def _skills_prompt_snapshot_path() -> Path:
@@ -1606,6 +1606,15 @@ def build_skills_system_prompt(
     visible and loadable via ``skill_view`` / ``skills_list``; only the
     descriptions are dropped, and a footer note explains the demotion.
     """
+    # Hermes Desktop owns skill activation at the chat-session level. In
+    # strict mode, advertising every installed skill here would bypass that
+    # UX contract: the model could discover an unselected skill simply
+    # because its SKILL.md exists on disk. The selected names are supplied in
+    # each desktop turn and skills_tool enforces the same task allowlist.
+    desktop_custom_skill_gating = (
+        os.environ.get("HERMES_DESKTOP_SESSION_SKILLS_STRICT") == "1"
+    )
+
     skills_dir = get_skills_dir()
     external_dirs = get_all_skills_dirs()[1:]  # skip local (index 0)
 
@@ -1660,6 +1669,11 @@ def build_skills_system_prompt(
                 available_toolsets,
             ):
                 continue
+            if desktop_custom_skill_gating and (
+                str(entry.get("category", "")).lower() == "custom"
+                or bool(entry.get("user_added"))
+            ):
+                continue
             visible_entries.append(entry)
         category_descriptions = {
             str(k): str(v)
@@ -1680,6 +1694,11 @@ def build_skills_system_prompt(
                 extract_skill_conditions(frontmatter),
                 available_tools,
                 available_toolsets,
+            ):
+                continue
+            if desktop_custom_skill_gating and (
+                str(entry.get("category", "")).lower() == "custom"
+                or bool(entry.get("user_added"))
             ):
                 continue
             visible_entries.append(entry)

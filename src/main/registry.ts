@@ -1,7 +1,11 @@
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { profileHome, safeWriteFile } from "./utils";
-import { installSkill, listInstalledSkills } from "./skills";
+import {
+  installSkill,
+  listInstalledSkills,
+  markSkillAsUserAdded,
+} from "./skills";
 import { createProfile } from "./profiles";
 import { writeSoul } from "./soul";
 import { listMcpServers } from "./installer";
@@ -295,7 +299,7 @@ function buildSpec(
   if (item.version) rows.push({ label: "Version", value: item.version });
   const compat = m?.compatibility;
   if (compat?.hermes) {
-    rows.push({ label: "Requires Hermes", value: compat.hermes, mono: true });
+    rows.push({ label: "Requires JingYuAI", value: compat.hermes, mono: true });
   }
 
   return { description: m?.description || item.description || "", rows };
@@ -487,7 +491,9 @@ async function installRegistrySkill(
   if (!item.path) return { success: false, error: "Skill entry has no path" };
   const category = item.category || "uncategorized";
   const dest = join(profileHome(profile), "skills", category, item.id);
-  return downloadFolder(item.path, dest);
+  const result = await downloadFolder(item.path, dest);
+  if (result.success) markSkillAsUserAdded(dest);
+  return result;
 }
 
 /** Download a workflow's folder into <profile>/workflows/<id>/. */

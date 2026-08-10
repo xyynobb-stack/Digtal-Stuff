@@ -67,18 +67,18 @@ export default {
     nousDesc: "Sign in with your Nous Portal subscription",
   },
   hermesAccount: {
-    sectionTitle: "Hermes One account",
+    sectionTitle: "JingYuAI account",
     sectionHint:
-      "Sign in to your Hermes One account to sync agents, workspaces, and wallets across devices.",
-    signIn: "Sign in to Hermes One",
+      "Sign in to your JingYuAI account to sync agents, workspaces, and wallets across devices.",
+    signIn: "Sign in to JingYuAI",
     signOut: "Sign out",
     signedInAs: "Signed in as",
     connected: "Connected",
     syncOn: "Sync on",
     credits: "${{amount}} credits",
     creditsTitle:
-      "AI Credits available on your Hermes One account (1 credit = $1). Top up in the Hermes One console.",
-    modalTitle: "Sign in to Hermes One",
+      "AI Credits available on your JingYuAI account (1 credit = $1). Top up in the JingYuAI console.",
+    modalTitle: "Sign in to JingYuAI",
     codeHint: "Approve in your browser. Make sure it shows the same code:",
     waitingHint: "Waiting for approval…",
     signedIn: "Signed in",

@@ -1,7 +1,7 @@
 export default {
   title: "设置",
   sections: {
-    hermesAgent: "Hermes Agent",
+    hermesAgent: "JingYuAI Agent",
     appearance: "外观",
     privacy: "隐私",
     credentialPool: "凭据池",
@@ -9,7 +9,7 @@ export default {
   nav: {
     groups: {
       general: "通用",
-      hermes: "Hermes One",
+      hermes: "JingYuAI",
     },
     appearance: "外观",
     language: "语言",
@@ -23,14 +23,14 @@ export default {
   },
   analytics: {
     label: "发送匿名使用情况分析",
-    hint: "通过向项目的分析服务发送匿名、聚合的使用数据来帮助改进 Hermes。您可以随时关闭。",
+    hint: "通过向项目的分析服务发送匿名、聚合的使用数据来帮助改进 JingYuAI。您可以随时关闭。",
     disclosure: {
       uuid: "仅存储在本设备上的每次安装的随机标识符（不包含姓名、电子邮件或账户信息）。",
       platform: "您的操作系统、Electron 版本和 Node.js 版本。",
       navigation:
         "您在应用内打开了哪些界面（例如聊天、会话、设置）。不会收集任何聊天内容、提示词、模型响应或文件内容。",
       endpoint:
-        "数据将发送至 Hermes 分析服务（analytics.hermesone.org）。已禁用会话录制和页面浏览自动捕获。",
+        "数据将发送至 JingYuAI 分析服务（analytics.hermesone.org）。已禁用会话录制和页面浏览自动捕获。",
       notCollected:
         "永不收集：聊天消息、文件路径、API 密钥、模型配置、账户凭据。",
     },
@@ -53,7 +53,7 @@ export default {
   },
   notDetected: "未检测到",
   updatedSuccessfully: "更新成功！",
-  updateSuccess: "Hermes 更新成功。",
+  updateSuccess: "JingYuAI 更新成功。",
   updateFailed: "更新失败。",
   version: "v{{version}}",
   proxyPlaceholder: "例如:socks5://127.0.0.1:1080 或 http://proxy:8080",
@@ -75,13 +75,13 @@ export default {
   discoveryError: "无法获取提供商的模型列表 — 你仍可手动输入模型名",
   customBaseUrlHint: "兼容 OpenAI 的 API 地址",
   poolHint:
-    "为同一提供商添加多个 API Key,以便自动轮换和负载均衡。Hermes 会在它们之间轮流使用。",
+    "为同一提供商添加多个 API Key,以便自动轮换和负载均衡。JingYuAI 会在它们之间轮流使用。",
   add: "添加",
   remove: "移除",
   keyLabel: "密钥",
   empty: "(空)",
   dataSection: "数据",
-  dataHint: "导出或导入你的 Hermes 配置、会话、技能和记忆。",
+  dataHint: "导出或导入你的 JingYuAI 配置、会话、技能和记忆。",
   backingUp: "正在备份...",
   exportBackup: "导出备份",
   importing: "正在导入...",
@@ -98,10 +98,10 @@ export default {
   debugDump: "调试转储",
   migrationDetected: "检测到 OpenClaw 安装",
   migrationDesc:
-    "在 <code>{{path}}</code> 发现 OpenClaw。你可以将配置、API Key、会话和技能迁移到 Hermes。",
+    "在 <code>{{path}}</code> 发现 OpenClaw。你可以将配置、API Key、会话和技能迁移到 JingYuAI。",
   migrationDismiss: "不再显示",
   migrating: "迁移中...",
-  migrateToHermes: "迁移到 Hermes",
+  migrateToHermes: "迁移到 JingYuAI",
   skip: "跳过",
   appearanceHint: "选择你偏好的界面外观",
   apiKeyPlaceholder: "API Key",
@@ -109,11 +109,11 @@ export default {
   connectionSection: "连接",
   modeLocal: "本地",
   modeRemote: "远程",
-  modeLocalHint: "使用本机安装的 Hermes",
-  modeRemoteHint: "连接到网络或云服务器上的 Hermes API",
+  modeLocalHint: "使用本机安装的 JingYuAI",
+  modeRemoteHint: "连接到网络或云服务器上的 JingYuAI API",
   remoteUrl: "远程服务器地址",
   remoteUrlHint:
-    "Hermes API 服务器地址（需开放 /health 和 /v1/chat/completions）",
+    "JingYuAI API 服务器地址（需开放 /health 和 /v1/chat/completions）",
   remoteApiKey: "API 密钥",
   remoteApiKeyHint:
     "与远程主机上的 API_SERVER_KEY 匹配。如果服务器接受未认证的请求，可以留空。",
@@ -122,7 +122,7 @@ export default {
   save: "保存",
   serverConfigTitle: "服务器配置",
   serverConfigHint:
-    "你已连接到远程 Hermes 服务器。模型选择、提供商 API Key 和凭据均在服务器的 <code>~/.hermes/.env</code> 和 <code>config.yaml</code> 中管理。请在主机上编辑（例如 <code>docker exec -it hermes vi /opt/data/.env</code>）然后重启容器。",
+    "你已连接到远程 JingYuAI 服务器。模型选择、提供商 API Key 和凭据均在服务器的 <code>~/.hermes/.env</code> 和 <code>config.yaml</code> 中管理。请在主机上编辑（例如 <code>docker exec -it hermes vi /opt/data/.env</code>）然后重启容器。",
   connectionMode: "模式",
   switchedToLocal: "已切换到本地模式",
 } as const;

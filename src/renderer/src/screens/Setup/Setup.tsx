@@ -139,6 +139,9 @@ function Setup({
           >
             {employeeSaving ? "正在配置…" : "自动配置并开始使用"}
           </button>
+          <div className="setup-field-hint">
+            配置成功后，模型切换器只显示该员工可用的聊天模型。
+          </div>
         </div>
 
         {employeeConfigured.length > 0 && (
@@ -159,7 +162,7 @@ function Setup({
             onClick={onComplete}
             style={{ marginBottom: 20 }}
           >
-            开始使用 Hermes
+            开始使用 JingYuAI
             <ArrowRight size={16} />
           </button>
         )}

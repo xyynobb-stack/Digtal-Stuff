@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import toast from "react-hot-toast";
 import {
   Search,
   Refresh,
@@ -9,9 +10,8 @@ import {
   Trash,
   ExternalLink,
   Puzzle,
-  Plug,
   Bot,
-  Workflow as WorkflowIcon,
+  TitleIcon as WritingTemplateIcon,
 } from "../../assets/icons";
 import type { LucideIcon } from "lucide-react";
 import { AgentMarkdown } from "../../components/AgentMarkdown";
@@ -23,6 +23,7 @@ import type {
   RegistryCatalog,
   RegistryDetail,
 } from "../../../../shared/registry";
+import type { WritingTemplate } from "../../../../shared/writing-templates";
 
 interface DiscoverProps {
   profile?: string;
@@ -33,11 +34,13 @@ interface DiscoverProps {
   focusKind?: { kind: RegistryKind; nonce: number };
 }
 
-const KINDS: { key: RegistryKind; icon: LucideIcon }[] = [
+type DiscoverTab = "skills" | "agents" | "templates";
+
+// @lat: [[discover#Writing templates entry]]
+const KINDS: { key: DiscoverTab; icon: LucideIcon }[] = [
   { key: "skills", icon: Puzzle },
-  { key: "mcps", icon: Plug },
   { key: "agents", icon: Bot },
-  { key: "workflows", icon: WorkflowIcon },
+  { key: "templates", icon: WritingTemplateIcon },
 ];
 
 // Per-kind setup action: distinct icon + i18n group so each card reads clearly
@@ -64,18 +67,28 @@ export default function Discover({
   focusKind,
 }: DiscoverProps): React.JSX.Element {
   const { t } = useI18n();
-  const [tab, setTab] = useState<RegistryKind>("skills");
+  const [tab, setTab] = useState<DiscoverTab>("skills");
 
   // "Browse" from the Capabilities screen focuses the matching Discover tab.
   // Guarded so normal mounts (no focus request) aren't forced.
   useEffect(() => {
     if (!focusKind) return;
-    setTab(focusKind.kind);
+    setTab(
+      focusKind.kind === "skills" || focusKind.kind === "agents"
+        ? focusKind.kind
+        : "skills",
+    );
   }, [focusKind]);
   const [catalog, setCatalog] = useState<RegistryCatalog>(EMPTY);
   // Skills shipped with the hermes-agent repo, folded into the skills list
   // alongside registry skills (deduped).
   const [bundledSkills, setBundledSkills] = useState<RegistryItem[]>([]);
+  // Profile-local imports are also first-class Discover cards. They remain
+  // separate from session activation even though their files are installed.
+  const [localSkills, setLocalSkills] = useState<RegistryItem[]>([]);
+  const [writingTemplates, setWritingTemplates] = useState<WritingTemplate[]>(
+    [],
+  );
   const [installed, setInstalled] = useState<{
     skills: string[];
     mcps: string[];
@@ -110,8 +123,25 @@ export default function Discover({
         workflows: reg.workflows,
         agents: profiles.map((p) => p.id),
       });
+      setLocalSkills(
+        skills.map((skill) => ({
+          id: `local:${skill.name}`,
+          name: skill.name,
+          description: skill.description,
+          category: skill.category,
+          path: skill.path,
+        })),
+      );
     } catch {
       /* leave as-is */
+    }
+  }, [profile]);
+
+  const loadWritingTemplates = useCallback(async () => {
+    try {
+      setWritingTemplates(await window.hermesAPI.listWritingTemplates(profile));
+    } catch {
+      setWritingTemplates([]);
     }
   }, [profile]);
 
@@ -157,11 +187,22 @@ export default function Discover({
   // screen becomes visible (a switch elsewhere may have changed it).
   useEffect(() => {
     load();
-  }, [load]);
+    void loadWritingTemplates();
+  }, [load, loadWritingTemplates]);
 
   useEffect(() => {
-    if (visible) loadInstalled();
-  }, [visible, loadInstalled]);
+    if (visible) {
+      loadInstalled();
+      void loadWritingTemplates();
+    }
+  }, [visible, loadInstalled, loadWritingTemplates]);
+
+  useEffect(() => {
+    const refresh = (): void => void loadWritingTemplates();
+    window.addEventListener("hermes-writing-templates-changed", refresh);
+    return () =>
+      window.removeEventListener("hermes-writing-templates-changed", refresh);
+  }, [loadWritingTemplates]);
 
   // Close the detail modal on Escape.
   useEffect(() => {
@@ -203,18 +244,26 @@ export default function Discover({
 
   // Community list for the active tab. Skills additionally fold in bundled
   // skills (deduped — registry entries win on id/name collision).
-  const communityList = useMemo(() => {
+  const communityList = useMemo<RegistryItem[]>(() => {
+    if (tab === "templates") return [];
     const list = catalog[tab] ?? [];
     if (tab !== "skills") return list;
     const seen = new Set([
       ...list.map((i) => i.id),
       ...list.map((i) => i.name),
     ]);
-    const extra = bundledSkills.filter(
+    const bundledExtra = bundledSkills.filter(
       (b) => !seen.has(b.id) && !seen.has(b.name),
     );
-    return [...list, ...extra];
-  }, [catalog, tab, bundledSkills]);
+    bundledExtra.forEach((item) => {
+      seen.add(item.id);
+      seen.add(item.name);
+    });
+    const localExtra = localSkills.filter(
+      (skill) => !seen.has(skill.id) && !seen.has(skill.name),
+    );
+    return [...list, ...bundledExtra, ...localExtra];
+  }, [catalog, tab, bundledSkills, localSkills]);
 
   const items = useMemo(
     () =>
@@ -238,13 +287,49 @@ export default function Discover({
       ...list.map((i) => i.id),
       ...list.map((i) => i.name),
     ]);
-    const extra = bundledSkills.filter(
+    const bundledExtra = bundledSkills.filter(
       (b) => !seen.has(b.id) && !seen.has(b.name),
     );
-    return list.length + extra.length;
-  }, [catalog, bundledSkills]);
+    bundledExtra.forEach((item) => {
+      seen.add(item.id);
+      seen.add(item.name);
+    });
+    const localExtra = localSkills.filter(
+      (skill) => !seen.has(skill.id) && !seen.has(skill.name),
+    );
+    return list.length + bundledExtra.length + localExtra.length;
+  }, [catalog, bundledSkills, localSkills]);
 
-  function tabCount(key: RegistryKind): number {
+  async function handleImportLocalSkill(): Promise<void> {
+    const result = await window.hermesAPI.importLocalSkill(profile);
+    if (result.canceled) return;
+    if (!result.success) {
+      const message = result.error || "导入本地 SKILL 失败。";
+      setError(message);
+      toast.error(message);
+      return;
+    }
+    setError(null);
+    await loadInstalled();
+    window.dispatchEvent(new Event("hermes-skills-changed"));
+    toast.success(`已导入 SKILL：${result.name || "本地技能"}`);
+  }
+
+  async function handleImportWritingTemplate(): Promise<void> {
+    const result = await window.hermesAPI.importWritingTemplate(profile);
+    if (result.canceled) return;
+    if (!result.success) {
+      toast.error(result.error || "导入写作模板失败。");
+      return;
+    }
+    await loadWritingTemplates();
+    window.dispatchEvent(new Event("hermes-writing-templates-changed"));
+    toast.success(`已导入写作模板：${result.template?.name || "本地模板"}`);
+    setTab("templates");
+  }
+
+  function tabCount(key: DiscoverTab): number {
+    if (key === "templates") return writingTemplates.length;
     if (key === "skills") return skillsTotal;
     return (catalog[key] ?? []).length;
   }
@@ -269,6 +354,7 @@ export default function Discover({
       if (res.success) {
         setActions((a) => ({ ...a, [key]: "done" }));
         await loadInstalled();
+        window.dispatchEvent(new Event("hermes-skills-changed"));
       } else {
         setActions((a) => ({ ...a, [key]: "error" }));
         if (res.error) setActionError((e) => ({ ...e, [key]: res.error! }));
@@ -335,6 +421,13 @@ export default function Discover({
 
   const ActiveIcon = KINDS.find((k) => k.key === tab)?.icon ?? Puzzle;
   const hasResults = items.length > 0;
+  const filteredWritingTemplates = writingTemplates.filter((template) =>
+    `${template.name} ${template.fileName} ${template.extension}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  );
+  const activeRegistryKind: RegistryKind | null =
+    tab === "templates" ? null : tab;
 
   return (
     <div className="discover-container">
@@ -512,16 +605,26 @@ export default function Discover({
           <h1 className="discover-title">{t("discover.title")}</h1>
           <p className="discover-subtitle">{t("discover.subtitle")}</p>
         </div>
-        <a
-          href="https://github.com/hermesonehq/hermes-registry"
-          target="_blank"
-          rel="noreferrer"
-          className="btn btn-secondary btn-sm"
-          title="Open Registry on GitHub"
-        >
-          <ExternalLink size={14} />
-          Open Registry
-        </a>
+        <div className="discover-header-actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            title="选择本地 SKILL.md 并导入"
+            onClick={() => void handleImportLocalSkill()}
+          >
+            <Plus size={14} />
+            导入本地 SKILL
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            title="选择本地文件作为写作模板"
+            onClick={() => void handleImportWritingTemplate()}
+          >
+            <Plus size={14} />
+            添加写作模板
+          </button>
+        </div>
       </div>
 
       <div className="discover-tabs">
@@ -532,7 +635,7 @@ export default function Discover({
             onClick={() => setTab(key)}
           >
             <Icon size={15} />
-            {t(`discover.tabs.${key}`)}
+            {key === "templates" ? "写作模板" : t(`discover.tabs.${key}`)}
             <span className="discover-tab-count">{tabCount(key)}</span>
           </button>
         ))}
@@ -543,24 +646,60 @@ export default function Discover({
           <Search size={15} />
           <input
             className="discover-search-input"
-            placeholder={t("discover.searchPlaceholder", {
-              kind: t(`discover.tabs.${tab}`).toLowerCase(),
-            })}
+            placeholder={
+              tab === "templates"
+                ? "搜索写作模板..."
+                : t("discover.searchPlaceholder", {
+                    kind: t(`discover.tabs.${tab}`).toLowerCase(),
+                  })
+            }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => load(true)}
-          disabled={loading}
-        >
-          <Refresh size={14} />
-          {t("discover.refresh")}
-        </button>
+        {tab !== "templates" && (
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => load(true)}
+            disabled={loading}
+          >
+            <Refresh size={14} />
+            {t("discover.refresh")}
+          </button>
+        )}
       </div>
 
-      {loading ? (
+      {tab === "templates" ? (
+        filteredWritingTemplates.length === 0 ? (
+          <div className="discover-state" data-testid="writing-templates-empty">
+            <WritingTemplateIcon size={32} />
+            <p className="discover-empty-title">暂无写作模板</p>
+            <p className="discover-empty-text">
+              点击右上角“添加写作模板”，从本地选择模板文件。
+            </p>
+          </div>
+        ) : (
+          <div className="discover-grid" data-testid="writing-templates-grid">
+            {filteredWritingTemplates.map((template) => (
+              <div className="discover-card" key={template.id}>
+                <div className="discover-card-head">
+                  <span className="discover-card-iconwrap">
+                    <WritingTemplateIcon size={16} />
+                  </span>
+                  <span className="discover-card-name">{template.name}</span>
+                  <span className="discover-card-badge">
+                    {template.extension.toUpperCase()}
+                  </span>
+                </div>
+                <div className="discover-card-meta">{template.fileName}</div>
+                <p className="discover-card-desc">
+                  原始模板文件将在聊天中选择后交给 Agent 解析和使用。
+                </p>
+              </div>
+            ))}
+          </div>
+        )
+      ) : loading ? (
         <div className="discover-state">
           <OrbLoader state="searching" size={64} />
         </div>
@@ -588,10 +727,11 @@ export default function Discover({
       ) : (
         <div className="discover-grid">
           {items.map((item) => {
-            const key = `${tab}:${item.id}`;
+            const itemKind = activeRegistryKind ?? "skills";
+            const key = `${itemKind}:${item.id}`;
             const state = actions[key] ?? "idle";
-            const done = state === "done" || isInstalled(tab, item);
-            const action = ACTION[tab];
+            const done = state === "done" || isInstalled(itemKind, item);
+            const action = ACTION[itemKind];
             const ActionIcon = action.icon;
             const meta = [
               item.author && t("discover.by", { author: item.author }),
@@ -603,11 +743,11 @@ export default function Discover({
                 role="button"
                 tabIndex={0}
                 className="discover-card discover-card--clickable"
-                onClick={() => openItemDetail(tab, item)}
+                onClick={() => openItemDetail(itemKind, item)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    openItemDetail(tab, item);
+                    openItemDetail(itemKind, item);
                   }
                 }}
               >
@@ -648,7 +788,7 @@ export default function Discover({
                       className="btn btn-primary btn-sm discover-install-btn"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleInstall(tab, item);
+                        handleInstall(itemKind, item);
                       }}
                       disabled={state === "working"}
                       title={t("discover.targetProfile")}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import startVid from "../../assets/startvid.mp4";
-import splashLogo from "../../assets/hermes-one.svg";
+import splashLogo from "../../assets/jingyuai-icon.png";
 
 interface SplashScreenProps {
   onFinished: () => void;
@@ -59,7 +59,10 @@ function SplashScreen({
         preload="auto"
         style={{ display: "block", objectFit: "cover" }}
       />
-      <img className="splash-logo" src={splashLogo} alt="Hermes One" />
+      <div className="splash-brand" aria-label="JingYuAI">
+        <img className="splash-logo" src={splashLogo} alt="" />
+        <span>JingYuAI</span>
+      </div>
       {onSwitchToLocal && showEscape && (
         <div className="splash-escape">
           <span className="splash-escape-hint">Taking longer than usual?</span>

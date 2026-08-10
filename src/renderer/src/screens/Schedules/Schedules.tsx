@@ -46,6 +46,17 @@ interface CronJob {
   deliver: string[];
   skills: string[];
   script: string | null;
+  model: string | null;
+  provider: string | null;
+}
+
+interface ScheduleModel {
+  id: string;
+  name: string;
+  provider: string;
+  model: string;
+  baseUrl: string;
+  providerLabel?: string;
 }
 
 type FrequencyType = "minutes" | "hourly" | "daily" | "weekly" | "custom";
@@ -67,6 +78,8 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   const [newName, setNewName] = useState("");
   const [newPrompt, setNewPrompt] = useState("");
   const [newDeliver, setNewDeliver] = useState("local");
+  const [availableModels, setAvailableModels] = useState<ScheduleModel[]>([]);
+  const [newModelId, setNewModelId] = useState("");
 
   // Schedule builder state
   const [frequency, setFrequency] = useState<FrequencyType>("daily");
@@ -86,11 +99,43 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     } finally {
       setLoading(false);
     }
+  }, [profile, t]);
+
+  const loadModels = useCallback(async (): Promise<void> => {
+    try {
+      const [savedModels, configured] = await Promise.all([
+        window.hermesAPI.listModels(),
+        window.hermesAPI.getModelConfig(profile),
+      ]);
+      setAvailableModels(savedModels);
+      const normalizeUrl = (value: string): string =>
+        value.trim().replace(/\/+$/, "");
+      const configuredCandidates = savedModels.filter(
+        (candidate) =>
+          candidate.provider === configured.provider &&
+          candidate.model === configured.model,
+      );
+      const configuredModel =
+        configuredCandidates.find(
+          (candidate) =>
+            normalizeUrl(candidate.baseUrl) ===
+            normalizeUrl(configured.baseUrl),
+        ) || configuredCandidates[0];
+      setNewModelId((current) =>
+        savedModels.some((candidate) => candidate.id === current)
+          ? current
+          : configuredModel?.id || savedModels[0]?.id || "",
+      );
+    } catch {
+      setAvailableModels([]);
+      setNewModelId("");
+    }
   }, [profile]);
 
   useEffect(() => {
     loadJobs();
-  }, [loadJobs]);
+    loadModels();
+  }, [loadJobs, loadModels]);
 
   // Escape key to close modals
   useEffect(() => {
@@ -150,7 +195,10 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   }
 
   async function handleCreate(): Promise<void> {
-    if (!isScheduleValid()) return;
+    const selectedModel = availableModels.find(
+      (candidate) => candidate.id === newModelId,
+    );
+    if (!isScheduleValid() || !selectedModel) return;
     setActionInProgress("creating");
     setError("");
     try {
@@ -160,6 +208,8 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
         newName.trim() || undefined,
         newDeliver !== "local" ? newDeliver : undefined,
         profile,
+        selectedModel.model,
+        selectedModel.provider,
       );
       if (result.success) {
         closeCreateModal();
@@ -212,11 +262,23 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     }
   }
 
-  async function handleTrigger(jobId: string): Promise<void> {
-    setActionInProgress(jobId);
+  async function handleTrigger(job: CronJob): Promise<void> {
+    const fallbackModel = availableModels.find(
+      (candidate) => candidate.id === newModelId,
+    );
+    if (!job.model && !fallbackModel) {
+      setError(t("schedules.noModels"));
+      return;
+    }
+    setActionInProgress(job.id);
     setError("");
     try {
-      const result = await window.hermesAPI.triggerCronJob(jobId, profile);
+      const result = await window.hermesAPI.triggerCronJob(
+        job.id,
+        profile,
+        job.model ? undefined : fallbackModel?.model,
+        job.model ? undefined : fallbackModel?.provider,
+      );
       if (result.success) {
         await loadJobs();
       } else {
@@ -447,6 +509,31 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                   {t("schedules.deliverHint")}
                 </div>
               </div>
+              <div className="schedules-field">
+                <label className="schedules-field-label">
+                  {t("schedules.model")}{" "}
+                  <span className="schedules-required">*</span>
+                </label>
+                <select
+                  className="input"
+                  value={newModelId}
+                  onChange={(e) => setNewModelId(e.target.value)}
+                  disabled={availableModels.length === 0}
+                >
+                  {availableModels.length === 0 ? (
+                    <option value="">{t("schedules.noModels")}</option>
+                  ) : (
+                    availableModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name} ({model.providerLabel || model.provider})
+                      </option>
+                    ))
+                  )}
+                </select>
+                <div className="schedules-field-hint">
+                  {t("schedules.modelHint")}
+                </div>
+              </div>
             </div>
             <div className="schedules-modal-footer">
               <button className="btn btn-secondary" onClick={closeCreateModal}>
@@ -455,7 +542,11 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
               <button
                 className="btn btn-primary"
                 onClick={handleCreate}
-                disabled={!isScheduleValid() || actionInProgress === "creating"}
+                disabled={
+                  !isScheduleValid() ||
+                  !newModelId ||
+                  actionInProgress === "creating"
+                }
               >
                 {actionInProgress === "creating"
                   ? t("schedules.creating")
@@ -594,7 +685,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                     <button
                       className="btn-ghost schedules-action-btn"
                       data-tooltip={t("schedules.triggerNow")}
-                      onClick={() => handleTrigger(job.id)}
+                      onClick={() => handleTrigger(job)}
                       disabled={actionInProgress === job.id}
                     >
                       <Zap size={14} />
@@ -616,6 +707,11 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
               )}
 
               <div className="schedules-card-meta">
+                {job.model && (
+                  <span>
+                    {t("schedules.model")}: {job.model}
+                  </span>
+                )}
                 <span>
                   {t("schedules.nextRun")}: {formatTime(job.next_run_at)}
                 </span>

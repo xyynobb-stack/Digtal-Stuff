@@ -42,7 +42,7 @@ export default {
   saving: "保存中...",
   apiKeyLabel: "{{provider}} API Key",
   noApiKeyRequired:
-    "{{provider}} 不需要 API Key。Hermes 会使用本机 CLI/OAuth 配置。",
+    "{{provider}} 不需要 API Key。JingYuAI 会使用本机 CLI/OAuth 配置。",
   localNoKeyNeeded: "无需 API Key",
   localLlm: "本地模型",
   modelBaseUrlPlaceholder: "http://localhost:1234/v1",

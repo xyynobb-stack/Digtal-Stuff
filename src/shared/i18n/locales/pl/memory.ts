@@ -1,6 +1,6 @@
 export default {
   title: "Pamięć",
-  subtitle: "Co Hermes pamięta o Tobie i Twoim środowisku między sesjami.",
+  subtitle: "Co JingYuAI pamięta o Tobie i Twoim środowisku między sesjami.",
   sessions: "Sesje",
   messages: "Wiadomości",
   memories: "Wspomnienia",
@@ -19,14 +19,14 @@ export default {
   noProvidersFound: "Nie znaleziono dostawców pamięci w tej instalacji.",
   openProviderWebsite: "Otwórz stronę dostawcy",
   noMemoriesYet:
-    "Brak pamięci. Hermes będzie zapisywał ważne fakty podczas rozmowy.",
+    "Brak pamięci. JingYuAI będzie zapisywał ważne fakty podczas rozmowy.",
   noMemoryEntries: "Brak wpisów pamięci.",
   noToolsetsFound: "Nie znaleziono zestawów narzędzi.",
   addManuallyHint: "Możesz też dodać wspomnienia ręcznie przyciskiem powyżej.",
   userProfileHint:
-    "Powiedz Hermesowi o sobie — imię, rola, preferencje, styl komunikacji.",
+    "Powiedz JingYuAIowi o sobie — imię, rola, preferencje, styl komunikacji.",
   providersHint:
-    "Wtykowe dostawcy pamięci dają Hermesowi zaawansowaną pamięć długoterminową. Wbudowana pamięć (powyżej) zawsze działa razem z wybranym dostawcą.",
+    "Wtykowe dostawcy pamięci dają JingYuAIowi zaawansowaną pamięć długoterminową. Wbudowana pamięć (powyżej) zawsze działa razem z wybranym dostawcą.",
   providersHintActive: "Aktywny: <strong>{{provider}}</strong>",
   providersHintInactive:
     "Brak aktywnego zewnętrznego dostawcy — używana tylko wbudowana pamięć.",

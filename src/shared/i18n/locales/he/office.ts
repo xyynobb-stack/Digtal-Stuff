@@ -30,7 +30,7 @@ export default {
   startingClaw3dService: "מפעיל את שירות Claw3D...",
   clickToStart: 'לחצו על "הפעלה" כדי להריץ את Claw3D',
   setupDesc1:
-    "‏Claw3D היא סביבת ויזואליזציה תלת-ממדית לסוכני Hermes שלכם. היא מאפשרת לכם לראות את הסוכנים שלכם עובדים במרחב משרדי אינטראקטיבי.",
+    "‏Claw3D היא סביבת ויזואליזציה תלת-ממדית לסוכני JingYuAI שלכם. היא מאפשרת לכם לראות את הסוכנים שלכם עובדים במרחב משרדי אינטראקטיבי.",
   setupDesc2:
     "לחצו למטה כדי להוריד ולהגדיר את Claw3D אוטומטית. פעולה זו תשכפל את המאגר ותתקין את כל התלויות.",
   // Agent details sidebar
@@ -71,7 +71,7 @@ export default {
   repComingSoon: "בקרוב",
   repLoading: "עובד…",
   repErrorGeneric: "משהו השתבש. נסו שוב.",
-  repStatusSignedOut: "התחברו לחשבון Hermes כדי להשתמש בבנק.",
+  repStatusSignedOut: "התחברו לחשבון JingYuAI כדי להשתמש בבנק.",
   repStatusUnlinked: "סוכן זה עדיין לא מקושר לסוכן ענן. התחברו ונסו שוב.",
   repWalletsNone: "אין עדיין חשבונות — פתחו אחד כדי להתחיל.",
   repBadgeTransactable: "ניתן לביצוע עסקאות",
@@ -81,5 +81,5 @@ export default {
   repBalanceTotal: 'סה"כ',
   repCreateSuccess: "החשבון נפתח",
   repCreateExists: "לסוכן זה כבר יש חשבון בנק.",
-  repStatusForeign: "סוכן זה מקושר לחשבון Hermes One אחר.",
+  repStatusForeign: "סוכן זה מקושר לחשבון JingYuAI אחר.",
 } as const;

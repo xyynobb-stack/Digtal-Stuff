@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppLocale } from "../shared/i18n/types";
 import type { Attachment } from "../shared/attachments";
+import type {
+  ImportWritingTemplateResult,
+  WritingTemplate,
+} from "../shared/writing-templates";
 import type { SessionModelOverride } from "../shared/model-override";
 import type { DesktopSessionContinuationItem } from "../shared/session-continuation";
 import type { DesktopSessionLocalError } from "../shared/session-continuation";
@@ -253,6 +257,8 @@ const hermesAPI = {
     ipcRenderer.invoke("set-env", key, value, profile),
   provisionEmployee: (phone: string): Promise<{ ok: boolean; name: string }> =>
     ipcRenderer.invoke("provision-employee", phone),
+  getEmployeeModelAccess: (): Promise<{ active: boolean }> =>
+    ipcRenderer.invoke("get-employee-model-access"),
 
   validateChatReadiness: (
     profile?: string,
@@ -1061,6 +1067,11 @@ const hermesAPI = {
   ): Promise<
     Array<{ name: string; category: string; description: string; path: string }>
   > => ipcRenderer.invoke("list-installed-skills", profile),
+  listUserAddedSkills: (
+    profile?: string,
+  ): Promise<
+    Array<{ name: string; category: string; description: string; path: string }>
+  > => ipcRenderer.invoke("list-user-added-skills", profile),
   listBundledSkills: (): Promise<
     Array<{
       name: string;
@@ -1070,6 +1081,20 @@ const hermesAPI = {
       installed: boolean;
     }>
   > => ipcRenderer.invoke("list-bundled-skills"),
+  importLocalSkill: (
+    profile?: string,
+  ): Promise<{
+    success: boolean;
+    canceled?: boolean;
+    name?: string;
+    error?: string;
+  }> => ipcRenderer.invoke("import-local-skill", profile),
+  listWritingTemplates: (profile?: string): Promise<WritingTemplate[]> =>
+    ipcRenderer.invoke("list-writing-templates", profile),
+  importWritingTemplate: (
+    profile?: string,
+  ): Promise<ImportWritingTemplateResult> =>
+    ipcRenderer.invoke("import-writing-template", profile),
   getSkillContent: (skillPath: string): Promise<string> =>
     ipcRenderer.invoke("get-skill-content", skillPath),
   installSkill: (
@@ -1425,6 +1450,8 @@ const hermesAPI = {
       deliver: string[];
       skills: string[];
       script: string | null;
+      model: string | null;
+      provider: string | null;
     }>
   > => ipcRenderer.invoke("list-cron-jobs", includeDisabled, profile),
 
@@ -1434,6 +1461,8 @@ const hermesAPI = {
     name?: string,
     deliver?: string,
     profile?: string,
+    model?: string,
+    provider?: string,
   ): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke(
       "create-cron-job",
@@ -1442,6 +1471,8 @@ const hermesAPI = {
       name,
       deliver,
       profile,
+      model,
+      provider,
     ),
 
   removeCronJob: (
@@ -1465,8 +1496,16 @@ const hermesAPI = {
   triggerCronJob: (
     jobId: string,
     profile?: string,
+    fallbackModel?: string,
+    fallbackProvider?: string,
   ): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("trigger-cron-job", jobId, profile),
+    ipcRenderer.invoke(
+      "trigger-cron-job",
+      jobId,
+      profile,
+      fallbackModel,
+      fallbackProvider,
+    ),
 
   // Kanban
   kanbanListBoards: (includeArchived?: boolean, profile?: string) =>

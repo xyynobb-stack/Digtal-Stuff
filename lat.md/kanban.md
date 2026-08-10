@@ -4,6 +4,12 @@ The Kanban tab ([[src/renderer/src/screens/Kanban/Kanban.tsx]]) is a JIRA-style 
 
 It is a **thin client over the `hermes kanban` CLI** — every read and mutation shells out through [[src/main/kanban.ts]] (local exec, or SSH-tunnelled via `sshRunKanban` when in tunnel mode). Plain remote HTTP mode is unsupported and shows a "switch modes" notice. The renderer holds no domain logic; it renders board state and routes actions to the CLI.
 
+## Local packaged execution
+
+Packaged Windows boards use the same managed Hermes repository, Python interpreter, profile home, and enhanced PATH as local chat and scheduled tasks.
+
+[[src/main/kanban.ts#runKanban]] executes from `HERMES_REPO` and explicitly passes `HERMES_HOME`; it never assumes the repository is below the profile data directory. If both packaged Python launchers are missing, the board reports a direct reinstall diagnostic instead of exposing a raw spawn `ENOENT`. The offline package copies both `pythonw.exe` and `python.exe`, and [[src/main/installer.ts#bundledRuntimeRepo]] repairs missing launcher files before `HERMES_PYTHON` is selected.
+
 ## Statuses and columns
 
 The board renders the agent's canonical statuses, kept in sync with the agent's `kanban_db.VALID_STATUSES` and the dashboard plugin's `BOARD_COLUMNS`. Mis-syncing here silently mis-buckets cards into To-do.

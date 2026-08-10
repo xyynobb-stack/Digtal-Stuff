@@ -1,4 +1,8 @@
 export default {
+  writingTemplates: "写作模板",
+  writingTemplateSearch: "搜索写作模板...",
+  writingTemplateEmptyTitle: "暂无写作模板",
+  writingTemplateEmptyDescription: "后续添加的写作模板会显示在这里。",
   title: "工具",
   subtitle: "启用或禁用代理在对话期间可使用的工具集",
   web: { label: "网络搜索", description: "搜索网页并提取 URL 内容" },

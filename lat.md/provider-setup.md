@@ -4,15 +4,19 @@ The first-run screen where the user picks an AI provider and enters credentials 
 
 ## Employee phone provisioning
 
-The setup screen provisions an employee by phone, imports every returned OpenAI-chat model, and activates Kimi-2.6 when available without exposing the administrator token to the renderer.
+The setup and Providers screens provision an employee by phone, import every returned OpenAI-chat model, and activate Kimi-2.6 when available without exposing the administrator token to the renderer.
+
+The employee-facing Providers screen is intentionally limited to the phone input, automatic provisioning action, error feedback, and a deduplicated list of configured phone numbers. Account login, active-model management, provider keys, credential pools, OAuth, auxiliary tasks, and registry controls are not rendered there. Their main-process storage and runtime support remain available to onboarding, chat, and future administrative interfaces.
+
+Each successful lookup replaces `employee-model-access.json` with the returned chat-model ids and company endpoint. [[src/main/employee-model-access.ts#filterModelsForEmployeeAccess]] filters renderer-facing local model reads without deleting the underlying model library, so reconfiguring another phone immediately replaces the visible grant.
 
 The provider list is data-driven from `PROVIDERS.setup` in [[src/renderer/src/constants.ts]]. Each entry carries an `envKey`, `configProvider`, `baseUrl`, and `needsKey`; selecting a card drives which form fields show (API key, or the Local server/base-URL flow).
 
-## Hermes One is the first-priority provider
+## JingYuAI is the first-priority provider
 
-**Hermes One Inference** (`https://inference.hermesone.org/v1`) is Hermes One's own OpenAI-compatible gateway, listed **first** in `PROVIDERS.setup`, `PROVIDER_CARDS`, and the `SETTINGS_SECTIONS` "LLM Providers" items — so it leads the Add-provider picker.
+**JingYuAI Inference** is the first visible OpenAI-compatible gateway in provider pickers, while its existing Hermes One endpoint and identifiers remain unchanged for compatibility.
 
-It is not a canonical agent provider, so it routes through `custom` + `base_url` exactly like the `openai` card, with its key stored/host-derived as `HERMESONE_API_KEY` (`inference.hermesone.org` → `HERMESONE_API_KEY` in [[src/shared/url-key-map.ts]], and `hermesone` in `OPENAI_COMPAT_PROVIDERS`). It appears in `OPENAI_COMPATIBLE_BASE_URLS` so `displayProviderFromConfig` reverse-maps it back to the Hermes One card on reload, and its logo (`detectBrand` → `hermesone`, the `hermes-icon.svg` mark) shows in the grids. Users get a key from the console's Credits → API keys.
+It routes through `custom` + `base_url`, retains `HERMESONE_API_KEY`, `inference.hermesone.org`, and the internal `hermesone` provider ID, and reverse-maps back to the JingYuAI card on reload. `detectBrand` still matches `hermesone` but renders `jingyuai-icon.png`.
 
 ## Top grid mirrors the agent's native providers
 
@@ -78,7 +82,7 @@ The section is rendered **standalone, above the credential pool** rather than in
 
 The picker offers a **Custom provider** tile (last) for any OpenAI-compatible endpoint not covered by a built-in card. You can add **multiple**, each with a distinct name, base URL, and its own key.
 
-A custom provider's **identity** (name + base URL) is a first-class record in the desktop's per-profile store [[src/main/providers-store.ts]] (`providers.json`, plaintext — it holds no secrets, only name + base URL). Its **key** still lives in the profile `.env` and its **models** in `models.json`; the store is *additive* so a provider renders as a card the moment it is saved, independent of whether any model has been added. This fixed the prior gap where a keyed-but-modelless provider was invisible.
+A custom provider's **identity** (name + base URL) is a first-class record in the desktop's per-profile store [[src/main/providers-store.ts]] (`providers.json`, plaintext — it holds no secrets, only name + base URL). Its **key** still lives in the profile `.env` and its **models** in `models.json`; the store is _additive_ so a provider renders as a card the moment it is saved, independent of whether any model has been added. This fixed the prior gap where a keyed-but-modelless provider was invisible.
 
 The config modal collects **Name**, **Base URL**, and an API key. On save (modal close) the identity is upserted via `upsertCustomProvider` ([[src/main/providers-store.ts#upsertCustomProvider]]), deduped by the derived env-key anchor so a re-save updates in place. The key is stored under the provider's dedicated env var, [[src/shared/url-key-map.ts#customProviderEnvKey]]`(name)` → `CUSTOM_PROVIDER_<SANITISED_NAME>_KEY` — so two custom providers never share a key. Models are added through the same [[src/renderer/src/components/ProviderKeysSection.tsx#ProviderModelsManager]] with an explicit `{ provider: "custom", baseUrl }` route plus `providerLabel = name`; that label is persisted on each [[src/main/models.ts#SavedModel]] (`providerLabel`) via [[src/main/models.ts#addModel]] (whose dedup now includes base URL, so the same model id can exist under two endpoints).
 

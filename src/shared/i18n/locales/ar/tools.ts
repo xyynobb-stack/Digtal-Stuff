@@ -91,7 +91,7 @@ export default {
   mcpNoResults: "لا توجد خوادم MCP تطابق عامل التصفية.",
   mcpEmptyTitle: "لم يتم تكوين خوادم MCP",
   mcpEmptyDescription:
-    "أضف خادم HTTP أو stdio مخصص، أو قم بتثبيت واحد من كتالوج Hermes MCP.",
+    "أضف خادم HTTP أو stdio مخصص، أو قم بتثبيت واحد من كتالوج JingYuAI MCP.",
   mcpLoadFailed: "فشل تحميل خوادم MCP.",
   mcpAddFailed: "فشل إضافة خادم MCP.",
   mcpRemoveFailed: "فشل إزالة خادم MCP.",

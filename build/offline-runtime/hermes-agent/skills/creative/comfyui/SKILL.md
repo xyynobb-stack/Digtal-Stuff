@@ -1,6 +1,6 @@
 ---
 name: comfyui
-description: Generate images, video, and audio via diffusion workflows.
+description: 通过扩散模型工作流生成图片、视频和音频。
 version: 5.1.0
 author: [kshitijk4poor, alt-glitch, purzbeats]
 license: MIT

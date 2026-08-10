@@ -1,13 +1,16 @@
 import { execFileSync } from "child_process";
 import {
+  cpSync,
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "fs";
-import { isAbsolute, join, relative, resolve } from "path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "path";
 import { homedir } from "os";
 import {
   HERMES_HOME,
@@ -32,6 +35,13 @@ export interface SkillSearchResult {
   category: string;
   source: string;
   installed: boolean;
+}
+
+const USER_ADDED_SKILL_MARKER = ".hermes-desktop-user-added";
+
+/** Mark a copied/installed skill as one the employee explicitly added. */
+export function markSkillAsUserAdded(skillPath: string): void {
+  writeFileSync(join(skillPath, USER_ADDED_SKILL_MARKER), "", "utf-8");
 }
 
 /**
@@ -121,6 +131,17 @@ export function listInstalledSkills(profile?: string): InstalledSkill[] {
   return skills.sort(
     (a, b) =>
       a.category.localeCompare(b.category) || a.name.localeCompare(b.name),
+  );
+}
+
+/** Return only user-added custom skills for the per-chat picker. */
+export function listUserAddedSkills(profile?: string): InstalledSkill[] {
+  return listInstalledSkills(profile).filter(
+    (skill) =>
+      skill.category.toLowerCase() === "custom" ||
+      // Imports made by older desktop builds could retain the category from
+      // their frontmatter. Keep their marker as a compatibility boundary.
+      existsSync(join(skill.path, USER_ADDED_SKILL_MARKER)),
   );
 }
 
@@ -309,6 +330,64 @@ export interface SkillCliResult {
   error?: string;
 }
 
+export interface ImportLocalSkillResult extends SkillCliResult {
+  canceled?: boolean;
+  name?: string;
+}
+
+/**
+ * Install a user-selected local Skill package into the active profile.
+ * The selected file must be SKILL.md; its sibling support folders are copied
+ * with it so references, scripts, templates, and assets keep working.
+ */
+export function importLocalSkill(
+  skillFile: string,
+  profile?: string,
+): ImportLocalSkillResult {
+  if (basename(skillFile).toLowerCase() !== "skill.md") {
+    return { success: false, error: "请选择名为 SKILL.md 的技能入口文件。" };
+  }
+  if (!existsSync(skillFile) || !statSync(skillFile).isFile()) {
+    return { success: false, error: "所选 SKILL.md 不存在或无法读取。" };
+  }
+
+  try {
+    const content = readFileSync(skillFile, "utf-8");
+    const meta = parseSkillFrontmatter(content);
+    const rawName = meta.name.trim();
+    if (!rawName) {
+      return { success: false, error: "SKILL.md 缺少必填的 name 字段。" };
+    }
+
+    const safeName = rawName
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64);
+    if (!safeName) {
+      return { success: false, error: "SKILL 名称无法转换为有效目录名。" };
+    }
+
+    // The storage category is the trust boundary: bundled/system Skills live
+    // in their product categories and user imports always live in `custom`.
+    // Do not trust an uploaded file's frontmatter category for classification.
+    const target = join(profileHome(profile), "skills", "custom", safeName);
+    if (existsSync(target)) {
+      return { success: false, error: `SKILL “${rawName}” 已经添加。` };
+    }
+
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(dirname(skillFile), target, { recursive: true, errorOnExist: true });
+    markSkillAsUserAdded(target);
+    return { success: true, name: rawName };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "导入本地 SKILL 失败。",
+    };
+  }
+}
+
 /**
  * Classify the combined output of `hermes skills install/uninstall` after
  * the subprocess has exited 0. The CLI exits 0 even on resolution failure
@@ -345,6 +424,9 @@ export function installSkill(
   identifier: string,
   profile?: string,
 ): SkillCliResult {
+  const existingPaths = new Set(
+    listInstalledSkills(profile).map((skill) => realOrResolved(skill.path)),
+  );
   try {
     const args = hermesCliArgs(["skills", "install", identifier, "--yes"]);
     if (profile && profile !== "default") {
@@ -366,7 +448,15 @@ export function installSkill(
     // Exit 0 alone is not proof of success — the CLI exits 0 on resolution
     // failure too. Inspect the captured stdout for known failure markers
     // (issue #310).
-    return classifySkillCliOutput(stdout?.toString() ?? "");
+    const result = classifySkillCliOutput(stdout?.toString() ?? "");
+    if (result.success) {
+      for (const skill of listInstalledSkills(profile)) {
+        if (!existingPaths.has(realOrResolved(skill.path))) {
+          markSkillAsUserAdded(skill.path);
+        }
+      }
+    }
+    return result;
   } catch (err) {
     const e = err as { stdout?: Buffer; stderr?: Buffer; message?: string };
     const msg = (e.stderr?.toString() || e.message || "").trim();

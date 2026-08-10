@@ -16,7 +16,7 @@ export default {
 
   // Aviso de modo remoto no compatible
   remoteUnsupportedTitle:
-    "Kanban requiere una instalación local de Hermes o modo túnel SSH.",
+    "Kanban requiere una instalación local de JingYuAI o modo túnel SSH.",
   remoteUnsupportedHint:
     "El modo remoto simple (HTTP + clave API) aún no expone la API de Kanban. Cambia al modo local o túnel SSH en Configuración para gestionar el tablero.",
 

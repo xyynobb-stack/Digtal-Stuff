@@ -382,7 +382,7 @@ export default function ConnectionPane(): React.JSX.Element {
               ))}
             </div>
             <div className="settings-field-hint">
-              Auto tries the Hermes dashboard WebSocket through the SSH tunnel
+              Auto tries the JingYuAI dashboard WebSocket through the SSH tunnel
               first, then falls back to legacy SSH chat. Dashboard forces the
               upstream dashboard path; Legacy keeps the older SSH transport.
             </div>

@@ -1,7 +1,7 @@
 export default {
   title: "Bellek",
   subtitle:
-    "Hermes'in oturumlar arasında sizin ve ortamınız hakkında hatırladıkları.",
+    "JingYuAI'in oturumlar arasında sizin ve ortamınız hakkında hatırladıkları.",
   sessions: "Oturumlar",
   messages: "Mesajlar",
   memories: "Anılar",
@@ -20,15 +20,15 @@ export default {
   noProvidersFound: "Bu kurulumda bellek sağlayıcısı bulunamadı.",
   openProviderWebsite: "Sağlayıcı web sitesini aç",
   noMemoriesYet:
-    "Henüz anı yok. Hermes sohbet ederken önemli bilgileri kaydedecek.",
+    "Henüz anı yok. JingYuAI sohbet ederken önemli bilgileri kaydedecek.",
   noMemoryEntries: "Henüz bellek girdisi yok.",
   noToolsetsFound: "Araç seti bulunamadı.",
   addManuallyHint:
     "Yukarıdaki butonu kullanarak belleğe manuel olarak da ekleme yapabilirsiniz.",
   userProfileHint:
-    "Hermes'e kendinizden bahsedin — ad, rol, tercihler, iletişim tarzı.",
+    "JingYuAI'e kendinizden bahsedin — ad, rol, tercihler, iletişim tarzı.",
   providersHint:
-    "Takılabilir bellek sağlayıcıları, Hermes'e gelişmiş uzun süreli bellek verir. Yerleşik bellek (yukarıda) seçilen sağlayıcının yanında her zaman aktiftir.",
+    "Takılabilir bellek sağlayıcıları, JingYuAI'e gelişmiş uzun süreli bellek verir. Yerleşik bellek (yukarıda) seçilen sağlayıcının yanında her zaman aktiftir.",
   providersHintActive: "Aktif: <strong>{{provider}}</strong>",
   providersHintInactive:
     "Harici sağlayıcı aktif değil — yalnızca yerleşik bellek kullanılıyor.",

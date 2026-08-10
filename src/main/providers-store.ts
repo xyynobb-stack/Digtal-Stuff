@@ -83,7 +83,7 @@ function writeProvidersFile(
  * render as cards and appear in the active-model picker like desktop-added
  * ones. Runs on every list read; each step is an idempotent no-op once synced.
  *
- * Endpoints whose host maps to a first-class brand key (Groq, Hermes One, …)
+ * Endpoints whose host maps to a first-class brand key (Groq, JingYuAI, …)
  * are skipped — those already surface through their dedicated key cards.
  *
  * When a terminal entry keeps its key under a custom `key_env`, the value is
@@ -165,7 +165,7 @@ function upsertCustomProviderRecordOnly(
  *  so the returned list covers both origins. */
 export function listCustomProviders(profile?: string): CustomProviderRecord[] {
   const normalized = normalizeProfile(profile);
-  // Keyed first-party brands (Hermes One) must exist as named `providers:`
+  // Keyed first-party brands (JingYuAI) must exist as named `providers:`
   // entries so gateway model switches can route them by slug.
   mirrorFirstPartyAgentProviders(normalized);
   importAgentConfigProviders(normalized);

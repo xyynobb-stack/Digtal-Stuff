@@ -42,7 +42,7 @@ export default {
   saving: "שומר...",
   apiKeyLabel: "מפתח API של {{provider}}",
   noApiKeyRequired:
-    "{{provider}} אינו דורש מפתח API. ‏Hermes ישתמש בהגדרות ה-CLI/OAuth המקומיות שלכם.",
+    "{{provider}} אינו דורש מפתח API. ‏JingYuAI ישתמש בהגדרות ה-CLI/OAuth המקומיות שלכם.",
   localNoKeyNeeded: "אין צורך במפתח API",
   localLlm: "LLM מקומי",
   modelBaseUrlPlaceholder: "http://localhost:1234/v1",

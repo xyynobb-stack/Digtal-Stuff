@@ -119,7 +119,7 @@ export function useLocalCommands({
             window.hermesAPI.getAppVersion(),
           ]);
           addAgentMessage(
-            `**Hermes Agent:** ${hermesVer || "unknown"}\n**Hermes One:** v${appVer}`,
+            `**JingYuAI Agent:** ${hermesVer || "unknown"}\n**JingYuAI:** v${appVer}`,
           );
           return true;
         }

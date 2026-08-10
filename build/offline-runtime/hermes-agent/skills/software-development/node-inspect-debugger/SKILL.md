@@ -1,6 +1,6 @@
 ---
 name: node-inspect-debugger
-description: "Debug Node.js via --inspect + Chrome DevTools Protocol CLI."
+description: 通过 --inspect 和 Chrome DevTools Protocol CLI 调试 Node.js。
 version: 1.0.0
 author: Hermes Agent
 license: MIT

@@ -1,6 +1,6 @@
 export default {
   title: "זיכרון",
-  subtitle: "מה ש-Hermes זוכר עליכם ועל הסביבה שלכם לאורך הסשנים.",
+  subtitle: "מה ש-JingYuAI זוכר עליכם ועל הסביבה שלכם לאורך הסשנים.",
   sessions: "סשנים",
   messages: "הודעות",
   memories: "זיכרונות",
@@ -19,13 +19,14 @@ export default {
   noProvidersFound: "לא נמצאו ספקי זיכרון בהתקנה זו.",
   openProviderWebsite: "פתיחת אתר הספק",
   noMemoriesYet:
-    "אין זיכרונות עדיין. ‏Hermes ישמור עובדות חשובות תוך כדי השיחה.",
+    "אין זיכרונות עדיין. ‏JingYuAI ישמור עובדות חשובות תוך כדי השיחה.",
   noMemoryEntries: "אין רשומות זיכרון עדיין.",
   noToolsetsFound: "לא נמצאו ערכות כלים.",
   addManuallyHint: "ניתן גם להוסיף זיכרונות ידנית באמצעות הכפתור למעלה.",
-  userProfileHint: "ספרו ל-Hermes על עצמכם - שם, תפקיד, העדפות, סגנון תקשורת.",
+  userProfileHint:
+    "ספרו ל-JingYuAI על עצמכם - שם, תפקיד, העדפות, סגנון תקשורת.",
   providersHint:
-    "ספקי זיכרון מתחברים מעניקים ל-Hermes זיכרון ארוך-טווח מתקדם. הזיכרון המובנה (למעלה) פעיל תמיד לצד הספק שנבחר.",
+    "ספקי זיכרון מתחברים מעניקים ל-JingYuAI זיכרון ארוך-טווח מתקדם. הזיכרון המובנה (למעלה) פעיל תמיד לצד הספק שנבחר.",
   providersHintActive: "פעיל: <strong>{{provider}}</strong>",
   providersHintInactive: "אין ספק חיצוני פעיל - שימוש במובנה בלבד.",
   enterEnvKey: "הזינו {{key}}",

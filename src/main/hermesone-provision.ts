@@ -89,12 +89,12 @@ async function doEnsure(profile?: string): Promise<EnsureHermesOneKeyResult> {
       },
       // The console's key list shows this name, so the user can tell where
       // the key came from.
-      body: JSON.stringify({ name: `Hermes Desktop (${hostname()})` }),
+      body: JSON.stringify({ name: `JingYuAI Desktop (${hostname()})` }),
     });
   } catch (err) {
     return {
       status: "error",
-      error: `Couldn't reach the Hermes One backend: ${(err as Error).message}`,
+      error: `Couldn't reach the JingYuAI backend: ${(err as Error).message}`,
     };
   }
   if (!res.ok) {

@@ -1,7 +1,7 @@
 export default {
   title: "Agent 檔案",
   subtitle:
-    "每個 Agent 檔案都是獨立的 Hermes 工作區，擁有自己的設定、記憶和技能",
+    "每個 Agent 檔案都是獨立的 JingYuAI 工作區，擁有自己的設定、記憶和技能",
   newAgent: "新增 Agent",
   namePlaceholder: "Agent 名稱（例如 coder）",
   createTitle: "新增檔案",
@@ -52,7 +52,7 @@ export default {
   walletCreateFailed: "Couldn't add wallet",
   walletRecoveryTitle: "Recovery phrase",
   walletRecoveryInfo:
-    "Save this phrase now. Hermes will not show it again after this modal closes.",
+    "Save this phrase now. JingYuAI will not show it again after this modal closes.",
   walletCopyRecovery: "Copy phrase",
   walletDone: "I've saved it",
   walletBalanceLoading: "Loading…",
@@ -60,6 +60,6 @@ export default {
   walletBalanceRefresh: "Refresh",
   walletDeleteTitle: "Remove wallet",
   walletDeleteWarning:
-    "This will permanently remove this wallet from Hermes. Make sure you have backed up the recovery phrase — you won't be able to recover the wallet without it.",
+    "This will permanently remove this wallet from JingYuAI. Make sure you have backed up the recovery phrase — you won't be able to recover the wallet without it.",
   walletDeleteConfirmLabel: "Remove wallet",
 } as const;

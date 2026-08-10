@@ -72,6 +72,8 @@ macOS packages use their own offline-runtime preparation path so an Apple device
 
 Hermes rejects ordinary `pip install .` because it would build a wheel. The preparation script therefore uses `pip install -e .`, the supported source-install mode; the desktop always executes the copied Agent source with that repository as its working directory after relocation.
 
+Some stripped CPython macOS archives contain convenience symbolic links whose target command is absent. The preparation step removes only those dangling links before Electron Builder signs the app resources, avoiding a packaging failure without removing runnable Python files.
+
 [[.github/workflows/build-macos.yml]] manually produces both Intel and Apple Silicon artifacts. It uses native x64 and arm64 macOS runners because the Python virtual environment and native extensions must be built for the architecture that will run them. The workflow uploads each `.dmg` and `.zip` as a 14-day artifact; Apple Developer signing and notarization remain deliberately outside this test workflow.
 
 ## IPC Registry

@@ -131,6 +131,39 @@ function findPythonRoot(root) {
   throw new Error("The downloaded Python archive did not contain bin/python3.");
 }
 
+/**
+ * The stripped CPython macOS archives can retain convenience symlinks such as
+ * `bin/pydoc3` while omitting the target command. Electron Builder walks every
+ * resource while applying its ad-hoc signature and fails on a dangling link.
+ * These optional command aliases are not used by the bundled Agent, so remove
+ * only links whose targets cannot be stat'ed; intact links are left unchanged.
+ */
+function removeDanglingSymlinks(root) {
+  const pending = [root];
+  const removed = [];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+        continue;
+      }
+      if (!entry.isSymbolicLink()) continue;
+      try {
+        fs.statSync(entryPath);
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+        fs.unlinkSync(entryPath);
+        removed.push(path.relative(root, entryPath));
+      }
+    }
+  }
+  if (removed.length > 0) {
+    console.warn(`Removed dangling Python symlinks: ${removed.join(", ")}`);
+  }
+}
+
 const employeeToken = (process.env.EMPLOYEE_LOOKUP_ADMIN_TOKEN || "").trim();
 if (!employeeToken) {
   throw new Error(
@@ -154,6 +187,7 @@ try {
   const pythonRoot = findPythonRoot(extractedRoot);
   const runtimePython = path.join(outputRoot, "python-runtime");
   fs.cpSync(pythonRoot, runtimePython, { recursive: true });
+  removeDanglingSymlinks(runtimePython);
 
   const basePython = path.join(runtimePython, "bin", "python3");
   const venv = path.join(agentDestination, "venv");

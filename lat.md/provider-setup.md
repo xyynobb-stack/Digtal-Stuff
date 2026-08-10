@@ -6,9 +6,7 @@ The first-run screen where the user picks an AI provider and enters credentials 
 
 The setup and Providers screens provision an employee by phone, import every returned OpenAI-chat model, and activate Kimi-2.6 when available without exposing the administrator token to the renderer.
 
-The employee-facing Providers screen is intentionally limited to the phone input, automatic provisioning action, error feedback, and a deduplicated list of configured employees. Each successful record shows the phone, API `username`, and returned OpenAI-chat model names. Account login, active-model management, provider keys, credential pools, OAuth, auxiliary tasks, and registry controls are not rendered there.
-
-Provisioning also writes the API `username` to the active local profile's display name through `setProfileName`; the stable profile id is unchanged. First-run Setup applies the same behavior to the default profile. The renderer stores the display metadata locally so it survives reloads, while legacy phone-only entries remain visible with a reconfiguration prompt.
+The employee-facing Providers screen is intentionally limited to the phone input, automatic provisioning action, error feedback, and a deduplicated list of configured phone numbers. Account login, active-model management, provider keys, credential pools, OAuth, auxiliary tasks, and registry controls are not rendered there. Their main-process storage and runtime support remain available to onboarding, chat, and future administrative interfaces.
 
 Each successful lookup replaces `employee-model-access.json` with the returned chat-model ids and company endpoint. [[src/main/employee-model-access.ts#filterModelsForEmployeeAccess]] filters renderer-facing local model reads without deleting the underlying model library, so reconfiguring another phone immediately replaces the visible grant.
 

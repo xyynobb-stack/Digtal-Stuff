@@ -27,27 +27,7 @@ describe("employee-only provider screen", () => {
 
     render(<Providers />);
 
-    expect(screen.getByText("已配置员工")).toBeTruthy();
+    expect(screen.getByText("已配置手机号")).toBeTruthy();
     expect(screen.getAllByText("15703020935")).toHaveLength(1);
-  });
-
-  it("shows the configured username and available models", () => {
-    window.localStorage.setItem(
-      "hermes.configuredEmployees",
-      JSON.stringify([
-        {
-          phone: "13987654321",
-          username: "szyg_test",
-          models: ["Seedance-2.0"],
-        },
-      ]),
-    );
-
-    render(<Providers />);
-
-    expect(screen.getByText("已配置员工")).toBeTruthy();
-    expect(screen.getByText("13987654321")).toBeTruthy();
-    expect(screen.getByText("szyg_test")).toBeTruthy();
-    expect(screen.getByText("Seedance-2.0")).toBeTruthy();
   });
 });

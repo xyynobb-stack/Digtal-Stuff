@@ -6,9 +6,9 @@ import VerifyWarningBanner from "../../components/VerifyWarningBanner";
 import BrandLogo from "../../components/common/BrandLogo";
 import { expectedEnvKeyForUrl } from "../../../../shared/url-key-map";
 import {
-  loadConfiguredEmployees,
+  loadConfiguredEmployeePhones,
   normalizeEmployeePhone,
-  rememberConfiguredEmployee,
+  rememberConfiguredEmployeePhone,
 } from "../../utils/employeePhones";
 
 interface SetupProps {
@@ -31,8 +31,8 @@ function Setup({
   const [modelName, setModelName] = useState("");
   const [employeePhone, setEmployeePhone] = useState("");
   const [employeeSaving, setEmployeeSaving] = useState(false);
-  const [employeeConfigured, setEmployeeConfigured] = useState(
-    loadConfiguredEmployees,
+  const [employeeConfigured, setEmployeeConfigured] = useState<string[]>(
+    loadConfiguredEmployeePhones,
   );
   const [employeeProvisioned, setEmployeeProvisioned] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -100,24 +100,8 @@ function Setup({
     setEmployeeSaving(true);
     setError("");
     try {
-      const result = await window.hermesAPI.provisionEmployee(normalized);
-      const username = result.username || result.name;
-      if (username) {
-        const renamed = await window.hermesAPI.setProfileName(
-          "default",
-          username,
-        );
-        if (!renamed.success) {
-          throw new Error(renamed.error || "用户名自动填写失败。");
-        }
-      }
-      setEmployeeConfigured(
-        rememberConfiguredEmployee({
-          phone: normalized,
-          username,
-          models: result.models,
-        }),
-      );
+      await window.hermesAPI.provisionEmployee(normalized);
+      setEmployeeConfigured(rememberConfiguredEmployeePhone(normalized));
       setEmployeePhone("");
       setEmployeeProvisioned(true);
     } catch (err) {
@@ -162,33 +146,12 @@ function Setup({
 
         {employeeConfigured.length > 0 && (
           <div className="setup-employee-configured" role="status">
-            <div className="setup-employee-configured-title">已配置员工</div>
-            <div className="employee-configured-list">
-              {employeeConfigured.map((employee) => (
-                <div className="employee-configured-card" key={employee.phone}>
-                  <div className="employee-configured-row">
-                    <span>手机号</span>
-                    <strong>{employee.phone}</strong>
-                  </div>
-                  <div className="employee-configured-row">
-                    <span>用户名</span>
-                    <strong>{employee.username || "重新配置后显示"}</strong>
-                  </div>
-                  <div className="employee-configured-models">
-                    <span>可用模型</span>
-                    <div className="employee-configured-model-list">
-                      {employee.models.length > 0 ? (
-                        employee.models.map((model) => (
-                          <span className="setup-employee-phone" key={model}>
-                            {model}
-                          </span>
-                        ))
-                      ) : (
-                        <strong>重新配置后显示</strong>
-                      )}
-                    </div>
-                  </div>
-                </div>
+            <div className="setup-employee-configured-title">已配置手机号</div>
+            <div className="setup-employee-configured-list">
+              {employeeConfigured.map((phone) => (
+                <span className="setup-employee-phone" key={phone}>
+                  {phone}
+                </span>
               ))}
             </div>
           </div>

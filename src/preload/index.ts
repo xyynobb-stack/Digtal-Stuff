@@ -255,14 +255,8 @@ const hermesAPI = {
 
   setEnv: (key: string, value: string, profile?: string): Promise<boolean> =>
     ipcRenderer.invoke("set-env", key, value, profile),
-  provisionEmployee: (
-    phone: string,
-  ): Promise<{
-    ok: boolean;
-    name: string;
-    username: string;
-    models: string[];
-  }> => ipcRenderer.invoke("provision-employee", phone),
+  provisionEmployee: (phone: string): Promise<{ ok: boolean; name: string }> =>
+    ipcRenderer.invoke("provision-employee", phone),
   getEmployeeModelAccess: (): Promise<{ active: boolean }> =>
     ipcRenderer.invoke("get-employee-model-access"),
 

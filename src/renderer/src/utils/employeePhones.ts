@@ -1,11 +1,4 @@
 const EMPLOYEE_PHONES_STORAGE_KEY = "hermes.configuredEmployeePhones";
-const EMPLOYEE_CONFIGURATIONS_STORAGE_KEY = "hermes.configuredEmployees";
-
-export interface ConfiguredEmployee {
-  phone: string;
-  username: string;
-  models: string[];
-}
 
 export function normalizeEmployeePhone(phone: string): string {
   return phone.replace(/\s|-/g, "");
@@ -42,81 +35,5 @@ export function rememberConfiguredEmployeePhone(phone: string): string[] {
   } catch {
     // Return the deduplicated in-memory list when storage is unavailable.
   }
-  return next;
-}
-
-export function loadConfiguredEmployees(): ConfiguredEmployee[] {
-  let configured: ConfiguredEmployee[] = [];
-  try {
-    const raw = window.localStorage.getItem(
-      EMPLOYEE_CONFIGURATIONS_STORAGE_KEY,
-    );
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(parsed)) {
-      configured = parsed.flatMap((value): ConfiguredEmployee[] => {
-        if (!value || typeof value !== "object") return [];
-        const candidate = value as Partial<ConfiguredEmployee>;
-        const phone =
-          typeof candidate.phone === "string"
-            ? normalizeEmployeePhone(candidate.phone)
-            : "";
-        if (!/^1\d{10}$/.test(phone)) return [];
-        const username =
-          typeof candidate.username === "string"
-            ? candidate.username.trim()
-            : "";
-        const models = Array.isArray(candidate.models)
-          ? Array.from(
-              new Set(
-                candidate.models.filter(
-                  (model): model is string =>
-                    typeof model === "string" && model.trim().length > 0,
-                ),
-              ),
-            )
-          : [];
-        return [{ phone, username, models }];
-      });
-    }
-  } catch {
-    configured = [];
-  }
-
-  const byPhone = new Map(
-    configured.map((employee) => [employee.phone, employee] as const),
-  );
-  for (const phone of loadConfiguredEmployeePhones()) {
-    if (!byPhone.has(phone)) {
-      byPhone.set(phone, { phone, username: "", models: [] });
-    }
-  }
-  return Array.from(byPhone.values());
-}
-
-export function rememberConfiguredEmployee(
-  employee: ConfiguredEmployee,
-): ConfiguredEmployee[] {
-  const phone = normalizeEmployeePhone(employee.phone);
-  const next = loadConfiguredEmployees().filter(
-    (configured) => configured.phone !== phone,
-  );
-  if (/^1\d{10}$/.test(phone)) {
-    next.push({
-      phone,
-      username: employee.username.trim(),
-      models: Array.from(
-        new Set(employee.models.map((model) => model.trim()).filter(Boolean)),
-      ),
-    });
-  }
-  try {
-    window.localStorage.setItem(
-      EMPLOYEE_CONFIGURATIONS_STORAGE_KEY,
-      JSON.stringify(next),
-    );
-  } catch {
-    // Return the updated in-memory list when storage is unavailable.
-  }
-  rememberConfiguredEmployeePhone(phone);
   return next;
 }

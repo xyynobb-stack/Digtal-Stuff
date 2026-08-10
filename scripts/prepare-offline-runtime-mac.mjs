@@ -178,6 +178,7 @@ const agentDestination = path.join(outputRoot, "hermes-agent");
 copyAgentSource(sourceRepo, agentDestination);
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jingyuai-python-"));
+const runtimePython = path.join(outputRoot, "python-runtime");
 try {
   const archivePath = path.join(temporaryRoot, "python.tar.gz");
   await downloadStandalonePython(archivePath);
@@ -185,9 +186,14 @@ try {
   fs.mkdirSync(extractedRoot);
   run("tar", ["-xzf", archivePath, "-C", extractedRoot]);
   const pythonRoot = findPythonRoot(extractedRoot);
-  const runtimePython = path.join(outputRoot, "python-runtime");
-  fs.cpSync(pythonRoot, runtimePython, { recursive: true });
-  removeDanglingSymlinks(runtimePython);
+  // Preserve relative targets from the archive. Without verbatimSymlinks,
+  // Node can rewrite them to absolute paths under `temporaryRoot`; those links
+  // look valid here but become dangling as soon as the temporary tree is
+  // removed, which later makes Electron Builder's signing walk fail.
+  fs.cpSync(pythonRoot, runtimePython, {
+    recursive: true,
+    verbatimSymlinks: true,
+  });
 
   const basePython = path.join(runtimePython, "bin", "python3");
   const venv = path.join(agentDestination, "venv");
@@ -206,6 +212,10 @@ try {
 } finally {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });
 }
+
+// Validate the final relocatable tree only after the extraction directory is
+// gone, so links that accidentally retained a temporary target are detected.
+removeDanglingSymlinks(runtimePython);
 
 fs.copyFileSync(
   path.join(projectRoot, "resources", "employee-default-soul.md"),

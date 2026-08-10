@@ -2087,6 +2087,39 @@ body:has(.shell-vibrant),
   font-variant-numeric: tabular-nums;
 }
 
+.employee-configured-list {
+  display: grid;
+  gap: 8px;
+}
+
+.employee-configured-card {
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.employee-configured-row,
+.employee-configured-models {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.employee-configured-row > span,
+.employee-configured-models > span {
+  min-width: 56px;
+  color: var(--text-secondary);
+}
+
+.employee-configured-model-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .setup-error {
   color: var(--error);
   font-size: 13px;

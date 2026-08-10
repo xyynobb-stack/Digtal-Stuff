@@ -1020,6 +1020,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       throw new Error(`员工查询失败（HTTP ${response.status}）。`);
     const employee = (await response.json()) as {
       api_key?: unknown;
+      username?: unknown;
       real_name?: unknown;
       available_models?: EmployeeAvailableModelPayload[];
     };
@@ -1068,6 +1069,9 @@ export function registerIpcHandlers(context: IpcContext): void {
     return {
       ok: true,
       name: typeof employee.real_name === "string" ? employee.real_name : "",
+      username:
+        typeof employee.username === "string" ? employee.username.trim() : "",
+      models: available.map((entry) => entry.name),
     };
   });
 

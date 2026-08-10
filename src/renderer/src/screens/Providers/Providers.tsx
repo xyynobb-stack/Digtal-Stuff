@@ -1,17 +1,21 @@
 import { useState } from "react";
 import {
-  loadConfiguredEmployeePhones,
+  loadConfiguredEmployees,
   normalizeEmployeePhone,
-  rememberConfiguredEmployeePhone,
+  rememberConfiguredEmployee,
 } from "../../utils/employeePhones";
 
-function Providers(): React.JSX.Element {
+interface ProvidersProps {
+  profile?: string;
+}
+
+function Providers({ profile = "default" }: ProvidersProps): React.JSX.Element {
   const [employeePhone, setEmployeePhone] = useState("");
   const [employeeProvisioning, setEmployeeProvisioning] = useState(false);
   const [employeeError, setEmployeeError] = useState("");
-  const [configuredEmployeePhones, setConfiguredEmployeePhones] = useState<
-    string[]
-  >(loadConfiguredEmployeePhones);
+  const [configuredEmployees, setConfiguredEmployees] = useState(
+    loadConfiguredEmployees,
+  );
 
   async function handleProvisionEmployee(): Promise<void> {
     const normalized = normalizeEmployeePhone(employeePhone);
@@ -19,8 +23,24 @@ function Providers(): React.JSX.Element {
     setEmployeeError("");
 
     try {
-      await window.hermesAPI.provisionEmployee(normalized);
-      setConfiguredEmployeePhones(rememberConfiguredEmployeePhone(normalized));
+      const result = await window.hermesAPI.provisionEmployee(normalized);
+      const username = result.username || result.name;
+      if (username) {
+        const renamed = await window.hermesAPI.setProfileName(
+          profile,
+          username,
+        );
+        if (!renamed.success) {
+          throw new Error(renamed.error || "用户名自动填写失败。");
+        }
+      }
+      setConfiguredEmployees(
+        rememberConfiguredEmployee({
+          phone: normalized,
+          username,
+          models: result.models,
+        }),
+      );
       setEmployeePhone("");
       window.location.reload();
     } catch (error) {
@@ -66,14 +86,35 @@ function Providers(): React.JSX.Element {
             {employeeProvisioning ? "配置中…" : "自动配置"}
           </button>
         </div>
-        {configuredEmployeePhones.length > 0 && (
+        {configuredEmployees.length > 0 && (
           <div className="settings-employee-configured" role="status">
-            <div className="setup-employee-configured-title">已配置手机号</div>
-            <div className="setup-employee-configured-list">
-              {configuredEmployeePhones.map((phone) => (
-                <span className="setup-employee-phone" key={phone}>
-                  {phone}
-                </span>
+            <div className="setup-employee-configured-title">已配置员工</div>
+            <div className="employee-configured-list">
+              {configuredEmployees.map((employee) => (
+                <div className="employee-configured-card" key={employee.phone}>
+                  <div className="employee-configured-row">
+                    <span>手机号</span>
+                    <strong>{employee.phone}</strong>
+                  </div>
+                  <div className="employee-configured-row">
+                    <span>用户名</span>
+                    <strong>{employee.username || "重新配置后显示"}</strong>
+                  </div>
+                  <div className="employee-configured-models">
+                    <span>可用模型</span>
+                    <div className="employee-configured-model-list">
+                      {employee.models.length > 0 ? (
+                        employee.models.map((model) => (
+                          <span className="setup-employee-phone" key={model}>
+                            {model}
+                          </span>
+                        ))
+                      ) : (
+                        <strong>重新配置后显示</strong>
+                      )}
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           </div>

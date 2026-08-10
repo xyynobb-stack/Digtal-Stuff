@@ -59,7 +59,7 @@ export function SessionSkillPicker({
         aria-expanded={open}
       >
         <Puzzle size={14} />
-        SKILL{activeSkills.length > 0 ? ` ${activeSkills.length}` : ""}
+        技能{activeSkills.length > 0 ? ` ${activeSkills.length}` : ""}
       </button>
       {open && (
         <div

@@ -16,7 +16,6 @@ export function MemoryTabs({
   const tabs: { id: MemoryTab; icon: typeof Database; label: string }[] = [
     { id: "entries", icon: Database, label: t("memory.agentMemory") },
     { id: "profile", icon: User, label: t("memory.userProfile") },
-    { id: "providers", icon: Cloud, label: t("memory.providersTitle") },
     { id: "soul", icon: Drama, label: t("soul.title") },
   ];
 

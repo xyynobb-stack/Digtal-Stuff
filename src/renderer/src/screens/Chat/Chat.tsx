@@ -1160,32 +1160,7 @@ function Chat({
                 activeSkills={activeSkills}
                 onChange={setActiveSkills}
               />
-              <div className="chat-fast-wrapper">
-                <button
-                  type="button"
-                  className={`btn-ghost chat-fast-btn ${fastMode ? "chat-fast-active" : ""}`}
-                  onClick={toggleFastMode}
-                >
-                  <Zap size={14} />
-                </button>
-                <div
-                  className={`chat-fast-popover ${fastMode ? "chat-fast-active-popover" : ""}`}
-                >
-                  <div className="chat-fast-popover-head">
-                    <span className="chat-fast-popover-icon" aria-hidden="true">
-                      <Zap size={13} />
-                    </span>
-                    <strong>
-                      {fastMode ? t("chat.fastModeOn") : t("chat.fastMode")}
-                    </strong>
-                  </div>
-                  <span>
-                    {fastMode
-                      ? t("chat.fastModeActive")
-                      : t("chat.fastModeInactive")}
-                  </span>
-                </div>
-              </div>
+
               <ContextFolderChip
                 contextFolder={contextFolder}
                 show
@@ -1195,31 +1170,7 @@ function Chat({
                 onToggleWorktree={handleToggleWorktree}
                 onSelectRecentFolder={handleSelectRecentFolder}
               />
-              <button
-                type="button"
-                className={`btn-ghost chat-tool-btn ${webPreviewVisible ? "chat-tool-btn-active" : ""}`}
-                onClick={() => setWebPreviewVisible((v) => !v)}
-                title={
-                  webPreviewVisible ? "Hide web preview" : "Show web preview"
-                }
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 28,
-                  height: 28,
-                  padding: 0,
-                  borderRadius: 6,
-                  color: webPreviewVisible
-                    ? "var(--accent-text)"
-                    : "var(--text-secondary)",
-                  background: webPreviewVisible
-                    ? "color-mix(in srgb, var(--accent-text) 10%, transparent)"
-                    : "transparent",
-                }}
-              >
-                <Globe size={14} />
-              </button>
+
               <SessionTemplatePicker
                 profile={profile}
                 activeTemplate={activeWritingTemplate}

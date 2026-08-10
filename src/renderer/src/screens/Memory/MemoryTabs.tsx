@@ -1,4 +1,4 @@
-import { Database, User, Cloud, Drama } from "lucide-react";
+import { Database, User,  Drama } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
 import type { MemoryTab } from "./types";
 

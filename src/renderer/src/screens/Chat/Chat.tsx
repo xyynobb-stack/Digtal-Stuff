@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Zap, Globe } from "lucide-react";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatEmptyState } from "./ChatEmptyState";
 import { MessageList } from "./MessageList";
@@ -456,8 +455,6 @@ function Chat({
   }, [hermesSessionId, sessionModelOverride]);
 
   const {
-    fastMode,
-    toggle: toggleFastMode,
     set: setFastTier,
   } = useFastMode(profile);
   const { reasoningEffort, setReasoningEffort } = useReasoningEffort(profile);

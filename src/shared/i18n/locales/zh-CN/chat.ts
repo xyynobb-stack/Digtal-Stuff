@@ -23,6 +23,7 @@ export default {
   newChat: "新聊天 (Cmd+N)",
   clearChat: "清空聊天",
   setContextFolder: "设置上下文文件夹",
+  contextFolderChip: "选择文件夹",
   contextFolderActive: "上下文文件夹：{{path}}",
   removeContextFolder: "移除上下文文件夹",
   attach: "上传文件",

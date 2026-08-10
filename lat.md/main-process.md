@@ -70,6 +70,8 @@ macOS packages use their own offline-runtime preparation path so an Apple device
 
 [[scripts/prepare-offline-runtime-mac.mjs]] runs only on a native macOS GitHub Actions runner. It copies the versioned Agent source without its Windows virtual environment, downloads the pinned standalone CPython release for that runner's architecture, creates a matching macOS virtual environment, installs the Agent dependencies, and stages the employee provisioning secret from the Actions secret store. [[electron-builder.mac.yml]] maps that output to the same `resources/hermes-runtime` destination used by [[src/main/installer.ts#bundledRuntimeRepo]], while retaining unsigned internal-test packaging.
 
+Hermes rejects ordinary `pip install .` because it would build a wheel. The preparation script therefore uses `pip install -e .`, the supported source-install mode; the desktop always executes the copied Agent source with that repository as its working directory after relocation.
+
 [[.github/workflows/build-macos.yml]] manually produces both Intel and Apple Silicon artifacts. It uses native x64 and arm64 macOS runners because the Python virtual environment and native extensions must be built for the architecture that will run them. The workflow uploads each `.dmg` and `.zip` as a 14-day artifact; Apple Developer signing and notarization remain deliberately outside this test workflow.
 
 ## IPC Registry

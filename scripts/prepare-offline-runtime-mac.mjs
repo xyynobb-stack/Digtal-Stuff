@@ -160,7 +160,13 @@ try {
   run(basePython, ["-m", "venv", "--copies", venv]);
   const venvPython = path.join(venv, "bin", "python");
   run(venvPython, ["-m", "pip", "install", "--disable-pip-version-check", "--upgrade", "pip"]);
-  run(venvPython, ["-m", "pip", "install", "--disable-pip-version-check", "."], {
+  // Hermes intentionally rejects ordinary `pip install .`: pip would build a
+  // wheel, while Hermes ships as a source checkout with its runtime assets.
+  // An editable install is the upstream-supported source-install path. The
+  // desktop always launches the bundled `hermes` script with this repository
+  // as its working directory, so the copied source remains importable after
+  // Electron relocates the runtime into the user's application-data folder.
+  run(venvPython, ["-m", "pip", "install", "--disable-pip-version-check", "-e", "."], {
     cwd: agentDestination,
   });
 } finally {

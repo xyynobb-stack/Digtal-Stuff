@@ -31,13 +31,13 @@ describe("employee-only provider screen", () => {
     expect(screen.getAllByText("15703020935")).toHaveLength(1);
   });
 
-  it("shows the configured username and available models", () => {
+  it("shows the configured real name and available models", () => {
     window.localStorage.setItem(
       "hermes.configuredEmployees",
       JSON.stringify([
         {
           phone: "13987654321",
-          username: "szyg_test",
+          realName: "张三",
           models: ["Seedance-2.0"],
         },
       ]),
@@ -47,7 +47,8 @@ describe("employee-only provider screen", () => {
 
     expect(screen.getByText("已配置员工")).toBeTruthy();
     expect(screen.getByText("13987654321")).toBeTruthy();
-    expect(screen.getByText("szyg_test")).toBeTruthy();
+    expect(screen.getByText("姓名")).toBeTruthy();
+    expect(screen.getByText("张三")).toBeTruthy();
     expect(screen.getByText("Seedance-2.0")).toBeTruthy();
   });
 });

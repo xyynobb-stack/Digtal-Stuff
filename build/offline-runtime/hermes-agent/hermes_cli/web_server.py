@@ -17090,7 +17090,6 @@ from hermes_cli.dashboard_auth.routes import router as _dashboard_auth_router  #
 app.include_router(_dashboard_auth_router)
 
 
-
 # --- HERMES_ONE_MODEL_LIBRARY_COMPAT_V1 -------------------------------------
 # Compatibility endpoint installed by JingYuAI. Upstream JingYuAI Agent exposes
 # /api/model/options and /api/model/set, but JingYuAI also needs a small

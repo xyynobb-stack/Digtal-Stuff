@@ -60,7 +60,7 @@ Windows offline builds stage Python and the Hermes Agent with the installer so e
 
 Windows installers retain the stable `com.jingyuai.desktop` app id, product name, and per-user NSIS install location while the package version advances. Running a newer setup upgrades the existing JingYuAI installation in place and replaces its Electron application bundle instead of creating a side-by-side app.
 
-The internal test bundle also stages `EMPLOYEE_LOOKUP_ADMIN_TOKEN` from the builder's Hermes environment and installs it into the user's `.env` on first launch so phone provisioning works on a clean test machine. The same offline marker disables the GitHub auto-update check; this is intentional for test packages and should be removed before a security-hardened release.
+The internal test bundle stages `EMPLOYEE_LOOKUP_ADMIN_TOKEN` from the builder's Hermes environment into a Git-ignored generated file and installs the current bundled value into the user's `.env` on launch. [[src/main/employee-lookup-token.ts#mergeBundledEmployeeLookupToken]] replaces empty, stale, or duplicate entries left by older Hermes source checkouts so phone provisioning uses the credential shipped by the current package. The same offline marker disables the GitHub auto-update check; this is intentional for test packages and should be removed before a security-hardened release.
 
 Offline builds also stage `resources/employee-default-soul.md`. On packaged startup, [[src/main/installer.ts#installBundledSoulRules]] appends that marked company rule to the user's `%LOCALAPPDATA%\\hermes\\SOUL.md` exactly once. This preserves user-written SOUL content while ensuring the bundled Windows runtime prefers Python's standard HTTP tools when Git Bash, curl, and wget are absent.
 

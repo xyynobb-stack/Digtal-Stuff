@@ -24,6 +24,7 @@ import { setupAskpass, AskpassHandle } from "./askpass";
 import { precacheSudoCredentials } from "./sudoCreds";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
 import { installPackagedPresetContent } from "./preset-content";
+import { mergeBundledEmployeeLookupToken } from "./employee-lookup-token";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -296,19 +297,15 @@ function installBundledLookupToken(): void {
     const existing = existsSync(targetEnv)
       ? readFileSync(targetEnv, "utf-8")
       : "";
-    if (/^\s*EMPLOYEE_LOOKUP_ADMIN_TOKEN\s*=/m.test(existing)) return;
+    const bundled = readFileSync(bundledEnv, "utf-8");
+    const merged = mergeBundledEmployeeLookupToken(existing, bundled);
     mkdirSync(HERMES_HOME, { recursive: true });
-    const tokenLine = readFileSync(bundledEnv, "utf-8").trim();
-    if (tokenLine) {
-      writeFileSync(
-        targetEnv,
-        `${existing.trimEnd()}${existing.trimEnd() ? "\n" : ""}${tokenLine}\n`,
-        "utf-8",
-      );
-    }
-  } catch {
-    // The provisioning call will report a missing token if this best-effort
-    // migration could not write the user's Hermes environment file.
+    if (merged !== existing) writeFileSync(targetEnv, merged, "utf-8");
+  } catch (error) {
+    console.warn(
+      "[installer] Could not install the bundled employee lookup token:",
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 

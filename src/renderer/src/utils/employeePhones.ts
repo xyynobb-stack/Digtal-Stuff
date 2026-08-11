@@ -3,7 +3,7 @@ const EMPLOYEE_CONFIGURATIONS_STORAGE_KEY = "hermes.configuredEmployees";
 
 export interface ConfiguredEmployee {
   phone: string;
-  username: string;
+  realName: string;
   models: string[];
 }
 
@@ -53,16 +53,20 @@ export function loadConfiguredEmployees(): ConfiguredEmployee[] {
     if (Array.isArray(parsed)) {
       configured = parsed.flatMap((value): ConfiguredEmployee[] => {
         if (!value || typeof value !== "object") return [];
-        const candidate = value as Partial<ConfiguredEmployee>;
+        const candidate = value as Partial<ConfiguredEmployee> & {
+          username?: unknown;
+        };
         const phone =
           typeof candidate.phone === "string"
             ? normalizeEmployeePhone(candidate.phone)
             : "";
         if (!/^1\d{10}$/.test(phone)) return [];
-        const username =
-          typeof candidate.username === "string"
-            ? candidate.username.trim()
-            : "";
+        const realName =
+          typeof candidate.realName === "string"
+            ? candidate.realName.trim()
+            : typeof candidate.username === "string"
+              ? candidate.username.trim()
+              : "";
         const models = Array.isArray(candidate.models)
           ? Array.from(
               new Set(
@@ -73,7 +77,7 @@ export function loadConfiguredEmployees(): ConfiguredEmployee[] {
               ),
             )
           : [];
-        return [{ phone, username, models }];
+        return [{ phone, realName, models }];
       });
     }
   } catch {
@@ -85,13 +89,13 @@ export function loadConfiguredEmployees(): ConfiguredEmployee[] {
   );
   for (const phone of loadConfiguredEmployeePhones()) {
     if (!byPhone.has(phone)) {
-      byPhone.set(phone, { phone, username: "", models: [] });
+      byPhone.set(phone, { phone, realName: "", models: [] });
     }
   }
   const employees = Array.from(byPhone.values());
   const currentEmployee = employees[employees.length - 1];
 
-  return currentEmployee?[currentEmployee]:[];
+  return currentEmployee ? [currentEmployee] : [];
 }
 
 export function rememberConfiguredEmployee(
@@ -102,7 +106,7 @@ export function rememberConfiguredEmployee(
   if (/^1\d{10}$/.test(phone)) {
     next.push({
       phone,
-      username: employee.username.trim(),
+      realName: employee.realName.trim(),
       models: Array.from(
         new Set(employee.models.map((model) => model.trim()).filter(Boolean)),
       ),

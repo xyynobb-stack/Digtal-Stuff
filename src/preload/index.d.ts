@@ -299,8 +299,7 @@ interface HermesAPI {
   setEnv: (key: string, value: string, profile?: string) => Promise<boolean>;
   provisionEmployee: (phone: string) => Promise<{
     ok: boolean;
-    name: string;
-    username: string;
+    realName: string;
     models: string[];
   }>;
   getEmployeeModelAccess: () => Promise<{ active: boolean }>;

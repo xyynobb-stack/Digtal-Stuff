@@ -101,20 +101,20 @@ function Setup({
     setError("");
     try {
       const result = await window.hermesAPI.provisionEmployee(normalized);
-      const username = result.username || result.name;
-      if (username) {
+      const realName = result.realName;
+      if (realName) {
         const renamed = await window.hermesAPI.setProfileName(
           "default",
-          username,
+          realName,
         );
         if (!renamed.success) {
-          throw new Error(renamed.error || "用户名自动填写失败。");
+          throw new Error(renamed.error || "姓名自动填写失败。");
         }
       }
       setEmployeeConfigured(
         rememberConfiguredEmployee({
           phone: normalized,
-          username,
+          realName,
           models: result.models,
         }),
       );
@@ -171,8 +171,8 @@ function Setup({
                     <strong>{employee.phone}</strong>
                   </div>
                   <div className="employee-configured-row">
-                    <span>用户名</span>
-                    <strong>{employee.username || "重新配置后显示"}</strong>
+                    <span>姓名</span>
+                    <strong>{employee.realName || "重新配置后显示"}</strong>
                   </div>
                   <div className="employee-configured-models">
                     <span>可用模型</span>

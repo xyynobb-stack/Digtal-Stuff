@@ -36,6 +36,10 @@ release/
 # staging script. The source template, not this generated copy, is versioned.
 /build/offline-runtime/employee-default-soul.md
 
+# Generated from the builder's local Hermes environment. This contains an
+# administrator credential and must never be committed.
+/build/offline-runtime/employee-lookup.env
+
 # Tauri
 **/src-tauri/target/
 **/src-tauri/gen/

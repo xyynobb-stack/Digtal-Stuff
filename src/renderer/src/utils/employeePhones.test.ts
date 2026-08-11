@@ -21,27 +21,24 @@ describe("configured employee phones", () => {
     expect(loadConfiguredEmployeePhones()).toEqual(["15703020935"]);
   });
 
-  it("keeps different valid phone numbers", () => {
+  it("keeps only the most recently configured valid phone", () => {
     rememberConfiguredEmployeePhone("15703020935");
     rememberConfiguredEmployeePhone("13987654321");
 
-    expect(loadConfiguredEmployeePhones()).toEqual([
-      "15703020935",
-      "13987654321",
-    ]);
+    expect(loadConfiguredEmployeePhones()).toEqual(["13987654321"]);
   });
 
-  it("persists employee username and available models by phone", () => {
+  it("persists employee real name and available models by phone", () => {
     rememberConfiguredEmployee({
       phone: "13987654321",
-      username: "szyg_test",
+      realName: "张三",
       models: ["Seedance-2.0", "Seedance-2.0"],
     });
 
     expect(loadConfiguredEmployees()).toEqual([
       {
         phone: "13987654321",
-        username: "szyg_test",
+        realName: "张三",
         models: ["Seedance-2.0"],
       },
     ]);
@@ -51,7 +48,28 @@ describe("configured employee phones", () => {
     rememberConfiguredEmployeePhone("15703020935");
 
     expect(loadConfiguredEmployees()).toEqual([
-      { phone: "15703020935", username: "", models: [] },
+      { phone: "15703020935", realName: "", models: [] },
+    ]);
+  });
+
+  it("migrates the username field from existing local records", () => {
+    window.localStorage.setItem(
+      "hermes.configuredEmployees",
+      JSON.stringify([
+        {
+          phone: "13987654321",
+          username: "legacy_user",
+          models: ["Seedance-2.0"],
+        },
+      ]),
+    );
+
+    expect(loadConfiguredEmployees()).toEqual([
+      {
+        phone: "13987654321",
+        realName: "legacy_user",
+        models: ["Seedance-2.0"],
+      },
     ]);
   });
 });

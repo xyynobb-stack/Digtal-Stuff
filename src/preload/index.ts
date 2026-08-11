@@ -259,8 +259,7 @@ const hermesAPI = {
     phone: string,
   ): Promise<{
     ok: boolean;
-    name: string;
-    username: string;
+    realName: string;
     models: string[];
   }> => ipcRenderer.invoke("provision-employee", phone),
   getEmployeeModelAccess: (): Promise<{ active: boolean }> =>

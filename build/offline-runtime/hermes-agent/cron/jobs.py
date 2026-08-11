@@ -1330,7 +1330,7 @@ def create_job(
                 predictably.
         output_dir: Optional absolute directory used as this job's output root.
                     Run files remain isolated below a job-ID subdirectory. When
-                    unset, the active profile's ``cron/output`` root is used.
+                    unset, the active profile's `cron/output` root is used.
         no_agent: When True, skip the agent entirely — run ``script`` on schedule
                 and deliver its stdout directly. Empty stdout = silent (no
                 delivery). Requires ``script`` to be set. Ideal for classic

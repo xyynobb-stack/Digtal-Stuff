@@ -32,9 +32,9 @@ The progress view (`wide`) shows a step + percent header with a progress bar, th
 
 ## Employee phone provisioning
 
-The setup and Providers screens record successfully provisioned employees locally and show each employee's phone, API username, and available OpenAI-chat models.
+The setup and Providers screens record successfully provisioned employees locally and show each employee's phone, API real name, and available OpenAI-chat models.
 
-[[src/renderer/src/screens/Setup/Setup.tsx#Setup]] and [[src/renderer/src/screens/Providers/Providers.tsx#Providers]] share [[src/renderer/src/utils/employeePhones.ts#rememberConfiguredEmployee]]. It normalizes and deduplicates by phone, persists username/model metadata in renderer storage, and migrates the former phone-only list without hiding old entries. Provisioning also sets the current profile's display name from the API username.
+[[src/renderer/src/screens/Setup/Setup.tsx#Setup]] and [[src/renderer/src/screens/Providers/Providers.tsx#Providers]] share [[src/renderer/src/utils/employeePhones.ts#rememberConfiguredEmployee]]. It normalizes and deduplicates by phone, persists real-name/model metadata in renderer storage, and migrates legacy username and phone-only records without hiding old entries. Provisioning also sets the current profile's display name from the API `real_name` value.
 
 ## Startup splash
 

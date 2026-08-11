@@ -297,7 +297,12 @@ interface HermesAPI {
   // Configuration (profile-aware)
   getEnv: (profile?: string) => Promise<Record<string, string>>;
   setEnv: (key: string, value: string, profile?: string) => Promise<boolean>;
-  provisionEmployee: (phone: string) => Promise<{ ok: boolean; name: string }>;
+  provisionEmployee: (phone: string) => Promise<{
+    ok: boolean;
+    name: string;
+    username: string;
+    models: string[];
+  }>;
   getEmployeeModelAccess: () => Promise<{ active: boolean }>;
   validateChatReadiness: (profile?: string) => Promise<{
     ok: boolean;

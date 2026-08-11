@@ -13,22 +13,10 @@ import { useI18n } from "../../components/useI18n";
 import { OrbLoader } from "../../components/OrbLoader";
 
 const DELIVER_TARGETS = [
-  { value: "local", label: "Local" },
-  { value: "origin", label: "Origin" },
-  { value: "telegram", label: "Telegram" },
-  { value: "discord", label: "Discord" },
-  { value: "slack", label: "Slack" },
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "signal", label: "Signal" },
-  { value: "matrix", label: "Matrix" },
-  { value: "mattermost", label: "Mattermost" },
-  { value: "email", label: "Email" },
-  { value: "webhook", label: "Webhook" },
-  { value: "sms", label: "SMS" },
-  { value: "homeassistant", label: "Home Assistant" },
-  { value: "dingtalk", label: "DingTalk" },
-  { value: "feishu", label: "Feishu" },
-  { value: "wecom", label: "WeCom" },
+  { value: "local", label: "本地" },
+  { value: "dingtalk", label: "钉钉" },
+  { value: "feishu", label: "飞书" },
+  { value: "wecom", label: "企业微信" },
 ];
 
 interface CronJob {
@@ -81,6 +69,9 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   const [availableModels, setAvailableModels] = useState<ScheduleModel[]>([]);
   const [newModelId, setNewModelId] = useState("");
 
+  //Local显示具体路径
+  const [localOutputDir, setLocalOutputDir] = useState("");
+
   // Schedule builder state
   const [frequency, setFrequency] = useState<FrequencyType>("daily");
   const [minutesInterval, setMinutesInterval] = useState("30");
@@ -89,6 +80,22 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   const [weeklyDay, setWeeklyDay] = useState("1");
   const [weeklyTime, setWeeklyTime] = useState("09:00");
   const [customCron, setCustomCron] = useState("");
+
+  useEffect(() => {
+    window.hermesAPI
+      .getHermesHome(profile)
+      .then((home) => {
+        const separator = home.includes("\\") ? "\\" : "/";
+        const normalizedHome = home.replace(/[\\/]+$/, "");
+
+        setLocalOutputDir(
+          `${normalizedHome}${separator}cron${separator}output`,
+        );
+      })
+      .catch(() => {
+        setLocalOutputDir("");
+      });
+  }, [profile]);
 
   const loadJobs = useCallback(async (): Promise<void> => {
     try {
@@ -505,9 +512,12 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                     </option>
                   ))}
                 </select>
-                <div className="schedules-field-hint">
-                  {t("schedules.deliverHint")}
-                </div>
+                {newDeliver === "local" && (
+                  <div className="schedules-field-hint">
+                    本地结果保存目录：
+                    {localOutputDir || "正在读取目录……"}
+                  </div>
+                )}
               </div>
               <div className="schedules-field">
                 <label className="schedules-field-label">

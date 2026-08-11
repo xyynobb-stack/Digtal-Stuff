@@ -1458,6 +1458,7 @@ const hermesAPI = {
       script: string | null;
       model: string | null;
       provider: string | null;
+      output_dir: string | null;
     }>
   > => ipcRenderer.invoke("list-cron-jobs", includeDisabled, profile),
 
@@ -1469,6 +1470,7 @@ const hermesAPI = {
     profile?: string,
     model?: string,
     provider?: string,
+    outputDir?: string,
   ): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke(
       "create-cron-job",
@@ -1479,6 +1481,7 @@ const hermesAPI = {
       profile,
       model,
       provider,
+      outputDir,
     ),
 
   removeCronJob: (

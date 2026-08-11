@@ -13105,6 +13105,121 @@ body:has(.shell-vibrant),
   padding-bottom: 8px;
 }
 
+.discover-skill-columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  overflow: hidden;
+}
+
+.discover-skill-section {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-secondary) 55%, transparent);
+  overflow: hidden;
+}
+
+.discover-skill-section-toggle,
+.discover-skill-section-heading {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.discover-skill-section-toggle {
+  cursor: pointer;
+}
+
+.discover-skill-section-toggle:hover {
+  background: var(--bg-tertiary);
+}
+
+.discover-skill-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent-text, var(--accent));
+  font-size: 10.5px;
+}
+
+.discover-skill-section-toggle-label,
+.discover-skill-section-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.discover-skill-section-toggle-label svg {
+  transition: transform var(--transition);
+}
+
+.discover-skill-section-toggle-label svg.is-expanded {
+  transform: rotate(180deg);
+}
+
+.discover-skill-section-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+}
+
+.discover-skill-section-list[hidden] {
+  display: none;
+}
+
+.discover-skill-section-empty {
+  margin: auto;
+  padding: 28px 16px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .discover-skill-columns {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .discover-skill-section {
+    min-height: 240px;
+    overflow: visible;
+  }
+
+  .discover-skill-section-list {
+    overflow: visible;
+  }
+}
+
 .discover-card {
   display: flex;
   flex-direction: column;
@@ -13739,6 +13854,48 @@ body:has(.shell-vibrant),
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+.schedules-output-directory {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.schedules-output-directory-path {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.schedules-output-directory-path strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedules-output-directory-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.schedules-output-directory-actions .btn {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
 }
 
 .schedules-textarea {

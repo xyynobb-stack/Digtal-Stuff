@@ -11740,6 +11740,7 @@ def _create_cron_job_sync(body: CronJobCreate, profile: Optional[str] = None):
             context_from=context_from,
             enabled_toolsets=_cron_string_list(body.enabled_toolsets),
             workdir=_cron_optional_text(body.workdir),
+            output_dir=_cron_optional_text(body.output_dir),
             no_agent=no_agent,
         )
     except HTTPException:

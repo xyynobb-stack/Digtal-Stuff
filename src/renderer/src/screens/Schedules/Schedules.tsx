@@ -36,6 +36,7 @@ interface CronJob {
   script: string | null;
   model: string | null;
   provider: string | null;
+  output_dir: string | null;
 }
 
 interface ScheduleModel {
@@ -71,6 +72,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
 
   //Local显示具体路径
   const [localOutputDir, setLocalOutputDir] = useState("");
+  const [newOutputDir, setNewOutputDir] = useState<string | null>(null);
 
   // Schedule builder state
   const [frequency, setFrequency] = useState<FrequencyType>("daily");
@@ -161,6 +163,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     setNewName("");
     setNewPrompt("");
     setNewDeliver("local");
+    setNewOutputDir(null);
     setFrequency("daily");
     setMinutesInterval("30");
     setHourlyInterval("1");
@@ -217,6 +220,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
         profile,
         selectedModel.model,
         selectedModel.provider,
+        newDeliver === "local" ? newOutputDir || undefined : undefined,
       );
       if (result.success) {
         closeCreateModal();
@@ -229,6 +233,11 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     } finally {
       setActionInProgress(null);
     }
+  }
+
+  async function handlePickOutputDirectory(): Promise<void> {
+    const selected = await window.hermesAPI.selectFolder();
+    if (selected) setNewOutputDir(selected);
   }
 
   async function handleRemove(jobId: string): Promise<void> {
@@ -513,9 +522,31 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                   ))}
                 </select>
                 {newDeliver === "local" && (
-                  <div className="schedules-field-hint">
-                    本地结果保存目录：
-                    {localOutputDir || "正在读取目录……"}
+                  <div className="schedules-output-directory">
+                    <div className="schedules-output-directory-path">
+                      <span>本地结果保存目录</span>
+                      <strong title={newOutputDir || localOutputDir}>
+                        {newOutputDir || localOutputDir || "正在读取目录……"}
+                      </strong>
+                    </div>
+                    <div className="schedules-output-directory-actions">
+                      <button
+                        className="btn btn-secondary"
+                        type="button"
+                        onClick={() => void handlePickOutputDirectory()}
+                      >
+                        选择目录
+                      </button>
+                      {newOutputDir && (
+                        <button
+                          className="btn btn-secondary"
+                          type="button"
+                          onClick={() => setNewOutputDir(null)}
+                        >
+                          恢复默认
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -750,6 +781,11 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                 {job.skills.length > 0 && (
                   <span>
                     {t("schedules.skills")}: {job.skills.join(", ")}
+                  </span>
+                )}
+                {job.output_dir && (
+                  <span title={job.output_dir}>
+                    本地输出目录：{job.output_dir}
                   </span>
                 )}
               </div>

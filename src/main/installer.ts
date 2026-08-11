@@ -23,6 +23,7 @@ import { getActiveProfileNameSync, profileHome, stripAnsi } from "./utils";
 import { setupAskpass, AskpassHandle } from "./askpass";
 import { precacheSudoCredentials } from "./sudoCreds";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
+import { installPackagedPresetContent } from "./preset-content";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -266,6 +267,21 @@ export const HERMES_HOME =
   process.env.HERMES_HOME?.trim() ||
   readHermesHomeOverride() ||
   defaultHermesHome();
+
+/** Install builder-selected user Skills and writing templates on first use. */
+function installBundledPresetContent(): void {
+  if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
+  try {
+    installPackagedPresetContent(
+      join(process.resourcesPath, "hermes-runtime", "preset-content"),
+      HERMES_HOME,
+    );
+  } catch {
+    // Presets are optional; startup and existing user content remain usable.
+  }
+}
+
+installBundledPresetContent();
 
 function installBundledLookupToken(): void {
   if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;

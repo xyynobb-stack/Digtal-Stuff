@@ -2,6 +2,22 @@
 
 The Discover screen exposes employee-facing catalogs and a profile-local writing-template library shared with Capabilities and chat.
 
+## Skill ownership columns
+
+The Skills tab separates product-managed system skills from profile-local user skills so employees can understand ownership at a glance.
+
+[[src/renderer/src/screens/Discover/Discover.tsx#Discover]] renders two columns after applying the shared search query. Bundled entries appear under 系统自带 SKILL, reusing matching registry metadata when available; that column alone has an accessible expand/collapse control.
+
+[[src/main/skills.ts#listUserAddedSkills]] defines the user boundary as the `custom` category or the desktop user-added marker. User cards are always rendered in the 用户添加的 SKILL column and remain visible when the system column is collapsed.
+
+## Starter user skills
+
+Each profile receives four editable starter skills that cover common employee roles and conversational skill creation.
+
+[[src/main/skills.ts#ensureStarterUserSkills]] copies `hr`, `project-manager`, `finance`, and `skill-creator` from `resources/starter-skills` into the profile's `skills/custom` directory. Provisioning is idempotent and never overwrites an existing same-name directory.
+
+The Skill Creator starter guides a dialogue from trigger examples and scope through file creation and validation, defaulting new skills to the active profile's user-owned custom directory.
+
 ## Writing templates entry
 
 The Discover tab row contains Skills, Agents, and 写作模板; MCPs and Workflows are not shown in this employee-facing navigation.

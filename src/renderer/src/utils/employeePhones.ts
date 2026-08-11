@@ -31,9 +31,7 @@ export function loadConfiguredEmployeePhones(): string[] {
 
 export function rememberConfiguredEmployeePhone(phone: string): string[] {
   const normalized = normalizeEmployeePhone(phone);
-  const next = Array.from(
-    new Set([...loadConfiguredEmployeePhones(), normalized]),
-  ).filter((value) => /^1\d{10}$/.test(value));
+  const next = /^1\d{10}$/.test(normalized) ? [normalized] : [];
   try {
     window.localStorage.setItem(
       EMPLOYEE_PHONES_STORAGE_KEY,
@@ -90,16 +88,17 @@ export function loadConfiguredEmployees(): ConfiguredEmployee[] {
       byPhone.set(phone, { phone, username: "", models: [] });
     }
   }
-  return Array.from(byPhone.values());
+  const employees = Array.from(byPhone.values());
+  const currentEmployee = employees[employees.length - 1];
+
+  return currentEmployee?[currentEmployee]:[];
 }
 
 export function rememberConfiguredEmployee(
   employee: ConfiguredEmployee,
 ): ConfiguredEmployee[] {
   const phone = normalizeEmployeePhone(employee.phone);
-  const next = loadConfiguredEmployees().filter(
-    (configured) => configured.phone !== phone,
-  );
+  const next: ConfiguredEmployee[] = [];
   if (/^1\d{10}$/.test(phone)) {
     next.push({
       phone,

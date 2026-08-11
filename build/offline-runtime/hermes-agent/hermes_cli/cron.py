@@ -163,6 +163,9 @@ def cron_list(show_all: bool = False):
         workdir = job.get("workdir")
         if workdir:
             print(f"    Workdir:   {workdir}")
+        output_dir = job.get("output_dir")
+        if output_dir:
+            print(f"    Output dir: {output_dir}")
 
         # Execution history
         last_status = job.get("last_status")
@@ -349,6 +352,7 @@ def cron_create(args):
         skills=_normalize_skills(getattr(args, "skill", None), getattr(args, "skills", None)),
         script=getattr(args, "script", None),
         workdir=getattr(args, "workdir", None),
+        output_dir=getattr(args, "output_dir", None),
         model=getattr(args, "model", None),
         provider=getattr(args, "model_provider", None),
         no_agent=getattr(args, "no_agent", False) or None,
@@ -368,6 +372,8 @@ def cron_create(args):
         print("  Mode: no-agent (script stdout delivered directly)")
     if job_data.get("workdir"):
         print(f"  Workdir: {job_data['workdir']}")
+    if job_data.get("output_dir"):
+        print(f"  Output dir: {job_data['output_dir']}")
     print(f"  Next run: {result['next_run_at']}")
     _warn_if_gateway_not_running()
     return 0

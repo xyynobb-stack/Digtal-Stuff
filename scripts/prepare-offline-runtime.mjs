@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const outputRoot = path.join(projectRoot, "build", "offline-runtime");
@@ -52,6 +53,47 @@ const copyRepo = (src, dest) =>
   });
 
 copyRepo(sourceRepo, path.join(outputRoot, "hermes-agent"));
+patchCronOutputDirectories(path.join(outputRoot, "hermes-agent"));
+
+// Package the builder's profile-local user content separately from the
+// managed Agent runtime. The desktop merges these directories into a new
+// user's default profile without replacing any same-name local content.
+const presetContentRoot = path.join(outputRoot, "preset-content");
+const presetSources = [
+  {
+    source: path.join(hermesHome, "skills", "custom"),
+    target: path.join(presetContentRoot, "skills", "custom"),
+    include: (entryPath) => fs.existsSync(path.join(entryPath, "SKILL.md")),
+    label: "user Skills",
+  },
+  {
+    source: path.join(hermesHome, "writing-templates"),
+    target: path.join(presetContentRoot, "writing-templates"),
+    include: (entryPath) =>
+      fs.existsSync(path.join(entryPath, "metadata.json")),
+    label: "writing templates",
+  },
+];
+
+for (const preset of presetSources) {
+  if (!fs.existsSync(preset.source)) {
+    console.log(`No ${preset.label} found at ${preset.source}`);
+    continue;
+  }
+
+  let copied = 0;
+  for (const entry of fs.readdirSync(preset.source, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const entrySource = path.join(preset.source, entry.name);
+    if (!preset.include(entrySource)) continue;
+    fs.mkdirSync(preset.target, { recursive: true });
+    fs.cpSync(entrySource, path.join(preset.target, entry.name), {
+      recursive: true,
+    });
+    copied += 1;
+  }
+  console.log(`Packaged ${copied} ${preset.label} from ${preset.source}`);
+}
 
 // A cold dashboard session returns before its deferred AIAgent build is done.
 // Prevent slash.exec /model from succeeding only inside its worker while the

@@ -38,6 +38,7 @@ export interface CronJob {
   script: string | null;
   model: string | null;
   provider: string | null;
+  output_dir: string | null;
 }
 
 function jobsFilePath(profile?: string): string {
@@ -76,6 +77,7 @@ function normalizeJob(job: Record<string, unknown>): CronJob | null {
     script: (job.script as string) || null,
     model: (job.model as string) || null,
     provider: (job.provider as string) || null,
+    output_dir: (job.output_dir as string) || null,
   };
 }
 
@@ -155,6 +157,7 @@ export function parseCronListOutput(output: string): CronJob[] {
       script: current.fields.Script || null,
       model: current.fields.Model || null,
       provider: current.fields.Provider || null,
+      output_dir: current.fields["Output dir"] || null,
     });
     current = null;
   }
@@ -397,6 +400,7 @@ export async function createCronJob(
   profile?: string,
   model?: string,
   provider?: string,
+  outputDir?: string,
 ): Promise<{ success: boolean; error?: string }> {
   const args = ["create", schedule];
   if (prompt) args.push(prompt);
@@ -404,6 +408,7 @@ export async function createCronJob(
   if (deliver) args.push("--deliver", deliver);
   if (model) args.push("--model", model);
   if (provider) args.push("--provider", provider);
+  if (outputDir) args.push("--output-dir", outputDir);
 
   const sshResult = await runNamedProfileSshCron(args, profile);
   if (sshResult) {
@@ -422,6 +427,7 @@ export async function createCronJob(
           deliver: deliver || "local",
           model: model || null,
           provider: provider || null,
+          output_dir: outputDir || null,
         }),
       });
       if (!res.ok) {

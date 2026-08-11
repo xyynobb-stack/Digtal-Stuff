@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Puzzle,
   Bot,
+  ChevronDown,
   TitleIcon as WritingTemplateIcon,
 } from "../../assets/icons";
 import type { LucideIcon } from "lucide-react";
@@ -83,9 +84,10 @@ export default function Discover({
   // Skills shipped with the hermes-agent repo, folded into the skills list
   // alongside registry skills (deduped).
   const [bundledSkills, setBundledSkills] = useState<RegistryItem[]>([]);
-  // Profile-local imports are also first-class Discover cards. They remain
-  // separate from session activation even though their files are installed.
-  const [localSkills, setLocalSkills] = useState<RegistryItem[]>([]);
+  // Profile-local user skills are first-class Discover cards, but are kept
+  // separate from the product-managed system catalog.
+  const [userSkills, setUserSkills] = useState<RegistryItem[]>([]);
+  const [systemSkillsExpanded, setSystemSkillsExpanded] = useState(true);
   const [writingTemplates, setWritingTemplates] = useState<WritingTemplate[]>(
     [],
   );
@@ -112,19 +114,22 @@ export default function Discover({
 
   const loadInstalled = useCallback(async () => {
     try {
-      const [reg, profiles, skills] = await Promise.all([
+      const [reg, profiles, skills, userAddedSkills] = await Promise.all([
         window.hermesAPI.listInstalledRegistry(profile),
         window.hermesAPI.listProfiles(),
         window.hermesAPI.listInstalledSkills(profile),
+        window.hermesAPI.listUserAddedSkills(profile),
       ]);
       setInstalled({
-        skills: skills.map((s) => s.name),
+        skills: [
+          ...new Set([...skills, ...userAddedSkills].map((s) => s.name)),
+        ],
         mcps: reg.mcps,
         workflows: reg.workflows,
         agents: profiles.map((p) => p.id),
       });
-      setLocalSkills(
-        skills.map((skill) => ({
+      setUserSkills(
+        userAddedSkills.map((skill) => ({
           id: `local:${skill.name}`,
           name: skill.name,
           description: skill.description,
@@ -242,28 +247,24 @@ export default function Discover({
     [query],
   );
 
-  // Community list for the active tab. Skills additionally fold in bundled
-  // skills (deduped — registry entries win on id/name collision).
+  // Only bundled skills belong to the system column. When the registry has a
+  // matching entry, keep its richer metadata without admitting registry-only
+  // community skills into the system-owned group.
   const communityList = useMemo<RegistryItem[]>(() => {
     if (tab === "templates") return [];
     const list = catalog[tab] ?? [];
     if (tab !== "skills") return list;
-    const seen = new Set([
-      ...list.map((i) => i.id),
-      ...list.map((i) => i.name),
-    ]);
-    const bundledExtra = bundledSkills.filter(
-      (b) => !seen.has(b.id) && !seen.has(b.name),
-    );
-    bundledExtra.forEach((item) => {
-      seen.add(item.id);
-      seen.add(item.name);
+    const seen = new Set<string>();
+    return bundledSkills.flatMap((bundled) => {
+      if (seen.has(bundled.id) || seen.has(bundled.name)) return [];
+      seen.add(bundled.id);
+      seen.add(bundled.name);
+      const registryItem = list.find(
+        (item) => item.id === bundled.id || item.name === bundled.name,
+      );
+      return [registryItem ?? bundled];
     });
-    const localExtra = localSkills.filter(
-      (skill) => !seen.has(skill.id) && !seen.has(skill.name),
-    );
-    return [...list, ...bundledExtra, ...localExtra];
-  }, [catalog, tab, bundledSkills, localSkills]);
+  }, [catalog, tab, bundledSkills]);
 
   const items = useMemo(
     () =>
@@ -279,26 +280,27 @@ export default function Discover({
     [communityList, matchesQuery],
   );
 
-  // Total available skills (registry + bundled, deduped) regardless of the
+  const filteredUserSkills = useMemo(
+    () =>
+      userSkills.filter((skill) =>
+        matchesQuery(skill.name, skill.description, skill.category),
+      ),
+    [matchesQuery, userSkills],
+  );
+
+  // Total available skills (system + user-added, deduped) regardless of the
   // active tab or search query — tab counts always show the full catalog size.
   const skillsTotal = useMemo(() => {
-    const list = catalog.skills ?? [];
-    const seen = new Set([
-      ...list.map((i) => i.id),
-      ...list.map((i) => i.name),
-    ]);
-    const bundledExtra = bundledSkills.filter(
-      (b) => !seen.has(b.id) && !seen.has(b.name),
-    );
-    bundledExtra.forEach((item) => {
-      seen.add(item.id);
-      seen.add(item.name);
-    });
-    const localExtra = localSkills.filter(
-      (skill) => !seen.has(skill.id) && !seen.has(skill.name),
-    );
-    return list.length + bundledExtra.length + localExtra.length;
-  }, [catalog, bundledSkills, localSkills]);
+    const seen = new Set<string>();
+    let total = 0;
+    for (const skill of [...bundledSkills, ...userSkills]) {
+      if (seen.has(skill.id) || seen.has(skill.name)) continue;
+      seen.add(skill.id);
+      seen.add(skill.name);
+      total += 1;
+    }
+    return total;
+  }, [bundledSkills, userSkills]);
 
   async function handleImportLocalSkill(): Promise<void> {
     const result = await window.hermesAPI.importLocalSkill(profile);
@@ -420,7 +422,10 @@ export default function Discover({
   }
 
   const ActiveIcon = KINDS.find((k) => k.key === tab)?.icon ?? Puzzle;
-  const hasResults = items.length > 0;
+  const hasResults =
+    tab === "skills"
+      ? items.length > 0 || filteredUserSkills.length > 0
+      : items.length > 0;
   const filteredWritingTemplates = writingTemplates.filter((template) =>
     `${template.name} ${template.fileName} ${template.extension}`
       .toLowerCase()
@@ -428,6 +433,87 @@ export default function Discover({
   );
   const activeRegistryKind: RegistryKind | null =
     tab === "templates" ? null : tab;
+
+  function renderRegistryCard(
+    item: RegistryItem,
+    itemKind: RegistryKind,
+    Icon: LucideIcon,
+  ): React.JSX.Element {
+    const key = `${itemKind}:${item.id}`;
+    const state = actions[key] ?? "idle";
+    const done = state === "done" || isInstalled(itemKind, item);
+    const action = ACTION[itemKind];
+    const ActionIcon = action.icon;
+    const meta = [
+      item.author && t("discover.by", { author: item.author }),
+      item.version && `v${item.version}`,
+    ].filter(Boolean);
+
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        className="discover-card discover-card--clickable"
+        onClick={() => openItemDetail(itemKind, item)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openItemDetail(itemKind, item);
+          }
+        }}
+      >
+        <div className="discover-card-head">
+          <span className="discover-card-iconwrap">
+            <Icon size={16} />
+          </span>
+          <span className="discover-card-name">{item.name}</span>
+          {item.category && (
+            <span className="discover-card-badge">{item.category}</span>
+          )}
+        </div>
+        {meta.length > 0 && (
+          <div className="discover-card-meta">{meta.join(" · ")}</div>
+        )}
+        <p className="discover-card-desc">{item.description}</p>
+        {item.tags && item.tags.length > 0 && (
+          <div className="discover-card-tags">
+            {item.tags.slice(0, 4).map((tag) => (
+              <span key={tag} className="discover-tag">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+        {state === "error" && actionError[key] && (
+          <div className="discover-card-error">{actionError[key]}</div>
+        )}
+        <div className="discover-card-footer">
+          {done ? (
+            <span className="discover-card-installed">
+              <Check size={14} />
+              {t(`discover.actions.${action.i18n}.done`)}
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm discover-install-btn"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleInstall(itemKind, item);
+              }}
+              disabled={state === "working"}
+              title={t("discover.targetProfile")}
+            >
+              <ActionIcon size={14} />
+              {state === "working"
+                ? t(`discover.actions.${action.i18n}.working`)
+                : t(`discover.actions.${action.i18n}.setup`)}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="discover-container">
@@ -723,6 +809,74 @@ export default function Discover({
               kind: t(`discover.tabs.${tab}`).toLowerCase(),
             })}
           </p>
+        </div>
+      ) : tab === "skills" ? (
+        <div className="discover-skill-columns">
+          <section className="discover-skill-section">
+            <button
+              type="button"
+              className="discover-skill-section-toggle"
+              aria-expanded={systemSkillsExpanded}
+              aria-controls="discover-system-skills"
+              onClick={() => setSystemSkillsExpanded((expanded) => !expanded)}
+            >
+              <span>
+                系统自带 SKILL
+                <span className="discover-skill-section-count">
+                  {items.length}
+                </span>
+              </span>
+              <span className="discover-skill-section-toggle-label">
+                {systemSkillsExpanded ? "收起全部" : "展开全部"}
+                <ChevronDown
+                  size={16}
+                  className={systemSkillsExpanded ? "is-expanded" : ""}
+                />
+              </span>
+            </button>
+            <div
+              id="discover-system-skills"
+              className="discover-skill-section-list"
+              hidden={!systemSkillsExpanded}
+            >
+              {items.length === 0 ? (
+                <p className="discover-skill-section-empty">
+                  没有匹配的系统技能
+                </p>
+              ) : (
+                items.map((item) => (
+                  <div key={`skills:${item.id}`}>
+                    {renderRegistryCard(item, "skills", Puzzle)}
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="discover-skill-section">
+            <div className="discover-skill-section-heading">
+              <span>
+                用户添加的 SKILL
+                <span className="discover-skill-section-count">
+                  {filteredUserSkills.length}
+                </span>
+              </span>
+
+            </div>
+            <div className="discover-skill-section-list">
+              {filteredUserSkills.length === 0 ? (
+                <p className="discover-skill-section-empty">
+                  暂无匹配的用户技能
+                </p>
+              ) : (
+                filteredUserSkills.map((item) => (
+                  <div key={`skills:${item.id}`}>
+                    {renderRegistryCard(item, "skills", Puzzle)}
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
         </div>
       ) : (
         <div className="discover-grid">

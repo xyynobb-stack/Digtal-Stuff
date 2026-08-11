@@ -4,7 +4,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # Publishing the manually built packages as a prerelease creates a durable,
+  # directly downloadable alternative to short-lived Actions artifacts.
+  contents: write
 
 jobs:
   package:
@@ -57,3 +59,29 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
+
+  publish:
+    name: Publish macOS build prerelease
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: JingYuAI-mac-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          # A run-specific tag means repeat manual builds cannot overwrite a
+          # stable or beta release, and remain clearly identifiable in Releases.
+          tag_name: mac-build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: "macOS build #${{ github.run_number }}"
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            artifacts/*.dmg
+            artifacts/*.zip

@@ -102,6 +102,15 @@ export function useChatIPC({
         setMessages((prev) =>
           reconcileAfterDbRefresh(prev, dbMessages, { activeTurn }),
         );
+
+        const lastItem = items[items.length - 1];
+        if (
+          sessionId.startsWith("cron_") &&
+          lastItem?.kind === "assistant" &&
+          (lastItem.content || "").trim()
+        ) {
+          stopDbPolling();
+        }
       } catch {
         // Mid-stream DB refresh is opportunistic; final refresh still runs.
       } finally {
@@ -116,6 +125,15 @@ export function useChatIPC({
         void refreshFromDb(sessionId);
       }, 750);
     };
+
+    // @lat: [[lat.md/main-process#Main Process#Local cron command execution]]
+    // Cron turns run outside this Chat's IPC lifecycle, so they do not emit
+    // onChatSessionStarted/onChatDone for this mounted conversation. Poll the
+    // persisted transcript until its final assistant row becomes available.
+    if (sessionScopeId?.startsWith("cron_")) {
+      acceptedSessionIdRef.current = sessionScopeId;
+      startDbPolling(sessionScopeId);
+    }
 
     const cleanupSessionStarted = window.hermesAPI.onChatSessionStarted(
       (eventRunId, sessionId) => {
@@ -365,6 +383,7 @@ export function useChatIPC({
     setIsLoading,
     setUsage,
     activeTurnRef,
+    sessionScopeId,
     stopDbPolling,
   ]);
 }

@@ -38,10 +38,37 @@ export interface SkillSearchResult {
 }
 
 const USER_ADDED_SKILL_MARKER = ".hermes-desktop-user-added";
+const STARTER_SKILLS_DIR = join(__dirname, "../../resources/starter-skills");
 
 /** Mark a copied/installed skill as one the employee explicitly added. */
 export function markSkillAsUserAdded(skillPath: string): void {
   writeFileSync(join(skillPath, USER_ADDED_SKILL_MARKER), "", "utf-8");
+}
+
+/**
+ * Provision the desktop's editable starter skills into the active profile.
+ * Existing user skills always win: upgrades never overwrite a directory with
+ * the same name.
+ */
+export function ensureStarterUserSkills(profile?: string): void {
+  if (!existsSync(STARTER_SKILLS_DIR)) return;
+
+  const customSkillsDir = join(profileHome(profile), "skills", "custom");
+  try {
+    mkdirSync(customSkillsDir, { recursive: true });
+    for (const entry of readdirSync(STARTER_SKILLS_DIR)) {
+      const source = join(STARTER_SKILLS_DIR, entry);
+      if (!statSync(source).isDirectory()) continue;
+      if (!existsSync(join(source, "SKILL.md"))) continue;
+
+      const target = join(customSkillsDir, entry);
+      if (existsSync(target)) continue;
+      cpSync(source, target, { recursive: true, errorOnExist: true });
+      markSkillAsUserAdded(target);
+    }
+  } catch {
+    // Best effort: a read-only profile can still use its existing skills.
+  }
 }
 
 /**
@@ -136,6 +163,7 @@ export function listInstalledSkills(profile?: string): InstalledSkill[] {
 
 /** Return only user-added custom skills for the per-chat picker. */
 export function listUserAddedSkills(profile?: string): InstalledSkill[] {
+  ensureStarterUserSkills(profile);
   return listInstalledSkills(profile).filter(
     (skill) =>
       skill.category.toLowerCase() === "custom" ||

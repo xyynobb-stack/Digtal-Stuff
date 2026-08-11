@@ -104,6 +104,36 @@ describe("createCronJob", () => {
     ]);
   });
 
+  it("stores a user-selected output root on the cron job", async () => {
+    await cronjobs.createCronJob(
+      "0 9 * * *",
+      "Write the daily report.",
+      "Daily report",
+      undefined,
+      undefined,
+      "glm-5",
+      "company-platform",
+      "C:/Reports/JingYuAI",
+    );
+
+    expect(execFileSpy.mock.calls[0][1]).toEqual([
+      "-m",
+      "hermes_cli.main",
+      "cron",
+      "create",
+      "0 9 * * *",
+      "Write the daily report.",
+      "--name",
+      "Daily report",
+      "--model",
+      "glm-5",
+      "--provider",
+      "company-platform",
+      "--output-dir",
+      "C:/Reports/JingYuAI",
+    ]);
+  });
+
   it("runs the CLI from the packaged repository with the resolved Hermes home", async () => {
     await cronjobs.triggerCronJob("job-123");
 
@@ -180,6 +210,7 @@ describe("parseCronListOutput", () => {
     Deliver:   origin
     Model:     kimi-k2.5
     Provider:  kimi-coding
+    Output dir: /srv/reports
     Workdir:   /workspaces/biz-office
     Last run:  2026-06-24T09:16:46.248027+09:00  ok
 
@@ -207,6 +238,7 @@ describe("parseCronListOutput", () => {
       deliver: ["origin"],
       model: "kimi-k2.5",
       provider: "kimi-coding",
+      output_dir: "/srv/reports",
     });
     expect(jobs[1]).toMatchObject({
       id: "85e1165b00eb",

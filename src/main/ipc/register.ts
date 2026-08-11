@@ -2863,8 +2863,18 @@ export function registerIpcHandlers(context: IpcContext): void {
       profile?: string,
       model?: string,
       provider?: string,
+      outputDir?: string,
     ) =>
-      createCronJob(schedule, prompt, name, deliver, profile, model, provider),
+      createCronJob(
+        schedule,
+        prompt,
+        name,
+        deliver,
+        profile,
+        model,
+        provider,
+        outputDir,
+      ),
   );
   ipcMain.handle("remove-cron-job", (_event, jobId: string, profile?: string) =>
     removeCronJob(jobId, profile),

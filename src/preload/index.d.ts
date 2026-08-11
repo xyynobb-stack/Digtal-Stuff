@@ -1043,6 +1043,7 @@ interface HermesAPI {
       script: string | null;
       model: string | null;
       provider: string | null;
+      output_dir: string | null;
     }>
   >;
   createCronJob: (
@@ -1053,6 +1054,7 @@ interface HermesAPI {
     profile?: string,
     model?: string,
     provider?: string,
+    outputDir?: string,
   ) => Promise<{ success: boolean; error?: string }>;
   removeCronJob: (
     jobId: string,

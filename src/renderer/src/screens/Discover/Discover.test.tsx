@@ -35,6 +35,7 @@ describe("Discover writing templates entry", () => {
         })),
         listProfiles: vi.fn(async () => []),
         listInstalledSkills: vi.fn(async () => []),
+        listUserAddedSkills: vi.fn(async () => []),
         listWritingTemplates: vi.fn(async () => []),
         importWritingTemplate: vi.fn(async () => ({
           success: false,
@@ -93,5 +94,59 @@ describe("Discover writing templates entry", () => {
       expect(screen.getByText("工作报告")).toBeInTheDocument(),
     );
     expect(screen.getByText("工作报告.docx")).toBeInTheDocument();
+  });
+
+  it("separates collapsible system skills from always-visible user skills", async () => {
+    // @lat: [[discover#Skill ownership columns]]
+    vi.mocked(window.hermesAPI.fetchRegistry).mockResolvedValue({
+      skills: [
+        {
+          id: "community-only",
+          name: "community-only",
+          description: "Available from the registry but not bundled",
+        },
+      ],
+      mcps: [],
+      agents: [],
+      workflows: [],
+    });
+    vi.mocked(window.hermesAPI.listBundledSkills).mockResolvedValue([
+      {
+        name: "system-research",
+        description: "Built into the system",
+        category: "research",
+        source: "bundled",
+        installed: true,
+      },
+    ]);
+    vi.mocked(window.hermesAPI.listUserAddedSkills).mockResolvedValue([
+      {
+        name: "hr",
+        description: "Human resources partner",
+        category: "custom",
+        path: "C:\\skills\\custom\\hr",
+      },
+    ]);
+
+    render(<Discover visible />);
+
+    await waitFor(() => {
+      expect(screen.getByText("system-research")).toBeInTheDocument();
+      expect(screen.getByText("hr")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("community-only")).not.toBeInTheDocument();
+
+    const systemToggle = screen.getByRole("button", {
+      name: /系统自带 SKILL/,
+    });
+    expect(systemToggle).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(systemToggle);
+    expect(systemToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("system-research")).not.toBeVisible();
+    expect(screen.getByText("hr")).toBeInTheDocument();
+
+    fireEvent.click(systemToggle);
+    expect(screen.getByText("system-research")).toBeVisible();
   });
 });

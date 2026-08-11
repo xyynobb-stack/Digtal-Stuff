@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const windowsRuntimeSource = path.join(
@@ -176,6 +177,7 @@ fs.mkdirSync(outputRoot, { recursive: true });
 
 const agentDestination = path.join(outputRoot, "hermes-agent");
 copyAgentSource(sourceRepo, agentDestination);
+patchCronOutputDirectories(agentDestination);
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jingyuai-python-"));
 const runtimePython = path.join(outputRoot, "python-runtime");

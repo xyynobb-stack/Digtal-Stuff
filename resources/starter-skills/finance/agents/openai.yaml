@@ -1,0 +1,4 @@
+interface:
+  display_name: "����"
+  short_description: "Analyze budgets, forecasts, controls, and financial results"
+  default_prompt: "Use $finance to analyze this budget and explain the key variances."

@@ -56,9 +56,6 @@ function Providers({ profile = "default" }: ProvidersProps): React.JSX.Element {
     <div className="settings-container employee-provider-settings">
       <div className="settings-section">
         <div className="settings-section-title">员工手机号快速配置</div>
-        <p className="settings-section-hint">
-          输入手机号后自动获取员工 Key，并只显示该员工可用的聊天模型。
-        </p>
         <div className="settings-gateway-row">
           <input
             className="input"

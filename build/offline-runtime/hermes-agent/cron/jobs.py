@@ -371,7 +371,7 @@ def _jobs_lock():
 _IMMUTABLE_JOB_FIELDS = frozenset({"id"})
 
 
-def _job_output_dir(job_id: str) -> Path:
+def _job_output_dir(job_id: str, output_root: Optional[str] = None) -> Path:
     """Resolve a job's output directory, rejecting any path-escape attempt.
 
     Job IDs are filesystem path components under ``OUTPUT_DIR``. A legacy or
@@ -384,7 +384,15 @@ def _job_output_dir(job_id: str) -> Path:
         raise ValueError(f"Invalid cron job id for output path: {job_id!r}")
     if Path(text).is_absolute() or Path(text).drive:
         raise ValueError(f"Invalid cron job id for output path: {job_id!r}")
-    return _current_cron_store().output_dir / text
+    root = Path(output_root).expanduser() if output_root else _current_cron_store().output_dir
+    return root / text
+
+
+def get_job_output_dir(job_id: str) -> Path:
+    """Return the effective per-job output directory for reads and chaining."""
+    job = get_job(job_id)
+    output_root = job.get("output_dir") if job else None
+    return _job_output_dir(job_id, output_root)
 
 
 def _normalize_skill_list(skill: Optional[str] = None, skills: Optional[Any] = None) -> List[str]:
@@ -1135,6 +1143,24 @@ def _normalize_workdir(workdir: Optional[str]) -> Optional[str]:
     return str(resolved)
 
 
+def _normalize_output_dir(output_dir: Optional[str]) -> Optional[str]:
+    """Normalize a user-selected root directory for this job's saved output."""
+    if output_dir is None:
+        return None
+    raw = str(output_dir).strip()
+    if not raw:
+        return None
+    expanded = Path(raw).expanduser()
+    if not expanded.is_absolute():
+        raise ValueError(f"Cron output directory must be an absolute path (got {raw!r}).")
+    resolved = expanded.resolve()
+    if not resolved.exists():
+        raise ValueError(f"Cron output directory does not exist: {resolved}")
+    if not resolved.is_dir():
+        raise ValueError(f"Cron output directory is not a directory: {resolved}")
+    return str(resolved)
+
+
 def _resolve_default_model_snapshot() -> Optional[str]:
     """Resolve the global default model the same way the cron ticker does.
 
@@ -1261,6 +1287,7 @@ def create_job(
     workdir: Optional[str] = None,
     no_agent: bool = False,
     attach_to_session: Optional[bool] = None,
+    output_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a new cron job.
@@ -1301,6 +1328,9 @@ def create_job(
                 With ``no_agent=True``, ``workdir`` is still applied as the
                 script's cwd so relative paths inside the script behave
                 predictably.
+        output_dir: Optional absolute directory used as this job's output root.
+                    Run files remain isolated below a job-ID subdirectory. When
+                    unset, the active profile's ``cron/output`` root is used.
         no_agent: When True, skip the agent entirely — run ``script`` on schedule
                 and deliver its stdout directly. Empty stdout = silent (no
                 delivery). Requires ``script`` to be set. Ideal for classic
@@ -1335,6 +1365,7 @@ def create_job(
     normalized_toolsets = [str(t).strip() for t in enabled_toolsets if str(t).strip()] if enabled_toolsets else None
     normalized_toolsets = normalized_toolsets or None
     normalized_workdir = _normalize_workdir(workdir)
+    normalized_output_dir = _normalize_output_dir(output_dir)
     normalized_no_agent = bool(no_agent)
     normalized_attach = attach_to_session if isinstance(attach_to_session, bool) else None
 
@@ -1426,6 +1457,7 @@ def create_job(
         "origin": origin,  # Tracks where job was created for "origin" delivery
         "enabled_toolsets": normalized_toolsets,
         "workdir": normalized_workdir,
+        "output_dir": normalized_output_dir,
     }
     # Only persist attach_to_session when explicitly set, so existing jobs and
     # the common case stay byte-identical (absent key => fall back to the
@@ -1812,7 +1844,7 @@ def _write_wedged_oneshot_diagnostic(job: Dict[str, Any]) -> None:
             "job has been removed to stop it re-firing; recreate it to run "
             "again.\n"
         )
-        save_job_output(job.get("id", ""), text)
+        save_job_output(job.get("id", ""), text, job.get("output_dir"))
         logger.warning(
             "Job '%s': removed without a completed run — diagnostic written to "
             "its output directory",
@@ -2457,10 +2489,10 @@ def _prune_job_output(job_output_dir: Path, keep: int) -> int:
     return deleted
 
 
-def save_job_output(job_id: str, output: str):
+def save_job_output(job_id: str, output: str, output_root: Optional[str] = None):
     """Save job output to file."""
     ensure_dirs()
-    job_output_dir = _job_output_dir(job_id)
+    job_output_dir = _job_output_dir(job_id, output_root)
     job_output_dir.mkdir(parents=True, exist_ok=True)
     _secure_dir(job_output_dir)
 

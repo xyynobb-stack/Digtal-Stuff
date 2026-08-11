@@ -2493,8 +2493,7 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
     # Inject output from referenced cron jobs as context.
     context_from = job.get("context_from")
     if context_from:
-        from cron.jobs import get_cron_output_dir
-        output_dir = get_cron_output_dir()
+        from cron.jobs import get_job_output_dir
         if isinstance(context_from, str):
             context_from = [context_from]
         for source_job_id in context_from:
@@ -2509,7 +2508,7 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
                 )
                 continue
             try:
-                job_output_dir = output_dir / source_job_id
+                job_output_dir = get_job_output_dir(source_job_id)
                 if not job_output_dir.exists():
                     continue  # silent skip — no output yet
                 output_files = sorted(
@@ -3979,7 +3978,7 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
         # swallow the error and leak the agent's subprocesses/clients (#10200).
         delivery_error = None
         try:
-            output_file = save_job_output(job["id"], output)
+            output_file = save_job_output(job["id"], output, job.get("output_dir"))
             if verbose:
                 logger.info("Output saved to: %s", output_file)
 

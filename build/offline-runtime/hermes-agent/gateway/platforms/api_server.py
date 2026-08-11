@@ -5419,6 +5419,7 @@ class APIServerAdapter(BasePlatformAdapter):
             deliver = body.get("deliver", "local")
             skills = body.get("skills")
             repeat = body.get("repeat")
+            output_dir = body.get("output_dir")
 
             if not name:
                 return web.json_response({"error": "Name is required"}, status=400)
@@ -5450,6 +5451,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 kwargs["skills"] = skills
             if repeat is not None:
                 kwargs["repeat"] = repeat
+            if output_dir:
+                kwargs["output_dir"] = output_dir
 
             job = _cron_create(**kwargs)
             _notify_cron_provider_jobs_changed()

@@ -66,6 +66,14 @@ Offline builds also stage `resources/employee-default-soul.md`. On packaged star
 
 The offline runtime preparation also overlays the bundled browser navigation behavior: keyword input, blank/new-tab navigation, and Google/Bing/DuckDuckGo search URLs resolve to Baidu, while ordinary destination URLs remain unchanged. This keeps Chromium as the automation engine but makes Baidu the default search entry for the packaged Windows client. [[src/main/installer.ts#bundledRuntimeRepo]] repairs the small managed browser and Agent-turn overlays on every launch; when the build marker changes, the complete runtime refresh keeps those overlays and their Python dependencies on the same revision.
 
+## Packaged preset user content
+
+Windows offline builds can intentionally distribute the builder's custom Skills and writing templates as editable content in every new installation.
+
+`scripts/prepare-offline-runtime.mjs` reads the build source's default-profile `skills/custom` and `writing-templates` directories, accepts only Skill directories containing `SKILL.md` and template directories containing `metadata.json`, and stages them under `preset-content` in the offline runtime. Because template source files are copied byte-for-byte, builders must review them for confidential data before packaging.
+
+On packaged startup, [[src/main/preset-content.ts#installPackagedPresetContent]] merges each staged directory into the target machine's default Hermes profile. Existing same-name Skill or template directories always win, so installation and later upgrades never replace user-owned edits. Use `npm run build:offline-win` to refresh these presets before creating the Windows installer; `build:win` alone can reuse stale staged runtime content.
+
 ## Offline macOS package builds
 
 macOS packages use their own offline-runtime preparation path so an Apple device never receives Windows Python binaries.
@@ -93,6 +101,10 @@ Local scheduled-task actions invoke the managed Hermes CLI with the same runtime
 [[src/main/cronjobs.ts#runCronCommand]] runs from `HERMES_REPO` rather than assuming the Agent lives below `HERMES_HOME`, explicitly passes the resolved `HERMES_HOME` and enhanced PATH, and preserves CLI stdout when stderr is empty. Ordinary management commands retain a short timeout; `cron run` has no desktop-imposed wall-clock timeout because it synchronously performs a full Agent task and the Python scheduler already owns inactivity detection.
 
 The schedule creation form requires one saved model and passes its model/provider pair through preload and IPC to [[src/main/cronjobs.ts#createCronJob]], which stores the pair with the job through Hermes CLI `--model` and `--provider` flags. Chat model changes therefore do not leave scheduled execution dependent on an empty global default. For legacy local or named-profile SSH jobs whose stored model is empty, [[src/main/cronjobs.ts#triggerCronJob]] first applies the currently selected model with `cron edit`, stops if that edit fails, and only then executes `cron run`.
+
+Local-delivery jobs may also store an absolute output-root selected in the schedule form. The Agent writes each run below `<selected root>/<job id>/`; without a selection it keeps the profile default `<HERMES_HOME>/cron/output/<job id>/`. Because the path belongs to the persisted cron job, scheduled sessions never inherit a normal chat's context folder. `scripts/patch-cron-output-directories.mjs` reapplies this Agent-core extension whenever Windows or macOS offline runtimes are prepared, so packaged builds retain the behavior after their source runtime is refreshed.
+
+Cron sessions execute outside the mounted chat's IPC lifecycle, so [[src/renderer/src/screens/Chat/hooks/useChatIPC.ts#useChatIPC]] polls their persisted transcript while open. Polling stops after the final assistant row appears, ensuring the desktop displays the same final response saved in the job output file.
 
 ## Voice transcription IPC
 

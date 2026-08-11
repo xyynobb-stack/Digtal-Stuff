@@ -68,11 +68,11 @@ The offline runtime preparation also overlays the bundled browser navigation beh
 
 ## Packaged preset user content
 
-Windows offline builds can intentionally distribute the builder's custom Skills and writing templates as editable content in every new installation.
+Windows and macOS offline builds can distribute builder-selected custom Skills and writing templates as immediately usable, editable content in every new installation.
 
-`scripts/prepare-offline-runtime.mjs` reads the build source's default-profile `skills/custom` and `writing-templates` directories, accepts only Skill directories containing `SKILL.md` and template directories containing `metadata.json`, and stages them under `preset-content` in the offline runtime. Because template source files are copied byte-for-byte, builders must review them for confidential data before packaging.
+`scripts/prepare-offline-runtime.mjs` reads the Windows builder's default-profile `skills/custom` and `writing-templates` directories, accepts only Skill directories containing `SKILL.md` and template directories containing `metadata.json`, and stages them under `build/offline-runtime/preset-content`. Because GitHub's macOS runners cannot read the builder's local Hermes home, this generated snapshot must be committed before the macOS workflow is dispatched. The macOS preparation script rejects a missing or incomplete snapshot instead of silently publishing a package without the requested presets, then copies it into `build/offline-runtime-mac/preset-content`. Template and Skill files are copied byte-for-byte, so builders must review them for confidential data before committing or packaging.
 
-On packaged startup, [[src/main/preset-content.ts#installPackagedPresetContent]] merges each staged directory into the target machine's default Hermes profile. Existing same-name Skill or template directories always win, so installation and later upgrades never replace user-owned edits. Use `npm run build:offline-win` to refresh these presets before creating the Windows installer; `build:win` alone can reuse stale staged runtime content.
+Electron Builder maps either platform's offline runtime to `resources/hermes-runtime`. On every packaged startup, [[src/main/preset-content.ts#installPackagedPresetContent]] merges each staged Skill into the default profile's `skills/custom` directory and each template into `writing-templates`; the Agent and desktop therefore read them from their normal writable profile paths rather than leaving them as inert package resources. Existing same-name Skill or template directories always win, so installation and later upgrades never replace user-owned edits. Both `npm run build:win` and `npm run build:offline-win` run the Windows offline preparation step before Electron Builder, preventing a local Windows package from silently reusing stale runtime or preset content.
 
 ## Offline macOS package builds
 

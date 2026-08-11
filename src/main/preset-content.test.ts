@@ -28,6 +28,21 @@ describe("packaged preset user content", () => {
     writeFixture(
       join(
         presetRoot,
+        "skills",
+        "custom",
+        "finance",
+        "agents",
+        "openai.yaml",
+      ),
+      "nested skill asset",
+    );
+    writeFixture(
+      join(presetRoot, "skills", "custom", "finance", "SKILL.md"),
+      "finance skill",
+    );
+    writeFixture(
+      join(
+        presetRoot,
         "writing-templates",
         "weekly-report-123",
         "weekly-report.docx",
@@ -41,7 +56,7 @@ describe("packaged preset user content", () => {
 
     const first = installPackagedPresetContent(presetRoot, hermesHome);
 
-    expect(first).toEqual({ skillsCopied: 0, templatesCopied: 1 });
+    expect(first).toEqual({ skillsCopied: 1, templatesCopied: 1 });
     expect(
       readFileSync(
         join(hermesHome, "skills", "custom", "recruiting", "SKILL.md"),
@@ -58,6 +73,19 @@ describe("packaged preset user content", () => {
         ),
       ),
     ).toBe(true);
+    expect(
+      readFileSync(
+        join(
+          hermesHome,
+          "skills",
+          "custom",
+          "finance",
+          "agents",
+          "openai.yaml",
+        ),
+        "utf8",
+      ),
+    ).toBe("nested skill asset");
 
     expect(installPackagedPresetContent(presetRoot, hermesHome)).toEqual({
       skillsCopied: 0,

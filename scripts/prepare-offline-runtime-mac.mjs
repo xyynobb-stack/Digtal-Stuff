@@ -15,6 +15,12 @@ const windowsRuntimeSource = path.join(
 const sourceRepo = path.resolve(
   process.env.HERMES_AGENT_SOURCE || windowsRuntimeSource,
 );
+const presetContentSource = path.join(
+  projectRoot,
+  "build",
+  "offline-runtime",
+  "preset-content",
+);
 const outputRoot = path.join(projectRoot, "build", "offline-runtime-mac");
 const standaloneTag = process.env.PYTHON_BUILD_STANDALONE_TAG || "20260718";
 const targetArch = process.env.MAC_TARGET_ARCH || process.arch;
@@ -40,6 +46,43 @@ if (process.arch !== targetArch) {
 }
 if (!fs.existsSync(sourceRepo)) {
   throw new Error(`Hermes Agent source not found: ${sourceRepo}`);
+}
+
+function validPresetDirectories(root, requiredFile) {
+  if (!fs.existsSync(root)) return [];
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        fs.existsSync(path.join(root, entry.name, requiredFile)),
+    )
+    .map((entry) => entry.name);
+}
+
+// GitHub's macOS runners cannot read the Windows builder's local Hermes home.
+// The Windows offline preparation command snapshots the selected local user
+// content here; that snapshot must be committed before dispatching this job.
+const presetSkillsSource = path.join(
+  presetContentSource,
+  "skills",
+  "custom",
+);
+const presetTemplatesSource = path.join(
+  presetContentSource,
+  "writing-templates",
+);
+const presetSkills = validPresetDirectories(presetSkillsSource, "SKILL.md");
+const presetTemplates = validPresetDirectories(
+  presetTemplatesSource,
+  "metadata.json",
+);
+if (presetSkills.length === 0 || presetTemplates.length === 0) {
+  throw new Error(
+    "Committed preset content is missing. On the Windows builder, run " +
+      "`npm.cmd run prepare:offline-runtime`, commit " +
+      "`build/offline-runtime/preset-content`, then dispatch the macOS workflow.",
+  );
 }
 
 function run(command, args, options = {}) {
@@ -178,6 +221,29 @@ fs.mkdirSync(outputRoot, { recursive: true });
 const agentDestination = path.join(outputRoot, "hermes-agent");
 copyAgentSource(sourceRepo, agentDestination);
 patchCronOutputDirectories(agentDestination);
+
+const presetDestination = path.join(outputRoot, "preset-content");
+for (const skillName of presetSkills) {
+  const target = path.join(presetDestination, "skills", "custom", skillName);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.cpSync(path.join(presetSkillsSource, skillName), target, {
+    recursive: true,
+  });
+}
+for (const templateName of presetTemplates) {
+  const target = path.join(
+    presetDestination,
+    "writing-templates",
+    templateName,
+  );
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.cpSync(path.join(presetTemplatesSource, templateName), target, {
+    recursive: true,
+  });
+}
+console.log(
+  `Packaged ${presetSkills.length} user Skills and ${presetTemplates.length} writing templates for macOS`,
+);
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jingyuai-python-"));
 const runtimePython = path.join(outputRoot, "python-runtime");

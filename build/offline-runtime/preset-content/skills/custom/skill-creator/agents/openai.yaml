@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Creator"
+  short_description: "Create reusable user skills through guided conversation"
+  default_prompt: "Use $skill-creator to create a reusable skill from my workflow."

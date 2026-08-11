@@ -1,0 +1,4 @@
+interface:
+  display_name: "��Ŀ����"
+  short_description: "Plan scope, delivery, risks, and project coordination"
+  default_prompt: "Use $project-manager to turn this goal into an executable project plan."

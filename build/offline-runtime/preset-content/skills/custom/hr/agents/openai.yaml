@@ -1,0 +1,4 @@
+interface:
+  display_name: "HR"
+  short_description: "Plan recruiting, people programs, and HR operations"
+  default_prompt: "Use $hr to draft a structured hiring plan for this role."

@@ -7,6 +7,7 @@ export default {
   dispatchTooltip: "执行一轮派发 — 将就绪任务升级并启动工作代理",
   newTask: "新建任务",
   newBoard: "新建看板",
+  refreshTooltip: "从代理端重新加载看板与任务数据",
 
   remoteUnsupportedTitle: "看板需要本地安装 JingYuAI 或 SSH 隧道模式。",
   remoteUnsupportedHint:
@@ -33,6 +34,8 @@ export default {
   titlePlaceholder: "需要完成什么？",
   fieldBody: "内容（可选）",
   bodyPlaceholder: "上下文、验收条件、链接…",
+  newTaskTooltip: "在当前看板上创建一个任务",
+  showArchived: "查看归档项",
   fieldAssignee: "指派代理",
   assigneeNone: "— 分类（不指派）",
   fieldPriority: "优先级",
@@ -49,6 +52,7 @@ export default {
   triageCheckbox: "先放到分类（由细化器展开规格后再升级到待办）",
   create: "创建任务",
   creating: "创建中…",
+  archivedTooltip: "切换归档栏目显示状态",
 
   newBoardTitle: "新建看板",
   fieldSlug: "标识",

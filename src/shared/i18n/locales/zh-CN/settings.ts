@@ -35,6 +35,28 @@ export default {
         "永不收集：聊天消息、文件路径、API 密钥、模型配置、账户凭据。",
     },
   },
+  roundedCorners: {
+    label: "圆角",
+    hint: "关闭该选项，应用全局将切换为直角边角样式",
+  },
+  font: {
+    label: "字体",
+    manrope: "Manrope",
+    gsans: "G Sans",
+    hint: "Choose the interface font",
+  },
+  hardwareAcceleration: {
+    label: "Hardware acceleration",
+    auto: "Auto",
+    on: "Always on",
+    off: "Always off",
+    hint: "Use the GPU for rendering when available.",
+    envOverride:
+      "Overridden by the HERMES_DISABLE_GPU environment variable — this setting will have no effect until it is removed.",
+    restartToApply: "Takes effect after a restart.",
+    restartNow: "Restart now",
+    saveFailed: "Could not save the preference.",
+  },
   theme: {
     label: "主题",
     system: "跟随系统",

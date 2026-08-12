@@ -1,23 +1,31 @@
 # Desktop Updates
 
-Desktop updates use GitHub releases and expose both a startup upgrade action and a Settings auto-upgrade preference.
+Desktop automatic updates use Windows NSIS packages from the project's own GitHub Releases. Unsigned macOS builds are published separately for manual installation.
 
-The Electron main process configures `electron-updater` against the repository publisher metadata from `electron-builder.yml`, which points at `fathah/hermes-desktop`. [[src/main/app/updater.ts#setupUpdater]] registers update IPC handlers, persists the auto-upgrade preference under Electron `userData`, and applies that preference to `autoUpdater.autoDownload`.
+The Electron main process configures `electron-updater` from `electron-builder.yml`, which points at `xyynobb-stack/Digtal-Stuff`. [[src/main/app/updater.ts#setupUpdater]] persists the auto-download preference under Electron `userData` and disables updates for development, portable execution, and unsigned manual macOS builds.
 
-When GitHub reports a newer release, [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] shows an upgrade button in the sidebar footer as soon as the app reaches the main layout. The button downloads the update when needed, shows download progress, and changes into a restart action after the update is ready.
+When GitHub reports a newer release, [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] shows an upgrade button in the sidebar footer. The button downloads the update when needed, shows progress, and becomes a restart action after the update is ready.
 
-[[src/renderer/src/components/settings/AboutPane.tsx#AboutPane]] presents JingYuAI Desktop as its own branded card, separate from the compatible Agent engine card because they update on independent channels. [[src/renderer/src/components/settings/useSettingsData.ts#useSettingsData]] drives version, preference, download, and restart actions.
+[[src/renderer/src/components/settings/AboutPane.tsx#AboutPane]] presents JingYuAI Desktop separately from the compatible Agent engine because they use independent update channels. [[src/renderer/src/components/settings/useSettingsData.ts#useSettingsData]] drives version, preference, download, and restart actions.
 
 ## Stable and beta release channels
 
-Two GitHub Actions workflows publish builds; only the stable channel reaches end users' auto-update, so a beta can be tested without risking their devices.
+Stable and beta workflows build Windows x64 NSIS installers; only the stable channel is visible to installed production clients.
 
-## Manual macOS build downloads
+`.github/workflows/release.yml` runs on pushes to `release`, reads `package.json`, builds the Windows installer, and publishes a normal GitHub Release with `latest.yml`, the setup executable, and its blockmap.
 
-The manually dispatched `.github/workflows/build-macos.yml` workflow publishes x64 and arm64 DMG/ZIP outputs as a run-specific GitHub prerelease.
+`.github/workflows/beta-release.yml` runs on pushes to `beta` or manual dispatch, stamps a `-beta.<run>` prerelease version, and publishes the equivalent Windows artifacts with `beta.yml`.
 
-The `mac-build-<run number>` downloads stay separate from stable and beta update channels, supporting ad-hoc testing without changing auto-update behavior.
+The updater leaves `allowPrerelease` disabled, so stable clients ignore beta prereleases. Testers install beta builds manually from the prerelease page.
 
-`release.yml` (stable) runs on a push to the `release` branch: it tags `v<version>` from `package.json`, builds all platforms, and publishes a normal GitHub Release carrying the `latest*.yml` update feed. `beta-release.yml` runs on a push to `beta` (or manual dispatch): it stamps a prerelease version `v<version>-beta.<run>` via `scripts/set-version.mjs`, builds the same signed/notarized artifacts, and publishes a **GitHub prerelease** carrying a `beta*.yml` feed.
+## Manual macOS builds
 
-The isolation is structural: the updater ([[src/main/app/updater.ts#setupUpdater]]) leaves `allowPrerelease` off, so electron-updater's GitHub provider only ever resolves the latest **non-prerelease** release's `latest.yml`. A beta prerelease is therefore invisible to stable clients — testers download the beta installer manually from the prerelease. The beta workflow skips winget + the landing-page rebuild and uses a separate `beta-release` concurrency group so it never cancels a stable release. Cutting a beta for the _next_ version requires bumping `package.json` first (a beta of an already-released version sorts lower than its stable tag).
+`.github/workflows/build-macos.yml` is manually dispatched and builds unsigned Intel and Apple Silicon DMG/ZIP packages with the bundled runtime. It publishes them under an independent `mac-build-<run>` prerelease for users to download and install manually; these builds do not check or install application updates.
+
+## Bundled runtime updates
+
+The NSIS installer and both manually built macOS architectures include the managed Hermes Agent and matching Python runtime under `hermes-runtime`, allowing first launch without downloading the runtime separately.
+
+Installed NSIS builds may update this bundled runtime together with the Electron app. Development, portable execution, and macOS remain excluded from automatic updates by [[src/main/app/updater.ts#setupUpdater]].
+
+The first build that enables this channel must be installed manually on existing employee devices because older bundled builds disabled their updater. Later stable versions can update through GitHub Releases.

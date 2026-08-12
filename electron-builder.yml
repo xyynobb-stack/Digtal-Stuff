@@ -21,9 +21,6 @@ win:
   executableName: JingYuAI
   target:
     - nsis
-    - portable
-portable:
-  artifactName: JingYuAI-${version}-portable.${ext}
 nsis:
   artifactName: JingYuAI-${version}-setup.${ext}
   shortcutName: ${productName}
@@ -74,5 +71,5 @@ rpm:
 npmRebuild: false
 publish:
   provider: github
-  owner: fathah
-  repo: hermes-desktop
+  owner: xyynobb-stack
+  repo: Digtal-Stuff

@@ -48,10 +48,8 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
   });
 
   const isPortableBuild = !!process.env.PORTABLE_EXECUTABLE_DIR;
-  const isOfflineBundle =
-    app.isPackaged &&
-    existsSync(join(process.resourcesPath, "hermes-runtime", "python-runtime"));
-  if (!app.isPackaged || isPortableBuild || isOfflineBundle) {
+  const isManualMacBuild = process.platform === "darwin";
+  if (!app.isPackaged || isPortableBuild || isManualMacBuild) {
     autoUpdaterInstance = null;
     ipcMain.handle("check-for-updates", async () => null);
     ipcMain.handle("download-update", () => true);

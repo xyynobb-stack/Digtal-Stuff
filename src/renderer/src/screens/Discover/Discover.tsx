@@ -777,10 +777,6 @@ export default function Discover({
                     {template.extension.toUpperCase()}
                   </span>
                 </div>
-                <div className="discover-card-meta">{template.fileName}</div>
-                <p className="discover-card-desc">
-                  原始模板文件将在聊天中选择后交给 Agent 解析和使用。
-                </p>
               </div>
             ))}
           </div>

@@ -730,7 +730,7 @@ function Tools({
                     <div className="tools-toolset-info">
                       <div className="tools-card-label">{template.name}</div>
                       <div className="tools-card-description">
-                        {template.fileName} · {template.extension.toUpperCase()}
+                        {template.description || template.fileName}
                       </div>
                     </div>
                   </div>

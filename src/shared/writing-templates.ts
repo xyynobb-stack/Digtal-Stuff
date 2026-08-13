@@ -1,6 +1,8 @@
 export interface WritingTemplate {
   id: string;
   name: string;
+  /** Short user-provided explanation shown in template lists. */
+  description?: string;
   fileName: string;
   extension: string;
   mime: string;
@@ -11,6 +13,13 @@ export interface WritingTemplate {
 }
 
 export interface ImportWritingTemplateResult {
+  success: boolean;
+  canceled?: boolean;
+  template?: WritingTemplate;
+  error?: string;
+}
+
+export interface ReplaceWritingTemplateResult {
   success: boolean;
   canceled?: boolean;
   template?: WritingTemplate;

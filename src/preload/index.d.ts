@@ -2,6 +2,7 @@ import type { AppLocale } from "../shared/i18n/types";
 import type { Attachment } from "../shared/attachments";
 import type {
   ImportWritingTemplateResult,
+  ReplaceWritingTemplateResult,
   WritingTemplate,
 } from "../shared/writing-templates";
 import type { SessionModelOverride } from "../shared/model-override";
@@ -807,6 +808,16 @@ interface HermesAPI {
   importWritingTemplate: (
     profile?: string,
   ) => Promise<ImportWritingTemplateResult>;
+  updateWritingTemplateDescription: (
+    id: string,
+    description: string,
+    profile?: string,
+  ) => Promise<WritingTemplate | null>;
+  replaceWritingTemplateFile: (
+    id: string,
+    profile?: string,
+  ) => Promise<ReplaceWritingTemplateResult>;
+  openWritingTemplate: (id: string, profile?: string) => Promise<boolean>;
   getSkillContent: (skillPath: string) => Promise<string>;
   installSkill: (
     identifier: string,

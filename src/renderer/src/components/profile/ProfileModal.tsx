@@ -1,17 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Brain,
-  Database,
   Plug,
   Pencil,
   Puzzle,
-  Refresh,
-  Settings,
   Signal,
-  Drama,
   Trash,
   User,
-  Wallet,
   X,
 } from "../../assets/icons";
 import ProfileAvatar from "../common/ProfileAvatar";
@@ -71,11 +66,6 @@ const PROFILE_SECTIONS: ReadonlyArray<{
   Icon: React.ComponentType<{ size?: number }>;
 }> = [
   { id: "profile", labelKey: "agents.sectionProfile", Icon: User },
-  { id: "persona", labelKey: "agents.sectionPersona", Icon: Drama },
-  { id: "agentMemory", labelKey: "agents.sectionAgentMemory", Icon: Database },
-  { id: "wallet", labelKey: "agents.sectionWallet", Icon: Wallet },
-  { id: "sync", labelKey: "agents.sectionSync", Icon: Refresh },
-  { id: "advanced", labelKey: "agents.sectionAdvanced", Icon: Settings },
 ];
 
 /**

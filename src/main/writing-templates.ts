@@ -5,12 +5,14 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  unlinkSync,
   statSync,
   writeFileSync,
 } from "fs";
 import { basename, extname, join } from "path";
 import type {
   ImportWritingTemplateResult,
+  ReplaceWritingTemplateResult,
   WritingTemplate,
 } from "../shared/writing-templates";
 import { profileHome } from "./utils";
@@ -40,6 +42,27 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   ".xls": "application/vnd.ms-excel",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
+
+function validateTemplateFile(
+  sourcePath: string,
+): { extension: string; size: number } | { error: string } {
+  if (
+    !sourcePath ||
+    !existsSync(sourcePath) ||
+    !statSync(sourcePath).isFile()
+  ) {
+    return { error: "选择的模板文件不存在。" };
+  }
+  const extension = extname(sourcePath).toLowerCase();
+  if (!ALLOWED_EXTENSIONS.has(extension)) {
+    return { error: "不支持该模板格式。" };
+  }
+  const size = statSync(sourcePath).size;
+  if (size > MAX_TEMPLATE_BYTES) {
+    return { error: "模板文件不能超过 50 MB。" };
+  }
+  return { extension, size };
+}
 
 function templatesRoot(profile?: string): string {
   return join(profileHome(profile), "writing-templates");
@@ -91,21 +114,10 @@ export function importWritingTemplate(
   profile?: string,
 ): ImportWritingTemplateResult {
   try {
-    if (
-      !sourcePath ||
-      !existsSync(sourcePath) ||
-      !statSync(sourcePath).isFile()
-    ) {
-      return { success: false, error: "选择的模板文件不存在。" };
-    }
-    const extension = extname(sourcePath).toLowerCase();
-    if (!ALLOWED_EXTENSIONS.has(extension)) {
-      return { success: false, error: "不支持该模板格式。" };
-    }
-    const size = statSync(sourcePath).size;
-    if (size > MAX_TEMPLATE_BYTES) {
-      return { success: false, error: "模板文件不能超过 50 MB。" };
-    }
+    const validation = validateTemplateFile(sourcePath);
+    if ("error" in validation)
+      return { success: false, error: validation.error };
+    const { extension, size } = validation;
 
     const contents = readFileSync(sourcePath);
     const digest = createHash("sha256")
@@ -143,4 +155,86 @@ export function importWritingTemplate(
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/** Replace a stored template file while keeping its stable library id. */
+export function replaceWritingTemplateFile(
+  id: string,
+  sourcePath: string,
+  profile?: string,
+): ReplaceWritingTemplateResult {
+  try {
+    const template = listWritingTemplates(profile).find(
+      (item) => item.id === id,
+    );
+    if (!template) return { success: false, error: "写作模板不存在。" };
+
+    const validation = validateTemplateFile(sourcePath);
+    if ("error" in validation)
+      return { success: false, error: validation.error };
+    const { extension, size } = validation;
+    const directory = join(templatesRoot(profile), template.id);
+    const fileName = basename(sourcePath);
+    const storedPath = join(directory, fileName);
+
+    if (sourcePath !== storedPath) copyFileSync(sourcePath, storedPath);
+    if (template.path !== storedPath && existsSync(template.path)) {
+      unlinkSync(template.path);
+    }
+
+    const updated: WritingTemplate = {
+      ...template,
+      name: basename(sourcePath, extension),
+      fileName,
+      extension: extension.slice(1),
+      mime: MIME_BY_EXTENSION[extension] || "application/octet-stream",
+      size,
+      path: storedPath,
+    };
+    const { path: _path, ...metadata } = updated;
+    writeFileSync(
+      join(directory, "metadata.json"),
+      JSON.stringify(metadata, null, 2),
+      "utf8",
+    );
+    return { success: true, template: updated };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** Persist a user-facing description for an already imported template. */
+export function updateWritingTemplateDescription(
+  id: string,
+  description: string,
+  profile?: string,
+): WritingTemplate | null {
+  const template = listWritingTemplates(profile).find((item) => item.id === id);
+  if (!template) return null;
+
+  const normalizedDescription = description.trim();
+  const metadata = {
+    id: template.id,
+    name: template.name,
+    ...(normalizedDescription ? { description: normalizedDescription } : {}),
+    fileName: template.fileName,
+    extension: template.extension,
+    mime: template.mime,
+    size: template.size,
+    createdAt: template.createdAt,
+  } satisfies Omit<WritingTemplate, "path">;
+  writeFileSync(
+    join(templatesRoot(profile), template.id, "metadata.json"),
+    JSON.stringify(metadata, null, 2),
+    "utf8",
+  );
+  return normalizedDescription
+    ? { ...template, description: normalizedDescription }
+    : (() => {
+        const { description: _description, ...withoutDescription } = template;
+        return withoutDescription;
+      })();
 }

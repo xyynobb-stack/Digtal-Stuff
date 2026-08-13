@@ -89,6 +89,58 @@ jobs:
       - name: Apply beta version
         run: node scripts/set-version.mjs "${{ needs.prepare.outputs.beta_version }}"
 
+      - name: Verify bundled Windows runtime
+        shell: pwsh
+        env:
+          EMPLOYEE_LOOKUP_ADMIN_TOKEN: ${{ secrets.EMPLOYEE_LOOKUP_ADMIN_TOKEN }}
+        run: |
+          $required = @(
+            "build/offline-runtime/hermes-agent/run_agent.py",
+            "build/offline-runtime/python-runtime/python.exe",
+            "build/offline-runtime/preset-content"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Bundled Windows runtime is incomplete: missing $path"
+            }
+          }
+
+          $runtimeBytes = (Get-ChildItem "build/offline-runtime" -Recurse -File |
+            Measure-Object -Property Length -Sum).Sum
+          if ($runtimeBytes -lt 100MB) {
+            throw "Bundled Windows runtime is unexpectedly small: $runtimeBytes bytes"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:EMPLOYEE_LOOKUP_ADMIN_TOKEN)) {
+            throw "EMPLOYEE_LOOKUP_ADMIN_TOKEN GitHub Secret is required"
+          }
+
+          $envFile = Join-Path $PWD "build/offline-runtime/employee-lookup.env"
+          $content = "EMPLOYEE_LOOKUP_ADMIN_TOKEN=$($env:EMPLOYEE_LOOKUP_ADMIN_TOKEN)`n"
+          [IO.File]::WriteAllText($envFile, $content, [Text.UTF8Encoding]::new($false))
+          Write-Host "Verified bundled runtime: $([math]::Round($runtimeBytes / 1MB, 1)) MB"
+
+      - name: Build bundled Windows virtual environment
+        shell: pwsh
+        run: |
+          $agentRoot = Join-Path $PWD "build/offline-runtime/hermes-agent"
+          $basePython = Join-Path $PWD "build/offline-runtime/python-runtime/python.exe"
+          $venvRoot = Join-Path $agentRoot "venv"
+          $venvPython = Join-Path $venvRoot "Scripts/python.exe"
+
+          & $basePython -m venv $venvRoot
+          if ($LASTEXITCODE -ne 0) { throw "Could not create bundled Python venv" }
+          & $venvPython -m pip install --disable-pip-version-check --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw "Could not upgrade pip in bundled venv" }
+          Push-Location $agentRoot
+          try {
+            & $venvPython -m pip install --disable-pip-version-check -e "."
+            if ($LASTEXITCODE -ne 0) { throw "Could not install Hermes Agent into bundled venv" }
+            & $venvPython -c "import hermes_cli, run_agent"
+            if ($LASTEXITCODE -ne 0) { throw "Bundled Hermes Agent import check failed" }
+          } finally {
+            Pop-Location
+          }
+
       - name: Build app
         env:
           VITE_ANALYTICS_BASE_URL: ${{ vars.VITE_ANALYTICS_BASE_URL }}
@@ -99,6 +151,30 @@ jobs:
 
       - name: Package Windows installer
         run: npx electron-builder --win nsis --x64 --publish never
+
+      - name: Verify packaged Windows runtime
+        shell: pwsh
+        run: |
+          $runtime = "dist/win-unpacked/resources/hermes-runtime"
+          $required = @(
+            "$runtime/hermes-agent/run_agent.py",
+            "$runtime/hermes-agent/venv/Scripts/python.exe",
+            "$runtime/hermes-agent/venv/Scripts/hermes.exe",
+            "$runtime/python-runtime/python.exe",
+            "$runtime/employee-lookup.env"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Packaged Windows runtime is incomplete: missing $path"
+            }
+          }
+          Push-Location "$runtime/hermes-agent"
+          try {
+            & "$runtime/hermes-agent/venv/Scripts/python.exe" -c "import hermes_cli, run_agent"
+            if ($LASTEXITCODE -ne 0) { throw "Packaged Hermes Agent import check failed" }
+          } finally {
+            Pop-Location
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

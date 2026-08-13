@@ -28,7 +28,7 @@ It publishes them under an independent `mac-build-<run>` prerelease for manual i
 
 The installers include the managed Hermes Agent and matching Python runtime under `hermes-runtime`, allowing first launch without downloading the runtime separately.
 
-Windows packages also include full PortableGit. Local staging and both release channels download the pinned distribution into `build/offline-runtime/git`; Agent processes use it directly from packaged resources without a second copy in user data.
+Windows packages also include full PortableGit. Local staging and both release channels download the pinned distribution into `build/offline-runtime/git`; Agent processes use it directly from packaged resources without a second copy in user data. Staging falls back to copy-and-remove when CI temporary files and the repository are on different Windows volumes.
 
 Windows CI rebuilds the ignored virtual environment with `pip install -e .` and injects the employee lookup secret without committing it. Stable and beta workflows reject incomplete Python, Agent, PortableGit, or environment resources.
 

@@ -208,4 +208,42 @@ describe("applyDashboardStreamEvent — message.complete text reconciliation", (
     expect(bubble).toBeDefined();
     expect((bubble as { content: string }).content).toBe("Remote answer");
   });
+
+  it("replaces reasoning-contaminated deltas with the canonical answer", () => {
+    let state: DashboardEventState = {
+      messages: [userTurn()],
+      reasoningSegmentClosed: false,
+    };
+    state = applyDashboardStreamEvent(state, {
+      type: "reasoning.delta",
+      payload: { text: 'The user just said "你好". No tools needed.' },
+    });
+    state = applyDashboardStreamEvent(state, {
+      type: "message.delta",
+      payload: {
+        text: 'The user just said "你好". No tools needed.\n\n你好！',
+      },
+    });
+    state = applyDashboardStreamEvent(state, {
+      type: "message.complete",
+      payload: {
+        text: "你好！我是 JingYuAI，很高兴见到你。",
+        reasoning: 'The user just said "你好". No tools needed.',
+      },
+    });
+
+    const bubble = state.messages.find(
+      (message) => message.role === "agent" && message.kind !== "reasoning",
+    );
+    const thought = state.messages.find(
+      (message) => message.kind === "reasoning",
+    );
+    expect(bubble).toMatchObject({
+      content: "你好！我是 JingYuAI，很高兴见到你。",
+      pending: false,
+    });
+    expect(thought).toMatchObject({
+      text: 'The user just said "你好". No tools needed.',
+    });
+  });
 });

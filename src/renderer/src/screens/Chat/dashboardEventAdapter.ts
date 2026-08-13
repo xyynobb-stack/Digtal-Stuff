@@ -602,6 +602,15 @@ function completeAssistantWithFinalText(
     finalText,
     activeTurn,
   );
+  const lastUserIndex = messagesWithoutDuplicateReasoning.findLastIndex(
+    (message) => message.role === "user",
+  );
+  const turnHasToolActivity = messagesWithoutDuplicateReasoning
+    .slice(lastUserIndex + 1)
+    .some(
+      (message) =>
+        message.kind === "tool_call" || message.kind === "tool_result",
+    );
 
   for (let i = messagesWithoutDuplicateReasoning.length - 1; i >= 0; i--) {
     const msg = messagesWithoutDuplicateReasoning[i];
@@ -609,10 +618,13 @@ function completeAssistantWithFinalText(
     if (!isAssistantBubble(msg) || msg.error) continue;
     if (activeTurn && msg.turnId && msg.turnId !== activeTurn.turnId) continue;
 
-    // Merge streamed text with finalText so content streamed before tool
-    // calls is preserved rather than clobbered by a last-turn-only
-    // final_response (#746).
-    const merged = mergeStreamedWithFinal(msg.content, finalText);
+    // The completion payload is the canonical persisted answer. Only retain
+    // streamed text when a tool turn may contain a genuine pre-tool segment
+    // omitted from final_response (#746). Otherwise replacement also removes
+    // reasoning chunks that upstream mislabeled as message.delta.
+    const merged = turnHasToolActivity
+      ? mergeStreamedWithFinal(msg.content, finalText)
+      : finalText.trim();
 
     return [
       ...messagesWithoutDuplicateReasoning.slice(0, i),

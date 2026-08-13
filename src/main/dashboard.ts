@@ -183,8 +183,12 @@ function dashboardLogPath(profile: string | undefined): string {
   return join(dir, "dashboard-stderr.log");
 }
 
-function dashboardHasPrebuiltWebDist(): boolean {
-  return existsSync(join(HERMES_REPO, "hermes_cli", "web_dist", "index.html"));
+function dashboardBackendCwd(profile: string | undefined): string {
+  // Do not let the managed Agent source tree become the implicit workspace.
+  // Explicit chat folders are passed separately via session.create/cwd.set.
+  const dir = join(profileHome(profile), "desktop-backend-cwd");
+  mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 async function getFreePort(): Promise<number> {
@@ -623,15 +627,12 @@ export async function startDashboard(
   const baseUrl = `http://127.0.0.1:${port}`;
   const logPath = dashboardLogPath(resolvedProfile);
   const stderrFd = openSync(logPath, "a");
-  const hasPrebuiltWebDist = dashboardHasPrebuiltWebDist();
-  const cliArgs = buildLocalDashboardCliArgs(resolvedProfile, port, {
-    skipBuild: hasPrebuiltWebDist,
-  });
+  const cliArgs = buildLocalDashboardCliArgs(resolvedProfile, port);
 
   let proc: ChildProcess;
   try {
     proc = spawn(HERMES_PYTHON, hermesCliArgs(cliArgs), {
-      cwd: HERMES_REPO,
+      cwd: dashboardBackendCwd(resolvedProfile),
       env: {
         ...process.env,
         PATH: getEnhancedPath(),
@@ -639,9 +640,9 @@ export async function startDashboard(
         HERMES_HOME,
         HERMES_DASHBOARD_SESSION_TOKEN: token,
         HERMES_DESKTOP: "1",
-        ...(hasPrebuiltWebDist
-          ? { HERMES_WEB_DIST: join(HERMES_REPO, "hermes_cli", "web_dist") }
-          : {}),
+        // `hermes serve` also sets this itself. Exporting it protects older
+        // compatible runtimes and guarantees the SPA is never mounted.
+        HERMES_SERVE_HEADLESS: "1",
       },
       stdio: ["ignore", "ignore", stderrFd],
       detached: false,
@@ -676,10 +677,7 @@ export async function startDashboard(
   });
 
   try {
-    await waitForDashboardReady(
-      connection,
-      hasPrebuiltWebDist ? 45_000 : 180_000,
-    );
+    await waitForDashboardReady(connection, 45_000);
     await probeDashboardWebSocket(connection, 5_000);
   } catch (err) {
     dashboards.delete(key);

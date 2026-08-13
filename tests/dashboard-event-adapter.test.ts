@@ -318,6 +318,41 @@ describe("applyDashboardStreamEvent", () => {
     expect(agent).toMatchObject({ pending: false });
   });
 
+  it("keeps reasoning exclusively in Thought when a contaminated delta precedes the final answer", () => {
+    const messages = reduceEvents([
+      {
+        type: "reasoning.delta",
+        payload: { text: 'The user said "你好". No tools needed.' },
+      },
+      {
+        type: "message.delta",
+        payload: {
+          text: 'The user said "你好". No tools needed.\n\n你好！',
+        },
+      },
+      {
+        type: "message.complete",
+        payload: {
+          reasoning: 'The user said "你好". No tools needed.',
+          text: "你好！很高兴见到你。",
+        },
+      },
+    ]);
+
+    expect(
+      messages.map((message) =>
+        "kind" in message ? message.kind : message.role,
+      ),
+    ).toEqual(["user", "reasoning", "agent"]);
+    expect(messages[1]).toMatchObject({
+      text: 'The user said "你好". No tools needed.',
+    });
+    expect(messages[2]).toMatchObject({
+      content: "你好！很高兴见到你。",
+      pending: false,
+    });
+  });
+
   it("replaces mismatched streamed deltas with the final completion text", () => {
     let state: DashboardEventState = {
       messages: [{ id: "u-1", role: "user", content: "korean" }],

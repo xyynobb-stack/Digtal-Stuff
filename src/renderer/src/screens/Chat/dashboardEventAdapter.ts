@@ -612,6 +612,52 @@ function completeAssistantWithFinalText(
         message.kind === "tool_call" || message.kind === "tool_result",
     );
 
+  if (!turnHasToolActivity) {
+    // A plain assistant turn has exactly one canonical persisted answer. Some
+    // providers can mislabel reasoning as message.delta, then open another
+    // assistant bubble after reasoning.delta. Replacing only the last bubble
+    // leaves the earlier contaminated bubble visible. Collapse every assistant
+    // bubble in this turn to one final_response while retaining Thought rows.
+    let canonicalBubble: ChatBubbleMessage | null = null;
+    for (
+      let i = messagesWithoutDuplicateReasoning.length - 1;
+      i > lastUserIndex;
+      i--
+    ) {
+      const msg = messagesWithoutDuplicateReasoning[i];
+      if (!isAssistantBubble(msg) || msg.error) continue;
+      if (activeTurn && msg.turnId && msg.turnId !== activeTurn.turnId)
+        continue;
+      canonicalBubble = msg;
+      break;
+    }
+
+    const withoutTurnAssistantBubbles =
+      messagesWithoutDuplicateReasoning.filter((msg, index) => {
+        if (index <= lastUserIndex || !isAssistantBubble(msg) || msg.error) {
+          return true;
+        }
+        return Boolean(
+          activeTurn && msg.turnId && msg.turnId !== activeTurn.turnId,
+        );
+      });
+
+    return [
+      ...withoutTurnAssistantBubbles,
+      {
+        ...(canonicalBubble ?? {
+          id: `agent-dashboard-${now}-${withoutTurnAssistantBubbles.length}`,
+          role: "agent" as const,
+        }),
+        content: finalText.trim(),
+        pending: false,
+        ...(canonicalBubble?.turnId || activeTurn?.turnId
+          ? { turnId: canonicalBubble?.turnId || activeTurn?.turnId }
+          : {}),
+      },
+    ];
+  }
+
   for (let i = messagesWithoutDuplicateReasoning.length - 1; i >= 0; i--) {
     const msg = messagesWithoutDuplicateReasoning[i];
     if (msg.role === "user") break;
@@ -622,9 +668,7 @@ function completeAssistantWithFinalText(
     // streamed text when a tool turn may contain a genuine pre-tool segment
     // omitted from final_response (#746). Otherwise replacement also removes
     // reasoning chunks that upstream mislabeled as message.delta.
-    const merged = turnHasToolActivity
-      ? mergeStreamedWithFinal(msg.content, finalText)
-      : finalText.trim();
+    const merged = mergeStreamedWithFinal(msg.content, finalText);
 
     return [
       ...messagesWithoutDuplicateReasoning.slice(0, i),
@@ -717,7 +761,13 @@ export function applyDashboardStreamEvent(
         reasoningSegmentClosed: true,
       };
     case "message.complete": {
-      const finalText = textFromPayload(event.payload, "text", "rendered");
+      const finalText = textFromPayload(
+        event.payload,
+        "final_response",
+        "content",
+        "text",
+        "rendered",
+      );
       const finalReasoning = thinkingTextFromPayload(
         event.payload,
         "reasoning",

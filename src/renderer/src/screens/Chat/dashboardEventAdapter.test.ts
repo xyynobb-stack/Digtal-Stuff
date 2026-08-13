@@ -118,6 +118,44 @@ describe("applyDashboardStreamEvent — message.complete text reconciliation", (
     content: "weather?",
   });
 
+  it("collapses assistant bubbles split by a late reasoning event", () => {
+    let state: DashboardEventState = {
+      messages: [userTurn()],
+      reasoningSegmentClosed: false,
+    };
+    state = applyDashboardStreamEvent(state, {
+      type: "message.delta",
+      payload: { text: 'The user just said "hello". No tools needed.' },
+    });
+    state = applyDashboardStreamEvent(state, {
+      type: "reasoning.delta",
+      payload: { text: 'The user just said "hello". No tools needed.' },
+    });
+    state = applyDashboardStreamEvent(state, {
+      type: "message.delta",
+      payload: { text: "Hello! I am JingYuAI." },
+    });
+    state = applyDashboardStreamEvent(state, {
+      type: "message.complete",
+      payload: {
+        text: "Hello! I am JingYuAI. How can I help?",
+        reasoning: 'The user just said "hello". No tools needed.',
+      },
+    });
+
+    const bubbles = state.messages.filter(
+      (message) => message.role === "agent" && message.kind !== "reasoning",
+    );
+    expect(bubbles).toHaveLength(1);
+    expect(bubbles[0]).toMatchObject({
+      content: "Hello! I am JingYuAI. How can I help?",
+      pending: false,
+    });
+    expect(
+      state.messages.filter((message) => message.kind === "reasoning"),
+    ).toHaveLength(1);
+  });
+
   it("preserves pre-tool-call streamed text on completion (#746)", () => {
     // Model streamed text, called a tool, then finalized with a short
     // last-turn-only final_response. The pre-tool text lives in the last
@@ -207,6 +245,34 @@ describe("applyDashboardStreamEvent — message.complete text reconciliation", (
     const bubble = next.messages.find((m) => m.role === "agent");
     expect(bubble).toBeDefined();
     expect((bubble as { content: string }).content).toBe("Remote answer");
+  });
+
+  it("uses the canonical final_response field used by compatible runtimes", () => {
+    const state: DashboardEventState = {
+      messages: [
+        userTurn(),
+        {
+          id: "a-contaminated",
+          role: "agent",
+          content: "internal reasoning mixed into the answer",
+          pending: true,
+        },
+      ],
+      reasoningSegmentClosed: false,
+    };
+
+    const next = applyDashboardStreamEvent(state, {
+      type: "message.complete",
+      payload: { final_response: "Canonical answer" },
+    });
+
+    expect(
+      next.messages.filter((message) => message.role === "agent"),
+    ).toHaveLength(1);
+    expect(next.messages.at(-1)).toMatchObject({
+      content: "Canonical answer",
+      pending: false,
+    });
   });
 
   it("replaces reasoning-contaminated deltas with the canonical answer", () => {

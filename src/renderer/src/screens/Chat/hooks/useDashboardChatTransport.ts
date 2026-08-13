@@ -641,6 +641,7 @@ interface DashboardEventSummary {
   payloadKeys: string[];
   reasoningLength: number;
   renderedLength: number;
+  finalResponseLength: number;
   runtimeSessionId: string | null;
   status: "accepted" | "dropped";
   textLength: number;
@@ -670,6 +671,7 @@ function logDashboardEvent(
     payloadKeys: Object.keys(payload).sort(),
     textLength: payloadTextLength(payload, "text"),
     renderedLength: payloadTextLength(payload, "rendered"),
+    finalResponseLength: payloadTextLength(payload, "final_response"),
     reasoningLength: payloadTextLength(payload, "reasoning"),
     hasUsage: !!payload.usage,
   };

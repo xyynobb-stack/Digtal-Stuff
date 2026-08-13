@@ -25,6 +25,7 @@ import { precacheSudoCredentials } from "./sudoCreds";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
 import { installPackagedPresetContent } from "./preset-content";
 import { mergeBundledEmployeeLookupToken } from "./employee-lookup-token";
+import { desktopRuntimeBuildIdentity } from "./runtime-build";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -121,12 +122,15 @@ async function prepareBundledRuntime(): Promise<void> {
       const packagedBuildMarker = existsSync(sourceBuildMarker)
         ? readFileSync(sourceBuildMarker, "utf8")
         : "";
+      const expectedBuildIdentity = desktopRuntimeBuildIdentity(
+        packagedBuildMarker,
+        app.getVersion(),
+      );
       const installedBuildMarker = existsSync(targetBuildMarker)
         ? readFileSync(targetBuildMarker, "utf8")
         : "";
       const runtimeBuildChanged =
-        Boolean(packagedBuildMarker) &&
-        packagedBuildMarker !== installedBuildMarker;
+        expectedBuildIdentity !== installedBuildMarker;
 
       if (!existsSync(targetRepo) || runtimeBuildChanged) {
         // All Python modules in a packaged runtime are one compatibility unit.
@@ -140,9 +144,7 @@ async function prepareBundledRuntime(): Promise<void> {
             force: true,
           });
         }
-        if (packagedBuildMarker) {
-          writeFileSync(targetBuildMarker, packagedBuildMarker, "utf8");
-        }
+        writeFileSync(targetBuildMarker, expectedBuildIdentity, "utf8");
       } else if (existsSync(sourceVenv) && !existsSync(targetVenv)) {
         // Preserve the existing agent tree, but restore a missing venv from
         // the package. This is the tree used by Kanban and scheduled tasks.
@@ -175,6 +177,8 @@ async function prepareBundledRuntime(): Promise<void> {
     const managedRuntimeOverlays = [
       join("tools", "browser_tool.py"),
       join("tools", "skills_tool.py"),
+      join("agent", "runtime_cwd.py"),
+      join("agent", "system_prompt.py"),
       join("agent", "prompt_builder.py"),
       "run_agent.py",
     ];

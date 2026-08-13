@@ -1,5 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Settings, Users, Check, Search } from "../../assets/icons";
+import {
+  Brain,
+  ChevronDown,
+  KeyRound,
+  ProfileIcon,
+  Settings,
+  Check,
+  Search,
+  Workflow,
+} from "../../assets/icons";
 import { useI18n } from "../../components/useI18n";
 import ProfileAvatar from "../../components/common/ProfileAvatar";
 import { useProfileModal } from "../../components/profile/ProfileModalContext";
@@ -23,32 +32,48 @@ interface ProfileSwitcherProps {
   onSwitch: (name: string) => void;
   /** Open the full Profiles management screen. */
   onManage: () => void;
+  /** Open the provider credentials screen. */
+  onOpenProviders: () => void;
+  /** Open the capabilities screen. */
+  onOpenTools: () => void;
+  /** Open Agent memory. */
+  onOpenMemory: () => void;
+  /** Open application settings. */
+  onOpenSettings: () => void;
+  /** Marks the currently visible destination in the account menu. */
+  activeDestination?: "providers" | "tools" | "memory";
   /** Render as an icon-only sidebar footer affordance. */
   compact?: boolean;
 }
 
 /**
- * Sidebar-footer profile control, split into two affordances: the chip (avatar
- * + name) opens the current profile's edit modal, and a dedicated switch button
- * opens a command-palette-style picker to change the active profile. Collapsed,
- * the single avatar opens the picker. The picker also opens from anywhere via
- * Cmd/Ctrl+P: a fuzzy search field on top, running profiles grouped above a
- * "Stopped" section, each row showing its model in monospace and a running dot.
+ * Sidebar-footer account control. The avatar/name opens an upward action menu
+ * containing Profile and the workspace destinations removed from the footer
+ * icon row. Profile switching remains available from anywhere via Cmd/Ctrl+P:
+ * a fuzzy search field on top, running profiles grouped above a "Stopped"
+ * section, each row showing its model in monospace and a running dot.
  */
 export default function ProfileSwitcher({
   activeProfile,
   onSwitch,
   onManage,
+  onOpenProviders,
+  onOpenTools,
+  onOpenMemory,
+  onOpenSettings,
+  activeDestination,
   compact = false,
 }: ProfileSwitcherProps): React.JSX.Element {
   const { t } = useI18n();
   const { openProfile } = useProfileModal();
   const [switchOpen, setSwitchOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const switcherRef = useRef<HTMLDivElement>(null);
 
   const isMac = window.electron?.process?.platform === "darwin";
   const mod = isMac ? "⌘" : "Ctrl";
@@ -98,6 +123,24 @@ export default function ProfileSwitcher({
     return () => cancelAnimationFrame(id);
   }, [switchOpen, load]);
 
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    function closeOnOutsidePointer(event: PointerEvent): void {
+      if (!switcherRef.current?.contains(event.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent): void {
+      if (event.key === "Escape") setAccountMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [accountMenuOpen]);
+
   const activeInfo = profiles.find((p) => p.id === activeProfile);
   const hasDefaultFallbackName =
     activeInfo?.isDefault && activeInfo.name === activeInfo.id;
@@ -109,7 +152,13 @@ export default function ProfileSwitcher({
         : activeProfile;
 
   function editCurrent(): void {
+    setAccountMenuOpen(false);
     openProfile(activeProfile, { onChanged: load });
+  }
+
+  function runAccountAction(action: () => void): void {
+    setAccountMenuOpen(false);
+    action();
   }
 
   const handleSelect = useCallback(
@@ -206,15 +255,68 @@ export default function ProfileSwitcher({
 
   return (
     <>
-      <div className={`profile-switcher ${compact ? "compact" : ""}`}>
+      <div
+        ref={switcherRef}
+        className={`profile-switcher ${compact ? "compact" : ""}`}
+      >
+        {accountMenuOpen && (
+          <div className="account-menu" role="menu" aria-label="用户菜单">
+            <button
+              type="button"
+              className="account-menu-item"
+              role="menuitem"
+              onClick={editCurrent}
+            >
+              <ProfileIcon size={17} />
+              <span>Profile</span>
+            </button>
+            <div className="account-menu-divider" />
+            <button
+              type="button"
+              className={`account-menu-item ${activeDestination === "providers" ? "active" : ""}`}
+              role="menuitem"
+              onClick={() => runAccountAction(onOpenProviders)}
+            >
+              <KeyRound size={17} />
+              <span>{t("navigation.providers")}</span>
+            </button>
+            <button
+              type="button"
+              className={`account-menu-item ${activeDestination === "tools" ? "active" : ""}`}
+              role="menuitem"
+              onClick={() => runAccountAction(onOpenTools)}
+            >
+              <Workflow size={17} />
+              <span>{t("navigation.tools")}</span>
+            </button>
+            <button
+              type="button"
+              className={`account-menu-item ${activeDestination === "memory" ? "active" : ""}`}
+              role="menuitem"
+              onClick={() => runAccountAction(onOpenMemory)}
+            >
+              <Brain size={17} />
+              <span>{t("navigation.memory")}</span>
+            </button>
+            <button
+              type="button"
+              className="account-menu-item"
+              role="menuitem"
+              onClick={() => runAccountAction(onOpenSettings)}
+            >
+              <Settings size={17} />
+              <span>{t("navigation.settings")}</span>
+            </button>
+          </div>
+        )}
         <button
-          className="profile-switcher-trigger"
-          onClick={compact ? () => setSwitchOpen(true) : editCurrent}
-          title={
-            compact
-              ? t("agents.switchProfile")
-              : t("agents.editAppearanceFor", { name: label })
-          }
+          type="button"
+          className={`profile-switcher-trigger ${accountMenuOpen ? "open" : ""}`}
+          onClick={() => setAccountMenuOpen((open) => !open)}
+          title={label}
+          aria-label={`${label} 用户菜单`}
+          aria-haspopup="menu"
+          aria-expanded={accountMenuOpen}
         >
           <ProfileAvatar
             name={activeProfile}
@@ -223,17 +325,10 @@ export default function ProfileSwitcher({
             size={compact ? 22 : 18}
           />
           {!compact && <span className="profile-switcher-name">{label}</span>}
+          {!compact && (
+            <ChevronDown size={15} className="profile-switcher-chevron" />
+          )}
         </button>
-        {!compact && (
-          <button
-            className="profile-switch-btn"
-            onClick={() => setSwitchOpen(true)}
-            title={`${t("agents.switchProfile")} (${mod}P)`}
-            aria-label={t("agents.switchProfile")}
-          >
-            <Users size={16} />
-          </button>
-        )}
       </div>
 
       {switchOpen && (

@@ -72,6 +72,24 @@ describe("writing template storage", () => {
     ).toBe("用于服务器设备租赁的标准合同");
   });
 
+  it("imports Excel workbook templates unchanged", async () => {
+    const { importWritingTemplate } =
+      await import("../src/main/writing-templates");
+    const source = join(testHome, "weekly-report.xlsx");
+    const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+    writeFileSync(source, bytes);
+
+    const result = importWritingTemplate(source, "writer");
+
+    expect(result.success).toBe(true);
+    expect(result.template).toMatchObject({
+      name: "weekly-report",
+      extension: "xlsx",
+      mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    expect(readFileSync(result.template!.path)).toEqual(bytes);
+  });
+
   it("replaces the stored source file and preserves its description", async () => {
     const {
       importWritingTemplate,

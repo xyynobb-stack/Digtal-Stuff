@@ -1489,6 +1489,7 @@ const hermesAPI = {
     model?: string,
     provider?: string,
     outputDir?: string,
+    skills?: string[],
   ): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke(
       "create-cron-job",
@@ -1500,6 +1501,7 @@ const hermesAPI = {
       model,
       provider,
       outputDir,
+      skills,
     ),
 
   removeCronJob: (

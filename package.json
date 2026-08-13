@@ -23,6 +23,7 @@
     "sandbox:sync-config": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/hermes-sandbox.ps1 sync-config",
     "dev:fresh": "HERMES_HOME=$(mktemp -d -t hermes-fresh) electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "prepare:portable-git": "node scripts/prepare-portable-git.mjs",
     "prepare:offline-runtime": "node scripts/prepare-offline-runtime.mjs",
     "prepare:offline-runtime-mac": "node scripts/prepare-offline-runtime-mac.mjs",
     "build:offline-win": "npm run prepare:offline-runtime && npm run build && electron-builder --win",

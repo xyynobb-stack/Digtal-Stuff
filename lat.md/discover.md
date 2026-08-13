@@ -22,7 +22,7 @@ The Skill Creator starter guides a dialogue from trigger examples and scope thro
 
 The Discover tab row contains Skills, Agents, and 写作模板; MCPs and Workflows are not shown in this employee-facing navigation.
 
-Selecting 写作模板 opens a searchable template view. “添加写作模板” accepts common document formats beside the local-Skill import action, then opens an application modal for the description and refreshes every mounted template view without relying on a browser prompt.
+Selecting 写作模板 opens a searchable template view. “添加写作模板” accepts common document and spreadsheet formats (`.xls`/`.xlsx` included), then opens an application modal for the description and refreshes every mounted template view without relying on a browser prompt.
 
 [[src/main/writing-templates.ts#importWritingTemplate]] copies the selected file byte-for-byte into the current profile's `writing-templates` directory and writes only indexing metadata beside it. The desktop does not parse, normalize, or adapt document contents; [[src/main/writing-templates.ts#listWritingTemplates]] returns the stored originals for display and later Agent attachment.
 

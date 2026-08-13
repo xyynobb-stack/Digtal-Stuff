@@ -20,13 +20,17 @@ The updater leaves `allowPrerelease` disabled, so stable clients ignore beta pre
 
 ## Manual macOS builds
 
-`.github/workflows/build-macos.yml` is manually dispatched and builds unsigned Intel and Apple Silicon DMG/ZIP packages with the bundled runtime. It publishes them under an independent `mac-build-<run>` prerelease for users to download and install manually; these builds do not check or install application updates.
+`.github/workflows/build-macos.yml` manually builds unsigned Intel and Apple Silicon DMG/ZIP packages with the bundled runtime.
+
+It publishes them under an independent `mac-build-<run>` prerelease for manual installation. These builds do not check or install application updates.
 
 ## Bundled runtime updates
 
-The NSIS installer and both manually built macOS architectures include the managed Hermes Agent and matching Python runtime under `hermes-runtime`, allowing first launch without downloading the runtime separately.
+The installers include the managed Hermes Agent and matching Python runtime under `hermes-runtime`, allowing first launch without downloading the runtime separately.
 
-Windows CI packages the versioned Agent and base Python stored under `build/offline-runtime`, rebuilds the ignored platform-specific virtual environment with `pip install -e .`, and injects the employee lookup secret without committing it. Stable and beta workflows verify the source runtime and the packaged base Python, venv interpreter, Hermes launcher, and generated environment file; an incomplete runtime fails instead of publishing a reduced installer.
+Windows packages also include full PortableGit. Local staging and both release channels download the pinned distribution into `build/offline-runtime/git`; Agent processes use it directly from packaged resources without a second copy in user data.
+
+Windows CI rebuilds the ignored virtual environment with `pip install -e .` and injects the employee lookup secret without committing it. Stable and beta workflows reject incomplete Python, Agent, PortableGit, or environment resources.
 
 Installed NSIS builds may update this bundled runtime together with the Electron app. Development, portable execution, and macOS remain excluded from automatic updates by [[src/main/app/updater.ts#setupUpdater]].
 

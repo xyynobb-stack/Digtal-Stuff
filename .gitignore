@@ -40,6 +40,10 @@ release/
 # administrator credential and must never be committed.
 /build/offline-runtime/employee-lookup.env
 
+# Downloaded by prepare-portable-git.mjs for local and CI packaging. The full
+# PortableGit distribution is generated build input, not repository source.
+/build/offline-runtime/git/
+
 # Tauri
 **/src-tauri/target/
 **/src-tauri/gen/

@@ -20,6 +20,7 @@ import { setGatewayPromptParent } from "../gatewayPrompt";
 import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
 import { setupUpdater } from "./updater";
+import { initializeBundledRuntime } from "../installer";
 
 const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "JingYuAI";
 const OPEN_DEVTOOLS_ON_START =
@@ -105,6 +106,15 @@ export function startMainProcess(): void {
     });
 
     createWindow();
+    // A packaged offline runtime can contain tens of thousands of files. Start
+    // preparing it only after the window exists, and keep the copy asynchronous
+    // so first launch cannot crash while the main-process bundle is loading.
+    void initializeBundledRuntime().catch((error) => {
+      console.error(
+        "[installer] Bundled runtime initialization failed:",
+        error,
+      );
+    });
     buildMenu({ getMainWindow: () => mainWindow, openExternalUrl });
 
     app.on("activate", () => {

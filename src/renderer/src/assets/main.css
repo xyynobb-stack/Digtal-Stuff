@@ -14118,6 +14118,135 @@ body:has(.shell-vibrant),
   font-family: var(--font-sans);
 }
 
+.schedules-recommendation-trigger {
+  position: relative;
+}
+
+.schedules-recommendation-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 90;
+  width: 272px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border-bright);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-secondary) 97%, transparent);
+  backdrop-filter: blur(24px) saturate(1.35);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  box-shadow: 0 16px 38px -12px rgba(0, 0, 0, 0.48);
+  animation: profileMenuIn 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.schedules-recommendation-menu button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.schedules-recommendation-menu button:hover,
+.schedules-recommendation-menu button:focus-visible {
+  outline: 0;
+  background: var(--bg-tertiary);
+}
+
+.schedules-recommendation-menu strong {
+  font-size: 13px;
+}
+
+.schedules-recommendation-menu span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.schedules-recommendation-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.schedules-recommendation-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--accent-text, var(--accent));
+}
+
+.schedules-recommendation-banner div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.schedules-recommendation-banner strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.schedules-recommendation-banner span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.schedules-report-content {
+  min-height: 104px;
+}
+
+.schedules-report-dates {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.schedules-report-dates.is-range {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.schedules-date-dropdowns {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr;
+  gap: 6px;
+}
+
+.schedules-date-dropdowns .input {
+  min-width: 0;
+  padding-right: 24px;
+}
+
+.schedules-validation-error {
+  color: var(--error);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.schedules-modal:has(.schedules-recommendation-fields) {
+  max-width: 680px;
+}
+
+@media (max-width: 720px) {
+  .schedules-report-dates.is-range {
+    grid-template-columns: 1fr;
+  }
+}
+
 .kanban-folder-picker {
   display: flex;
   gap: 8px;

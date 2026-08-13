@@ -1,6 +1,5 @@
 import { spawn, execFile, execFileSync } from "child_process";
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -9,7 +8,8 @@ import {
   writeFileSync,
   unlinkSync,
 } from "fs";
-import { join, delimiter, resolve } from "path";
+import { cp } from "fs/promises";
+import { join, delimiter, posix, resolve, win32 } from "path";
 import { homedir, tmpdir } from "os";
 import { randomBytes } from "crypto";
 import { app, type BrowserWindow } from "electron";
@@ -39,31 +39,72 @@ export function bundledPythonRuntimeLayout(
   runtimeRoot: string,
   platform = process.platform,
 ): { home: string; executable: string; launcherDirectory: string } {
+  const platformPath = platform === "win32" ? win32 : posix;
   if (platform === "win32") {
     return {
       home: runtimeRoot,
-      executable: join(runtimeRoot, "python.exe"),
+      executable: platformPath.join(runtimeRoot, "python.exe"),
       launcherDirectory: "Scripts",
     };
   }
   return {
-    home: join(runtimeRoot, "bin"),
-    executable: join(runtimeRoot, "bin", "python3"),
+    home: platformPath.join(runtimeRoot, "bin"),
+    executable: platformPath.join(runtimeRoot, "bin", "python3"),
     launcherDirectory: "bin",
   };
 }
 
+/** Locate the complete PortableGit tree shipped beside the offline runtime. */
+// @lat: [[desktop-updates#Bundled runtime updates]]
+export function bundledPortableGitLayout(
+  resourcesRoot: string,
+  platform = process.platform,
+): { root: string; bash: string; pathEntries: string[] } | null {
+  if (platform !== "win32" || !resourcesRoot) return null;
+  const root = join(resourcesRoot, "hermes-runtime", "git");
+  return {
+    root,
+    bash: join(root, "bin", "bash.exe"),
+    pathEntries: [
+      join(root, "bin"),
+      join(root, "cmd"),
+      join(root, "usr", "bin"),
+    ],
+  };
+}
+
+const HERMES_DESKTOP_USER_DATA_DIR =
+  process.env.HERMES_DESKTOP_USER_DATA_DIR?.trim();
+if (HERMES_DESKTOP_USER_DATA_DIR) {
+  try {
+    app.setPath("userData", HERMES_DESKTOP_USER_DATA_DIR);
+  } catch {
+    /* best effort: Electron may reject late path changes in tests */
+  }
+}
+
 // Packaged builds can carry a complete Hermes/Python runtime in
-// resources/hermes-runtime. Copy it to a writable per-user location on the
-// first launch so Python's venv metadata can be repaired for the machine's
-// actual install path and the read-only Electron resources remain untouched.
+// resources/hermes-runtime. Copy it asynchronously to a writable per-user
+// location after the first window is created so a large offline runtime never
+// blocks (or crashes) Electron while the main-process bundle is being loaded.
 //
 // A prior package can leave a partial tree in userData (for example, a
 // hermes-agent directory without its venv). Never treat the presence of the
 // repository directory alone as proof that the runtime is complete: repair
 // missing runtime directories from the new package on every packaged launch.
-function bundledRuntimeRepo(): string {
-  if (!app.isPackaged) return "";
+export function resolveBundledRuntimeRepo(
+  resourcesRoot: string,
+  userDataRoot: string,
+  packaged: boolean,
+): string {
+  if (!packaged || !resourcesRoot || !userDataRoot) return "";
+  const sourceRepo = join(resourcesRoot, "hermes-runtime", "hermes-agent");
+  const targetRepo = join(userDataRoot, "hermes-runtime", "hermes-agent");
+  return existsSync(sourceRepo) || existsSync(targetRepo) ? targetRepo : "";
+}
+
+async function prepareBundledRuntime(): Promise<void> {
+  if (!app?.isPackaged) return;
   const sourceRoot = join(process.resourcesPath, "hermes-runtime");
   const targetRoot = join(app.getPath("userData"), "hermes-runtime");
   const sourceRepo = join(sourceRoot, "hermes-agent");
@@ -92,9 +133,12 @@ function bundledRuntimeRepo(): string {
         // Updating only run_agent.py can leave it importing symbols that do not
         // exist in an older tools/skills_tool.py. Refresh the complete managed
         // tree once for each packaged runtime build.
-        cpSync(sourceRepo, targetRepo, { recursive: true, force: true });
+        await cp(sourceRepo, targetRepo, { recursive: true, force: true });
         if (existsSync(sourcePython)) {
-          cpSync(sourcePython, targetPython, { recursive: true, force: true });
+          await cp(sourcePython, targetPython, {
+            recursive: true,
+            force: true,
+          });
         }
         if (packagedBuildMarker) {
           writeFileSync(targetBuildMarker, packagedBuildMarker, "utf8");
@@ -102,7 +146,7 @@ function bundledRuntimeRepo(): string {
       } else if (existsSync(sourceVenv) && !existsSync(targetVenv)) {
         // Preserve the existing agent tree, but restore a missing venv from
         // the package. This is the tree used by Kanban and scheduled tasks.
-        cpSync(sourceVenv, targetVenv, { recursive: true });
+        await cp(sourceVenv, targetVenv, { recursive: true });
       } else if (existsSync(sourceVenv)) {
         // A partially copied venv can lack its launchers. Merge only missing
         // files so an existing runtime is not overwritten. macOS uses `bin`,
@@ -110,7 +154,7 @@ function bundledRuntimeRepo(): string {
         const { launcherDirectory } = bundledPythonRuntimeLayout(targetPython);
         const sourceLaunchers = join(sourceVenv, launcherDirectory);
         if (existsSync(sourceLaunchers)) {
-          cpSync(sourceLaunchers, join(targetVenv, launcherDirectory), {
+          await cp(sourceLaunchers, join(targetVenv, launcherDirectory), {
             recursive: true,
             force: false,
           });
@@ -122,7 +166,7 @@ function bundledRuntimeRepo(): string {
         existsSync(sourcePython) &&
         !existsSync(targetPython)
       ) {
-        cpSync(sourcePython, targetPython, { recursive: true });
+        await cp(sourcePython, targetPython, { recursive: true });
       }
     }
     // These small desktop overlays are still repaired on every launch within
@@ -138,7 +182,7 @@ function bundledRuntimeRepo(): string {
       for (const relativePath of managedRuntimeOverlays) {
         const sourceFile = join(sourceRepo, relativePath);
         if (existsSync(sourceFile)) {
-          cpSync(sourceFile, join(targetRepo, relativePath));
+          await cp(sourceFile, join(targetRepo, relativePath));
         }
       }
     }
@@ -154,23 +198,46 @@ function bundledRuntimeRepo(): string {
         );
       writeFileSync(cfg, text, "utf-8");
     }
-  } catch {
+  } catch (error) {
     // Startup will surface the normal "Python not found" diagnostic if the
     // bundled files could not be copied.
+    console.error(
+      "[installer] Could not prepare the bundled runtime:",
+      error instanceof Error ? error.message : String(error),
+    );
+    throw error;
   }
-  return existsSync(targetRepo) ? targetRepo : "";
 }
 
-const BUNDLED_RUNTIME_REPO = bundledRuntimeRepo();
+const BUNDLED_RUNTIME_REPO = resolveBundledRuntimeRepo(
+  app?.isPackaged ? process.resourcesPath : "",
+  app?.isPackaged ? app.getPath("userData") : "",
+  Boolean(app?.isPackaged),
+);
+let bundledRuntimePreparation: Promise<void> | null = null;
 
-const HERMES_DESKTOP_USER_DATA_DIR =
-  process.env.HERMES_DESKTOP_USER_DATA_DIR?.trim();
-if (HERMES_DESKTOP_USER_DATA_DIR) {
-  try {
-    app.setPath("userData", HERMES_DESKTOP_USER_DATA_DIR);
-  } catch {
-    /* best effort: Electron may reject late path changes in tests */
+/**
+ * Prepare the packaged Agent/Python runtime exactly once per desktop process.
+ * The first caller starts asynchronous filesystem work; concurrent callers
+ * await the same promise so no feature can observe a half-copied runtime.
+ */
+// @lat: [[main-process#Offline Windows runtime]]
+export function initializeBundledRuntime(): Promise<void> {
+  if (!bundledRuntimePreparation) {
+    bundledRuntimePreparation = prepareBundledRuntime().then(() => {
+      installBundledPresetContent();
+      installBundledLookupToken();
+      installBundledSoulRules();
+    });
   }
+  return bundledRuntimePreparation;
+}
+
+const BUNDLED_PORTABLE_GIT = bundledPortableGitLayout(
+  app?.isPackaged ? process.resourcesPath : "",
+);
+if (BUNDLED_PORTABLE_GIT && existsSync(BUNDLED_PORTABLE_GIT.bash)) {
+  process.env.HERMES_GIT_BASH_PATH = BUNDLED_PORTABLE_GIT.bash;
 }
 
 // Resolve the Hermes data directory. Precedence:
@@ -282,8 +349,6 @@ function installBundledPresetContent(): void {
   }
 }
 
-installBundledPresetContent();
-
 function installBundledLookupToken(): void {
   if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
   const bundledEnv = join(
@@ -309,15 +374,13 @@ function installBundledLookupToken(): void {
   }
 }
 
-installBundledLookupToken();
-
 const COMPANY_SOUL_RULES_MARKER = "<!-- AGENT_WINDOWS_PYTHON_RULES -->";
 
 /**
  * Install the package's company-wide tool preference exactly once without
  * replacing the user's own SOUL.md content.  SOUL.md is loaded by Hermes as
  * part of every new agent system prompt, making this more reliable than an
- * optionally-invoked skill for the no-Git-Bash Windows runtime.
+ * optionally-invoked skill for the managed Windows runtime.
  */
 function installBundledSoulRules(): void {
   if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
@@ -347,7 +410,6 @@ function installBundledSoulRules(): void {
   }
 }
 
-installBundledSoulRules();
 export const HERMES_REPO =
   BUNDLED_RUNTIME_REPO || join(HERMES_HOME, "hermes-agent");
 export const HERMES_VENV = join(HERMES_REPO, "venv");
@@ -425,8 +487,9 @@ export function getEnhancedPath(): string {
   const extra = (
     IS_WINDOWS
       ? [
-          // Bundled by install.ps1 inside HERMES_HOME — these matter when the
-          // user's system PATH doesn't include git or node yet.
+          ...(BUNDLED_PORTABLE_GIT?.pathEntries ?? []),
+          // Packaged builds use PortableGit above. Legacy installs may still
+          // carry the install.ps1 copy under HERMES_HOME.
           join(HERMES_HOME, "git", "bin"),
           join(HERMES_HOME, "git", "cmd"),
           join(HERMES_HOME, "git", "usr", "bin"),

@@ -86,6 +86,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Download PortableGit runtime
+        run: npm run prepare:portable-git
+
       - name: Apply beta version
         run: node scripts/set-version.mjs "${{ needs.prepare.outputs.beta_version }}"
 
@@ -97,6 +100,8 @@ jobs:
           $required = @(
             "build/offline-runtime/hermes-agent/run_agent.py",
             "build/offline-runtime/python-runtime/python.exe",
+            "build/offline-runtime/git/bin/bash.exe",
+            "build/offline-runtime/git/cmd/git.exe",
             "build/offline-runtime/preset-content"
           )
           foreach ($path in $required) {
@@ -161,6 +166,8 @@ jobs:
             "$runtime/hermes-agent/venv/Scripts/python.exe",
             "$runtime/hermes-agent/venv/Scripts/hermes.exe",
             "$runtime/python-runtime/python.exe",
+            "$runtime/git/bin/bash.exe",
+            "$runtime/git/cmd/git.exe",
             "$runtime/employee-lookup.env"
           )
           foreach ($path in $required) {

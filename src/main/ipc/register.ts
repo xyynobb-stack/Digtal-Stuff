@@ -55,6 +55,7 @@ import {
 import type { GpuPreferenceMode } from "../../shared/gpu";
 import {
   checkInstallStatus,
+  initializeBundledRuntime,
   verifyInstall,
   runInstall,
   inspectInstallTarget,
@@ -684,11 +685,15 @@ export function registerIpcHandlers(context: IpcContext): void {
   } = context;
   const mainWindow = getMainWindow();
   // Installation
-  ipcMain.handle("check-install", () => {
+  ipcMain.handle("check-install", async () => {
+    await initializeBundledRuntime();
     return checkInstallStatus();
   });
 
-  ipcMain.handle("verify-install", () => verifyInstall());
+  ipcMain.handle("verify-install", async () => {
+    await initializeBundledRuntime();
+    return verifyInstall();
+  });
 
   ipcMain.handle("start-install", async (event) => {
     try {
@@ -2470,7 +2475,17 @@ export function registerIpcHandlers(context: IpcContext): void {
         filters: [
           {
             name: "写作模板",
-            extensions: ["doc", "docx", "md", "odt", "pdf", "rtf", "txt"],
+            extensions: [
+              "doc",
+              "docx",
+              "md",
+              "odt",
+              "pdf",
+              "rtf",
+              "txt",
+              "xls",
+              "xlsx",
+            ],
           },
         ],
       });
@@ -2501,7 +2516,17 @@ export function registerIpcHandlers(context: IpcContext): void {
         filters: [
           {
             name: "写作模板",
-            extensions: ["doc", "docx", "md", "odt", "pdf", "rtf", "txt"],
+            extensions: [
+              "doc",
+              "docx",
+              "md",
+              "odt",
+              "pdf",
+              "rtf",
+              "txt",
+              "xls",
+              "xlsx",
+            ],
           },
         ],
       });
@@ -2905,6 +2930,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       model?: string,
       provider?: string,
       outputDir?: string,
+      skills?: string[],
     ) =>
       createCronJob(
         schedule,
@@ -2915,6 +2941,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         model,
         provider,
         outputDir,
+        skills,
       ),
   );
   ipcMain.handle("remove-cron-job", (_event, jobId: string, profile?: string) =>

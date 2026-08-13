@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
+import { preparePortableGit } from "./prepare-portable-git.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const outputRoot = path.join(projectRoot, "build", "offline-runtime");
@@ -27,8 +28,14 @@ if (!fs.existsSync(defaultSoulRules)) {
   throw new Error(`Default SOUL rules not found: ${defaultSoulRules}`);
 }
 
-fs.rmSync(outputRoot, { recursive: true, force: true });
 fs.mkdirSync(outputRoot, { recursive: true });
+for (const entry of fs.readdirSync(outputRoot)) {
+  // PortableGit is large and version-pinned. Keep a valid local staging copy
+  // so repeated offline builds do not download the same distribution again.
+  if (entry === "git") continue;
+  fs.rmSync(path.join(outputRoot, entry), { recursive: true, force: true });
+}
+await preparePortableGit({ destination: path.join(outputRoot, "git") });
 
 const runtimeBuild = {
   buildId: randomUUID(),

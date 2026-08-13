@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { delimiter } from "path";
+import { delimiter, join } from "path";
+import { mkdtempSync, mkdirSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import {
   bundledPythonRuntimeLayout,
+  bundledPortableGitLayout,
   getEnhancedPath,
   hermesCliArgs,
+  resolveBundledRuntimeRepo,
   HERMES_PYTHON,
   HERMES_SCRIPT,
 } from "../src/main/installer";
+
+const tempRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of tempRoots.splice(0)) {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 describe("installer platform wiring", () => {
   it("uses the native bundled Python layout for each offline target", () => {
@@ -19,6 +31,31 @@ describe("installer platform wiring", () => {
     expect(mac.home).toBe("/runtime/bin");
     expect(mac.executable).toBe("/runtime/bin/python3");
     expect(mac.launcherDirectory).toBe("bin");
+  });
+
+  it("maps packaged PortableGit into the Windows runtime only", () => {
+    const windows = bundledPortableGitLayout("C:\\app\\resources", "win32");
+    expect(windows?.bash).toMatch(
+      /hermes-runtime[\\/]git[\\/]bin[\\/]bash\.exe$/,
+    );
+    expect(windows?.pathEntries).toHaveLength(3);
+    expect(bundledPortableGitLayout("/app/resources", "darwin")).toBeNull();
+  });
+
+  it("uses the writable runtime only when a packaged source or prior copy exists", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-runtime-test-"));
+    tempRoots.push(root);
+    const resources = join(root, "resources");
+    const userData = join(root, "user-data");
+    const expected = join(userData, "hermes-runtime", "hermes-agent");
+
+    expect(resolveBundledRuntimeRepo(resources, userData, false)).toBe("");
+    expect(resolveBundledRuntimeRepo(resources, userData, true)).toBe("");
+
+    mkdirSync(join(resources, "hermes-runtime", "hermes-agent"), {
+      recursive: true,
+    });
+    expect(resolveBundledRuntimeRepo(resources, userData, true)).toBe(expected);
   });
 
   it("uses the platform path delimiter in the enhanced PATH", () => {

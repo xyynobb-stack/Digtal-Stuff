@@ -61,4 +61,5 @@ export default {
   walletDeleteWarning:
     "This will permanently remove this wallet from JingYuAI. Make sure you have backed up the recovery phrase — you won't be able to recover the wallet without it.",
   walletDeleteConfirmLabel: "Remove wallet",
+  uploadImage: "上传头像",
 } as const;

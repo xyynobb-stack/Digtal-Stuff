@@ -19,21 +19,14 @@ describe("packaged preset user content", () => {
   beforeEach(() => rmSync(testRoot, { recursive: true, force: true }));
   afterEach(() => rmSync(testRoot, { recursive: true, force: true }));
 
-  it("copies skills and templates once without replacing user-owned entries", () => {
+  it("copies skills and templates once without replacing user-owned entries", async () => {
     // @lat: [[main-process#Packaged preset user content]]
     writeFixture(
       join(presetRoot, "skills", "custom", "recruiting", "SKILL.md"),
       "preset skill",
     );
     writeFixture(
-      join(
-        presetRoot,
-        "skills",
-        "custom",
-        "finance",
-        "agents",
-        "openai.yaml",
-      ),
+      join(presetRoot, "skills", "custom", "finance", "agents", "openai.yaml"),
       "nested skill asset",
     );
     writeFixture(
@@ -54,7 +47,7 @@ describe("packaged preset user content", () => {
       "user skill",
     );
 
-    const first = installPackagedPresetContent(presetRoot, hermesHome);
+    const first = await installPackagedPresetContent(presetRoot, hermesHome);
 
     expect(first).toEqual({ skillsCopied: 1, templatesCopied: 1 });
     expect(
@@ -87,9 +80,41 @@ describe("packaged preset user content", () => {
       ),
     ).toBe("nested skill asset");
 
-    expect(installPackagedPresetContent(presetRoot, hermesHome)).toEqual({
+    await expect(
+      installPackagedPresetContent(presetRoot, hermesHome),
+    ).resolves.toEqual({
       skillsCopied: 0,
       templatesCopied: 0,
     });
+  });
+
+  it("copies binary templates whose directories and files use Chinese names", async () => {
+    const template = join(
+      presetRoot,
+      "writing-templates",
+      "综合行政通用会议纪要模板-标准版",
+      "综合行政通用会议纪要模板（标准版）.docx",
+    );
+    const binary = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff]);
+    mkdirSync(dirname(template), { recursive: true });
+    writeFileSync(template, binary);
+    writeFixture(
+      join(dirname(template), "metadata.json"),
+      JSON.stringify({ name: "综合行政通用会议纪要模板" }),
+    );
+
+    await expect(
+      installPackagedPresetContent(presetRoot, hermesHome),
+    ).resolves.toEqual({ skillsCopied: 0, templatesCopied: 1 });
+    expect(
+      readFileSync(
+        join(
+          hermesHome,
+          "writing-templates",
+          "综合行政通用会议纪要模板-标准版",
+          "综合行政通用会议纪要模板（标准版）.docx",
+        ),
+      ),
+    ).toEqual(binary);
   });
 });

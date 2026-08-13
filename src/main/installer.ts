@@ -224,8 +224,8 @@ let bundledRuntimePreparation: Promise<void> | null = null;
 // @lat: [[main-process#Offline Windows runtime]]
 export function initializeBundledRuntime(): Promise<void> {
   if (!bundledRuntimePreparation) {
-    bundledRuntimePreparation = prepareBundledRuntime().then(() => {
-      installBundledPresetContent();
+    bundledRuntimePreparation = prepareBundledRuntime().then(async () => {
+      await installBundledPresetContent();
       installBundledLookupToken();
       installBundledSoulRules();
     });
@@ -337,10 +337,10 @@ export const HERMES_HOME =
   defaultHermesHome();
 
 /** Install builder-selected user Skills and writing templates on first use. */
-function installBundledPresetContent(): void {
+async function installBundledPresetContent(): Promise<void> {
   if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
   try {
-    installPackagedPresetContent(
+    await installPackagedPresetContent(
       join(process.resourcesPath, "hermes-runtime", "preset-content"),
       HERMES_HOME,
     );

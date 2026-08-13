@@ -140,13 +140,13 @@ Reusable modals use a single animated shell so dialogs open and close consistent
 
 [[src/renderer/src/components/modal/AppModal.tsx#AppModal]] wraps Radix Dialog with Motion's `AnimatePresence`, keeping focus trapping, escape/outside-close behavior, and exit transitions in one memoized component. The shell keeps its Radix portal present through the exit phase and animates the backdrop plus content with visible fade, scale, slide, and blur. Profile modal is the first consumer: [[src/renderer/src/components/profile/ProfileModalProvider.tsx#ProfileModalProvider]] keeps its target profile mounted until `AppModal` finishes the close animation, then clears the modal state.
 
-## Footer action row
+## Footer account menu
 
-Administrative destinations sit beside the profile switcher so the conversation nav stays short.
+Administrative destinations live in an upward account menu so the conversation nav and footer stay short.
 
-[[src/renderer/src/screens/Layout/Layout.tsx#Layout]] keeps Providers, Gateway, Tools, and Memory out of the main sidebar list and renders them as icon-only footer actions immediately above [[src/renderer/src/screens/Layout/ProfileSwitcher.tsx#ProfileSwitcher]]. Each button exposes a styled hover/focus tooltip and accessible label, preserving discoverability while freeing vertical room for recent conversations. Settings is no longer a `View`: its footer gear button opens the global settings modal (below) instead of switching panes.
+[[src/renderer/src/screens/Layout/Layout.tsx#Layout]] keeps Providers, Tools, Memory, and Settings out of the main sidebar list and passes their existing handlers to [[src/renderer/src/screens/Layout/ProfileSwitcher.tsx#ProfileSwitcher]]. Clicking the avatar/name opens a compact menu above the trigger with Profile followed by those four destinations; the former standalone icon row is not rendered. Profile opens the current profile detail modal, the three workspace entries preserve their existing views, and Settings opens the global settings modal rather than switching panes.
 
-When the sidebar is collapsed, those footer actions stay in a single centered icon rail anchored to the bottom of the 64px sidebar, with the compact profile switcher below them and no divider line above the footer.
+When the sidebar is collapsed, the avatar remains the sole footer trigger and its menu opens to the right so it is not clipped by the 64px sidebar. Profile switching remains available through Cmd/Ctrl+P.
 
 ## Settings modal
 

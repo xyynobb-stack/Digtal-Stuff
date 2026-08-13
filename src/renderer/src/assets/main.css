@@ -3518,6 +3518,82 @@ body:has(.shell-vibrant),
   transition: transform var(--transition);
 }
 
+/* Account actions rise from the profile trigger and reuse the destinations
+   that previously occupied the standalone footer icon row. */
+.account-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 214px;
+  padding: 6px;
+  border: 1px solid var(--border-bright);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-secondary) 96%, transparent);
+  backdrop-filter: blur(24px) saturate(1.35);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  box-shadow:
+    0 18px 44px -14px rgba(0, 0, 0, 0.52),
+    0 5px 16px -8px rgba(0, 0, 0, 0.34);
+  animation: profileMenuIn 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.profile-switcher.compact .account-menu {
+  right: auto;
+  bottom: 0;
+  left: calc(100% + 8px);
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 500 13px/1.2 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    color var(--transition);
+}
+
+.account-menu-item:hover,
+.account-menu-item:focus-visible {
+  outline: none;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.account-menu-item.active {
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+}
+
+.account-menu-item svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.account-menu-item.active svg {
+  color: currentColor;
+}
+
+.account-menu-divider {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--border);
+}
+
 .profile-switcher-trigger.open .profile-switcher-chevron {
   transform: rotate(180deg);
 }

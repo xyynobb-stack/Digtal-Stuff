@@ -34,10 +34,6 @@ import VerifyWarningBanner from "../../components/VerifyWarningBanner";
 import { useSettingsModal } from "../../components/settings/SettingsModalContext";
 import {
   Compass,
-  Settings as SettingsIcon,
-  Brain,
-  Workflow,
-  KeyRound,
   Timer,
   Kanban as KanbanIcon,
   Download,
@@ -67,12 +63,6 @@ const PINNED_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
   // "skills" lives under the Discover tab (installed + community), so it's no
   // longer a top-level nav item.
   { view: "schedules", icon: Timer, labelKey: "navigation.schedules" },
-];
-
-const FOOTER_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
-  { view: "providers", icon: KeyRound, labelKey: "navigation.providers" },
-  { view: "tools", icon: Workflow, labelKey: "navigation.tools" },
-  { view: "memory", icon: Brain, labelKey: "navigation.memory" },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = "hermes.sidebar.collapsed";
@@ -782,36 +772,21 @@ function Layout({
                 )}
               </button>
             )}
-            <div
-              className="sidebar-footer-actions"
-              aria-label="Workspace tools"
-            >
-              {FOOTER_NAV_ITEMS.map(({ view: v, icon: Icon, labelKey }) => (
-                <button
-                  key={v}
-                  className={`sidebar-footer-action ${view === v ? "active" : ""}`}
-                  onClick={() => goTo(v)}
-                  aria-label={t(labelKey)}
-                  data-tooltip={t(labelKey)}
-                >
-                  <Icon size={16} />
-                </button>
-              ))}
-              <button
-                className="sidebar-footer-action"
-                onClick={() =>
-                  openSettings(undefined, { profile: activeProfile })
-                }
-                aria-label={t("navigation.settings")}
-                data-tooltip={t("navigation.settings")}
-              >
-                <SettingsIcon size={16} />
-              </button>
-            </div>
             <ProfileSwitcher
               activeProfile={activeProfile}
               onSwitch={handleSelectProfile}
               onManage={() => goTo("agents")}
+              onOpenProviders={() => goTo("providers")}
+              onOpenTools={() => goTo("tools")}
+              onOpenMemory={() => goTo("memory")}
+              onOpenSettings={() =>
+                openSettings(undefined, { profile: activeProfile })
+              }
+              activeDestination={
+                view === "providers" || view === "tools" || view === "memory"
+                  ? view
+                  : undefined
+              }
               compact={sidebarCollapsed}
             />
           </div>

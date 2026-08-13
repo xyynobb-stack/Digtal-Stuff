@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../components/useI18n", () => ({
   useI18n: () => ({
@@ -8,9 +8,11 @@ vi.mock("../../components/useI18n", () => ({
   }),
 }));
 
+const { openProfile } = vi.hoisted(() => ({ openProfile: vi.fn() }));
+
 vi.mock("../../components/profile/ProfileModalContext", () => ({
   useProfileModal: () => ({
-    openProfile: vi.fn(),
+    openProfile,
   }),
 }));
 
@@ -54,7 +56,18 @@ function profile(id: string, name = id): ProfileInfo {
   };
 }
 
+const menuActions = {
+  onOpenProviders: vi.fn(),
+  onOpenTools: vi.fn(),
+  onOpenMemory: vi.fn(),
+  onOpenSettings: vi.fn(),
+};
+
 describe("ProfileSwitcher", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("shows the app name for an unrenamed default profile", async () => {
     installHermesAPI([profile("default")]);
 
@@ -63,6 +76,7 @@ describe("ProfileSwitcher", () => {
         activeProfile="default"
         onSwitch={() => {}}
         onManage={() => {}}
+        {...menuActions}
       />,
     );
 
@@ -79,11 +93,53 @@ describe("ProfileSwitcher", () => {
         activeProfile="default"
         onSwitch={() => {}}
         onManage={() => {}}
+        {...menuActions}
       />,
     );
 
     await waitFor(() => {
       expect(screen.getByText("卢姐")).toBeInTheDocument();
     });
+  });
+
+  it("moves profile and workspace actions into the upward account menu", async () => {
+    installHermesAPI([profile("default", "卢姐")]);
+
+    render(
+      <ProfileSwitcher
+        activeProfile="default"
+        onSwitch={() => {}}
+        onManage={() => {}}
+        {...menuActions}
+      />,
+    );
+
+    const trigger = await screen.findByRole("button", {
+      name: "卢姐 用户菜单",
+    });
+    fireEvent.click(trigger);
+
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Profile" })).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: "navigation.providers" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: "navigation.tools" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: "navigation.memory" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: "navigation.settings" }),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Profile" }));
+    expect(openProfile).toHaveBeenCalledWith("default", expect.any(Object));
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "navigation.tools" }));
+    expect(menuActions.onOpenTools).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

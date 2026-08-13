@@ -26,6 +26,8 @@ The updater leaves `allowPrerelease` disabled, so stable clients ignore beta pre
 
 The NSIS installer and both manually built macOS architectures include the managed Hermes Agent and matching Python runtime under `hermes-runtime`, allowing first launch without downloading the runtime separately.
 
+Windows CI packages the versioned Agent and base Python stored under `build/offline-runtime`, rebuilds the ignored platform-specific virtual environment with `pip install -e .`, and injects the employee lookup secret without committing it. Stable and beta workflows verify the source runtime and the packaged base Python, venv interpreter, Hermes launcher, and generated environment file; an incomplete runtime fails instead of publishing a reduced installer.
+
 Installed NSIS builds may update this bundled runtime together with the Electron app. Development, portable execution, and macOS remain excluded from automatic updates by [[src/main/app/updater.ts#setupUpdater]].
 
 The first build that enables this channel must be installed manually on existing employee devices because older bundled builds disabled their updater. Later stable versions can update through GitHub Releases.

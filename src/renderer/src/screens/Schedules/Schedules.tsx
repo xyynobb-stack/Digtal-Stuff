@@ -8,9 +8,19 @@ import {
   Pause,
   Zap,
   Alert,
+  Wand,
 } from "../../assets/icons";
 import { useI18n } from "../../components/useI18n";
 import { OrbLoader } from "../../components/OrbLoader";
+import type { WritingTemplate } from "../../../../shared/writing-templates";
+import {
+  buildReportRecommendationPrompt,
+  compareDateParts,
+  daysInMonth,
+  requiredSkillsForTemplate,
+  type DateParts,
+  type ReportRecommendationType,
+} from "./scheduleRecommendations";
 
 const DELIVER_TARGETS = [
   { value: "local", label: "本地" },
@@ -54,6 +64,97 @@ interface SchedulesProps {
   profile?: string;
 }
 
+function toDateParts(date: Date): DateParts {
+  return {
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+  };
+}
+
+function currentWeekRange(): { start: DateParts; end: DateParts } {
+  const today = new Date();
+  const mondayOffset = (today.getDay() + 6) % 7;
+  const start = new Date(today);
+  start.setDate(today.getDate() - mondayOffset);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return { start: toDateParts(start), end: toDateParts(end) };
+}
+
+interface DateDropdownsProps {
+  label: string;
+  value: DateParts;
+  onChange: (value: DateParts) => void;
+}
+
+function DateDropdowns({
+  label,
+  value,
+  onChange,
+}: DateDropdownsProps): React.JSX.Element {
+  const currentYear = new Date().getFullYear();
+  const years = Array.from(
+    { length: 11 },
+    (_, index) => currentYear - 5 + index,
+  );
+  const months = Array.from({ length: 12 }, (_, index) => index + 1);
+  const days = Array.from(
+    { length: daysInMonth(value.year, value.month) },
+    (_, index) => index + 1,
+  );
+
+  function update(next: Partial<DateParts>): void {
+    const merged = { ...value, ...next };
+    const maxDay = daysInMonth(merged.year, merged.month);
+    onChange({ ...merged, day: Math.min(merged.day, maxDay) });
+  }
+
+  return (
+    <div className="schedules-field">
+      <label className="schedules-field-label">{label}</label>
+      <div className="schedules-date-dropdowns">
+        <select
+          className="input"
+          aria-label={`${label}年份`}
+          value={value.year}
+          onChange={(event) => update({ year: Number(event.target.value) })}
+        >
+          {years.map((year) => (
+            <option key={year} value={year}>
+              {year} 年
+            </option>
+          ))}
+        </select>
+        <select
+          className="input"
+          aria-label={`${label}月份`}
+          value={value.month}
+          onChange={(event) => update({ month: Number(event.target.value) })}
+        >
+          {months.map((month) => (
+            <option key={month} value={month}>
+              {month} 月
+            </option>
+          ))}
+        </select>
+        <select
+          className="input"
+          aria-label={`${label}日期`}
+          value={value.day}
+          onChange={(event) => update({ day: Number(event.target.value) })}
+        >
+          {days.map((day) => (
+            <option key={day} value={day}>
+              {day} 日
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   const { t } = useI18n();
   const [jobs, setJobs] = useState<CronJob[]>([]);
@@ -61,6 +162,9 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   const [error, setError] = useState("");
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [recommendationMenuOpen, setRecommendationMenuOpen] = useState(false);
+  const [recommendationType, setRecommendationType] =
+    useState<ReportRecommendationType | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // Create form state
@@ -69,6 +173,18 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   const [newDeliver, setNewDeliver] = useState("local");
   const [availableModels, setAvailableModels] = useState<ScheduleModel[]>([]);
   const [newModelId, setNewModelId] = useState("");
+  const [writingTemplates, setWritingTemplates] = useState<WritingTemplate[]>(
+    [],
+  );
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [employeeName, setEmployeeName] = useState("");
+  const [workContent, setWorkContent] = useState("");
+  const todayParts = toDateParts(new Date());
+  const initialWeek = currentWeekRange();
+  const [reportStartDate, setReportStartDate] = useState<DateParts>(todayParts);
+  const [reportEndDate, setReportEndDate] = useState<DateParts>(
+    initialWeek.end,
+  );
 
   //Local显示具体路径
   const [localOutputDir, setLocalOutputDir] = useState("");
@@ -146,18 +262,36 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     loadModels();
   }, [loadJobs, loadModels]);
 
+  useEffect(() => {
+    window.hermesAPI
+      .listWritingTemplates(profile)
+      .then((templates) => {
+        setWritingTemplates(templates);
+        setSelectedTemplateId((current) =>
+          templates.some((template) => template.id === current)
+            ? current
+            : templates[0]?.id || "",
+        );
+      })
+      .catch(() => {
+        setWritingTemplates([]);
+        setSelectedTemplateId("");
+      });
+  }, [profile]);
+
   // Escape key to close modals
   useEffect(() => {
-    if (!showCreate && !confirmDelete) return;
+    if (!showCreate && !confirmDelete && !recommendationMenuOpen) return;
     function handleKeyDown(e: KeyboardEvent): void {
       if (e.key === "Escape") {
         if (confirmDelete) setConfirmDelete(null);
         else if (showCreate) setShowCreate(false);
+        else setRecommendationMenuOpen(false);
       }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [showCreate, confirmDelete]);
+  }, [showCreate, confirmDelete, recommendationMenuOpen]);
 
   function resetForm(): void {
     setNewName("");
@@ -171,11 +305,30 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     setWeeklyDay("1");
     setWeeklyTime("09:00");
     setCustomCron("");
+    setRecommendationType(null);
+    setEmployeeName("");
+    setWorkContent("");
+    setReportStartDate(toDateParts(new Date()));
+    setReportEndDate(currentWeekRange().end);
   }
 
   function closeCreateModal(): void {
     setShowCreate(false);
     resetForm();
+  }
+
+  function openRecommendedTask(type: ReportRecommendationType): void {
+    const week = currentWeekRange();
+    setRecommendationMenuOpen(false);
+    setRecommendationType(type);
+    setNewName(type === "weekly-report" ? "周报汇总" : "日报汇总");
+    setNewPrompt("");
+    setFrequency(type === "weekly-report" ? "weekly" : "daily");
+    setReportStartDate(
+      type === "weekly-report" ? week.start : toDateParts(new Date()),
+    );
+    setReportEndDate(week.end);
+    setShowCreate(true);
   }
 
   function buildSchedule(): string {
@@ -204,23 +357,55 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     return true;
   }
 
+  const selectedTemplate = writingTemplates.find(
+    (template) => template.id === selectedTemplateId,
+  );
+  const reportDateRangeValid =
+    recommendationType !== "weekly-report" ||
+    compareDateParts(reportEndDate, reportStartDate) >= 0;
+  const recommendationFieldsValid =
+    recommendationType === null ||
+    Boolean(
+      selectedTemplate &&
+      employeeName.trim() &&
+      workContent.trim() &&
+      reportDateRangeValid,
+    );
+
   async function handleCreate(): Promise<void> {
     const selectedModel = availableModels.find(
       (candidate) => candidate.id === newModelId,
     );
-    if (!isScheduleValid() || !selectedModel) return;
+    if (!isScheduleValid() || !selectedModel || !recommendationFieldsValid)
+      return;
+    const taskPrompt =
+      recommendationType && selectedTemplate
+        ? buildReportRecommendationPrompt({
+            type: recommendationType,
+            employeeName,
+            workContent,
+            startDate: reportStartDate,
+            ...(recommendationType === "weekly-report"
+              ? { endDate: reportEndDate }
+              : {}),
+            template: selectedTemplate,
+          })
+        : newPrompt.trim() || undefined;
     setActionInProgress("creating");
     setError("");
     try {
       const result = await window.hermesAPI.createCronJob(
         buildSchedule(),
-        newPrompt.trim() || undefined,
+        taskPrompt,
         newName.trim() || undefined,
         newDeliver !== "local" ? newDeliver : undefined,
         profile,
         selectedModel.model,
         selectedModel.provider,
         newDeliver === "local" ? newOutputDir || undefined : undefined,
+        recommendationType && selectedTemplate
+          ? requiredSkillsForTemplate(selectedTemplate)
+          : undefined,
       );
       if (result.success) {
         closeCreateModal();
@@ -358,6 +543,102 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                   onChange={(e) => setNewName(e.target.value)}
                 />
               </div>
+              {recommendationType && (
+                <div className="schedules-recommendation-fields">
+                  <div className="schedules-recommendation-banner">
+                    <Wand size={16} />
+                    <div>
+                      <strong>
+                        {recommendationType === "weekly-report"
+                          ? "周报汇总"
+                          : "日报汇总"}
+                      </strong>
+                      <span>
+                        模型将在任务执行时读取所选模板，并把以下内容整理为成品文件。
+                      </span>
+                    </div>
+                  </div>
+                  <div className="schedules-field">
+                    <label className="schedules-field-label">
+                      写作模板 <span className="schedules-required">*</span>
+                    </label>
+                    <select
+                      className="input"
+                      value={selectedTemplateId}
+                      onChange={(event) =>
+                        setSelectedTemplateId(event.target.value)
+                      }
+                      disabled={writingTemplates.length === 0}
+                    >
+                      {writingTemplates.length === 0 ? (
+                        <option value="">暂无写作模板，请先在发现中添加</option>
+                      ) : (
+                        writingTemplates.map((template) => (
+                          <option key={template.id} value={template.id}>
+                            {template.name} ({template.extension.toUpperCase()})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    {selectedTemplate?.description && (
+                      <div className="schedules-field-hint">
+                        {selectedTemplate.description}
+                      </div>
+                    )}
+                  </div>
+                  <div className="schedules-field">
+                    <label className="schedules-field-label">
+                      姓名 <span className="schedules-required">*</span>
+                    </label>
+                    <input
+                      className="input"
+                      type="text"
+                      placeholder="请输入姓名"
+                      value={employeeName}
+                      onChange={(event) => setEmployeeName(event.target.value)}
+                    />
+                  </div>
+                  <div className="schedules-field">
+                    <label className="schedules-field-label">
+                      工作内容 <span className="schedules-required">*</span>
+                    </label>
+                    <textarea
+                      className="input schedules-textarea schedules-report-content"
+                      placeholder="请输入需要汇总的工作事项、进展、成果和问题"
+                      value={workContent}
+                      onChange={(event) => setWorkContent(event.target.value)}
+                      rows={5}
+                    />
+                  </div>
+                  <div
+                    className={`schedules-report-dates ${
+                      recommendationType === "weekly-report" ? "is-range" : ""
+                    }`}
+                  >
+                    <DateDropdowns
+                      label={
+                        recommendationType === "weekly-report"
+                          ? "本周起始日期"
+                          : "工作日期"
+                      }
+                      value={reportStartDate}
+                      onChange={setReportStartDate}
+                    />
+                    {recommendationType === "weekly-report" && (
+                      <DateDropdowns
+                        label="本周结束日期"
+                        value={reportEndDate}
+                        onChange={setReportEndDate}
+                      />
+                    )}
+                  </div>
+                  {!reportDateRangeValid && (
+                    <div className="schedules-validation-error" role="alert">
+                      本周结束日期不能早于本周起始日期。
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="schedules-field">
                 <label className="schedules-field-label">
                   {t("schedules.frequency")}{" "}
@@ -494,18 +775,20 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                   </div>
                 </div>
               )}
-              <div className="schedules-field">
-                <label className="schedules-field-label">
-                  {t("schedules.prompt")}
-                </label>
-                <textarea
-                  className="input schedules-textarea"
-                  placeholder={t("schedules.promptPlaceholder")}
-                  value={newPrompt}
-                  onChange={(e) => setNewPrompt(e.target.value)}
-                  rows={3}
-                />
-              </div>
+              {!recommendationType && (
+                <div className="schedules-field">
+                  <label className="schedules-field-label">
+                    {t("schedules.prompt")}
+                  </label>
+                  <textarea
+                    className="input schedules-textarea"
+                    placeholder={t("schedules.promptPlaceholder")}
+                    value={newPrompt}
+                    onChange={(e) => setNewPrompt(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+              )}
               <div className="schedules-field">
                 <label className="schedules-field-label">
                   {t("schedules.deliverTo")}
@@ -586,6 +869,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                 disabled={
                   !isScheduleValid() ||
                   !newModelId ||
+                  !recommendationFieldsValid ||
                   actionInProgress === "creating"
                 }
               >
@@ -649,6 +933,42 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
           <p className="schedules-subtitle">{t("schedules.subtitle")}</p>
         </div>
         <div className="schedules-header-actions">
+          <div className="schedules-recommendation-trigger">
+            <button
+              className="btn btn-secondary"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={recommendationMenuOpen}
+              onClick={() => setRecommendationMenuOpen((current) => !current)}
+            >
+              <Wand size={14} />
+              计划推荐
+            </button>
+            {recommendationMenuOpen && (
+              <div
+                className="schedules-recommendation-menu"
+                role="menu"
+                aria-label="计划推荐"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => openRecommendedTask("weekly-report")}
+                >
+                  <strong>周报汇总</strong>
+                  <span>按起止日期汇总工作并生成周报</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => openRecommendedTask("daily-report")}
+                >
+                  <strong>日报汇总</strong>
+                  <span>按单个工作日期整理并生成日报</span>
+                </button>
+              </div>
+            )}
+          </div>
           <button className="btn btn-secondary" onClick={loadJobs}>
             <Refresh size={14} />
             {t("schedules.refresh")}

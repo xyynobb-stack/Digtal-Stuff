@@ -55,6 +55,7 @@ import {
 import type { GpuPreferenceMode } from "../../shared/gpu";
 import {
   checkInstallStatus,
+  initializeBundledRuntime,
   verifyInstall,
   runInstall,
   inspectInstallTarget,
@@ -320,6 +321,8 @@ import {
 import {
   importWritingTemplate,
   listWritingTemplates,
+  replaceWritingTemplateFile,
+  updateWritingTemplateDescription,
 } from "../writing-templates";
 import {
   listCronJobs,
@@ -682,11 +685,15 @@ export function registerIpcHandlers(context: IpcContext): void {
   } = context;
   const mainWindow = getMainWindow();
   // Installation
-  ipcMain.handle("check-install", () => {
+  ipcMain.handle("check-install", async () => {
+    await initializeBundledRuntime();
     return checkInstallStatus();
   });
 
-  ipcMain.handle("verify-install", () => verifyInstall());
+  ipcMain.handle("verify-install", async () => {
+    await initializeBundledRuntime();
+    return verifyInstall();
+  });
 
   ipcMain.handle("start-install", async (event) => {
     try {
@@ -2468,7 +2475,17 @@ export function registerIpcHandlers(context: IpcContext): void {
         filters: [
           {
             name: "写作模板",
-            extensions: ["doc", "docx", "md", "odt", "pdf", "rtf", "txt"],
+            extensions: [
+              "doc",
+              "docx",
+              "md",
+              "odt",
+              "pdf",
+              "rtf",
+              "txt",
+              "xls",
+              "xlsx",
+            ],
           },
         ],
       });
@@ -2476,6 +2493,57 @@ export function registerIpcHandlers(context: IpcContext): void {
         return { success: false, canceled: true };
       }
       return importWritingTemplate(picked.filePaths[0], profile);
+    },
+  );
+  ipcMain.handle(
+    "update-writing-template-description",
+    (_event, id: string, description: string, profile?: string) => {
+      const conn = getConnectionConfig();
+      if (conn.mode === "ssh" || conn.mode === "remote") return null;
+      return updateWritingTemplateDescription(id, description, profile);
+    },
+  );
+  ipcMain.handle(
+    "replace-writing-template-file",
+    async (_event, id: string, profile?: string) => {
+      const conn = getConnectionConfig();
+      if (conn.mode === "ssh" || conn.mode === "remote") {
+        return { success: false, error: "当前仅支持修改本机写作模板。" };
+      }
+      const picked = await dialog.showOpenDialog({
+        title: "选择新的写作模板文件",
+        properties: ["openFile"],
+        filters: [
+          {
+            name: "写作模板",
+            extensions: [
+              "doc",
+              "docx",
+              "md",
+              "odt",
+              "pdf",
+              "rtf",
+              "txt",
+              "xls",
+              "xlsx",
+            ],
+          },
+        ],
+      });
+      if (picked.canceled || !picked.filePaths[0]) {
+        return { success: false, canceled: true };
+      }
+      return replaceWritingTemplateFile(id, picked.filePaths[0], profile);
+    },
+  );
+  ipcMain.handle(
+    "open-writing-template",
+    async (_event, id: string, profile?: string): Promise<boolean> => {
+      const template = listWritingTemplates(profile).find(
+        (item) => item.id === id,
+      );
+      if (!template) return false;
+      return (await shell.openPath(template.path)) === "";
     },
   );
   ipcMain.handle("get-skill-content", (_event, skillPath: string) => {
@@ -2862,6 +2930,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       model?: string,
       provider?: string,
       outputDir?: string,
+      skills?: string[],
     ) =>
       createCronJob(
         schedule,
@@ -2872,6 +2941,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         model,
         provider,
         outputDir,
+        skills,
       ),
   );
   ipcMain.handle("remove-cron-job", (_event, jobId: string, profile?: string) =>

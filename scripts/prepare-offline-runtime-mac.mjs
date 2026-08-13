@@ -63,11 +63,7 @@ function validPresetDirectories(root, requiredFile) {
 // GitHub's macOS runners cannot read the Windows builder's local Hermes home.
 // The Windows offline preparation command snapshots the selected local user
 // content here; that snapshot must be committed before dispatching this job.
-const presetSkillsSource = path.join(
-  presetContentSource,
-  "skills",
-  "custom",
-);
+const presetSkillsSource = path.join(presetContentSource, "skills", "custom");
 const presetTemplatesSource = path.join(
   presetContentSource,
   "writing-templates",
@@ -93,7 +89,9 @@ function run(command, args, options = {}) {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(" ")} exited with ${result.status}`);
+    throw new Error(
+      `${command} ${args.join(" ")} exited with ${result.status}`,
+    );
   }
 }
 
@@ -158,9 +156,14 @@ async function downloadStandalonePython(archivePath) {
   console.log(`Downloading ${asset.name}`);
   const archiveResponse = await fetch(asset.browser_download_url, { headers });
   if (!archiveResponse.ok) {
-    throw new Error(`Could not download ${asset.name}: HTTP ${archiveResponse.status}`);
+    throw new Error(
+      `Could not download ${asset.name}: HTTP ${archiveResponse.status}`,
+    );
   }
-  fs.writeFileSync(archivePath, Buffer.from(await archiveResponse.arrayBuffer()));
+  fs.writeFileSync(
+    archivePath,
+    Buffer.from(await archiveResponse.arrayBuffer()),
+  );
 }
 
 function findPythonRoot(root) {
@@ -245,7 +248,9 @@ console.log(
   `Packaged ${presetSkills.length} user Skills and ${presetTemplates.length} writing templates for macOS`,
 );
 
-const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jingyuai-python-"));
+const temporaryRoot = fs.mkdtempSync(
+  path.join(os.tmpdir(), "jingyuai-python-"),
+);
 const runtimePython = path.join(outputRoot, "python-runtime");
 try {
   const archivePath = path.join(temporaryRoot, "python.tar.gz");
@@ -267,16 +272,27 @@ try {
   const venv = path.join(agentDestination, "venv");
   run(basePython, ["-m", "venv", "--copies", venv]);
   const venvPython = path.join(venv, "bin", "python");
-  run(venvPython, ["-m", "pip", "install", "--disable-pip-version-check", "--upgrade", "pip"]);
+  run(venvPython, [
+    "-m",
+    "pip",
+    "install",
+    "--disable-pip-version-check",
+    "--upgrade",
+    "pip",
+  ]);
   // Hermes intentionally rejects ordinary `pip install .`: pip would build a
   // wheel, while Hermes ships as a source checkout with its runtime assets.
   // An editable install is the upstream-supported source-install path. The
   // desktop always launches the bundled `hermes` script with this repository
   // as its working directory, so the copied source remains importable after
   // Electron relocates the runtime into the user's application-data folder.
-  run(venvPython, ["-m", "pip", "install", "--disable-pip-version-check", "-e", "."], {
-    cwd: agentDestination,
-  });
+  run(
+    venvPython,
+    ["-m", "pip", "install", "--disable-pip-version-check", "-e", "."],
+    {
+      cwd: agentDestination,
+    },
+  );
 } finally {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });
 }

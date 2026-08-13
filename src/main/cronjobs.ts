@@ -401,6 +401,7 @@ export async function createCronJob(
   model?: string,
   provider?: string,
   outputDir?: string,
+  skills?: string[],
 ): Promise<{ success: boolean; error?: string }> {
   const args = ["create", schedule];
   if (prompt) args.push(prompt);
@@ -409,6 +410,10 @@ export async function createCronJob(
   if (model) args.push("--model", model);
   if (provider) args.push("--provider", provider);
   if (outputDir) args.push("--output-dir", outputDir);
+  for (const skill of skills || []) {
+    const normalizedSkill = skill.trim();
+    if (normalizedSkill) args.push("--skill", normalizedSkill);
+  }
 
   const sshResult = await runNamedProfileSshCron(args, profile);
   if (sshResult) {
@@ -428,6 +433,7 @@ export async function createCronJob(
           model: model || null,
           provider: provider || null,
           output_dir: outputDir || null,
+          skills: skills || [],
         }),
       });
       if (!res.ok) {

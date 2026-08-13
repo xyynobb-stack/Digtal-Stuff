@@ -1054,6 +1054,7 @@ interface HermesAPI {
     model?: string,
     provider?: string,
     outputDir?: string,
+    skills?: string[],
   ) => Promise<{ success: boolean; error?: string }>;
   removeCronJob: (
     jobId: string,

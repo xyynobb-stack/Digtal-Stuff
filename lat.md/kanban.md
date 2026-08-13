@@ -8,7 +8,7 @@ It is a **thin client over the `hermes kanban` CLI** — every read and mutation
 
 Packaged Windows boards use the same managed Hermes repository, Python interpreter, profile home, and enhanced PATH as local chat and scheduled tasks.
 
-[[src/main/kanban.ts#runKanban]] executes from `HERMES_REPO` and explicitly passes `HERMES_HOME`; it never assumes the repository is below the profile data directory. If both packaged Python launchers are missing, the board reports a direct reinstall diagnostic instead of exposing a raw spawn `ENOENT`. The offline package copies both `pythonw.exe` and `python.exe`, and [[src/main/installer.ts#bundledRuntimeRepo]] repairs missing launcher files before `HERMES_PYTHON` is selected.
+[[src/main/kanban.ts#runKanban]] executes from `HERMES_REPO` and explicitly passes `HERMES_HOME`; it never assumes the repository is below the profile data directory. If both packaged Python launchers are missing, the board reports a direct reinstall diagnostic instead of exposing a raw spawn `ENOENT`. The offline package copies both `pythonw.exe` and `python.exe`, and [[src/main/installer.ts#initializeBundledRuntime]] repairs missing launcher files before `HERMES_PYTHON` is selected.
 
 ## Statuses and columns
 
@@ -22,7 +22,7 @@ Cards expose status-appropriate actions, each calling a `hermes kanban` verb via
 
 Card actions are specify (triage), mark-done (ready), reclaim (running), unblock (blocked), block (todo/ready), and archive (any).
 
-Drag-drop moves route through `dragAction(from, to)`, which maps a target column to the single `hermes kanban` verb that effects it: `done`→complete, `blocked`→block, `ready`→unblock|reclaim|promote (by source), `scheduled`→schedule, `archived`→archive ([[src/main/kanban.ts#promoteTask]], [[src/main/kanban.ts#scheduleTask]]). The web dashboard can move a card to *any* column because it writes the status field directly in `kanban.db`; the desktop only has CLI verbs, so `todo`, `triage`, and `review` have no verb to set them and are not drop targets. `dragAction` returning a verb is also the drag-validity gate (`isValidDragTransition`).
+Drag-drop moves route through `dragAction(from, to)`, which maps a target column to the single `hermes kanban` verb that effects it: `done`→complete, `blocked`→block, `ready`→unblock|reclaim|promote (by source), `scheduled`→schedule, `archived`→archive ([[src/main/kanban.ts#promoteTask]], [[src/main/kanban.ts#scheduleTask]]). The web dashboard can move a card to _any_ column because it writes the status field directly in `kanban.db`; the desktop only has CLI verbs, so `todo`, `triage`, and `review` have no verb to set them and are not drop targets. `dragAction` returning a verb is also the drag-validity gate (`isValidDragTransition`).
 
 In-place editing of a live card's title/body/priority is unavailable — the CLI `edit` verb only backfills a result on already-`done` tasks.
 

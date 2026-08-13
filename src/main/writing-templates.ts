@@ -24,6 +24,8 @@ const ALLOWED_EXTENSIONS = new Set([
   ".pdf",
   ".rtf",
   ".txt",
+  ".xls",
+  ".xlsx",
 ]);
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -35,6 +37,8 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   ".pdf": "application/pdf",
   ".rtf": "application/rtf",
   ".txt": "text/plain",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
 function templatesRoot(profile?: string): string {

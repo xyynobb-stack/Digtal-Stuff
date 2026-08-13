@@ -134,6 +134,39 @@ describe("createCronJob", () => {
     ]);
   });
 
+  it("persists explicitly activated skills on the cron job", async () => {
+    await cronjobs.createCronJob(
+      "0 9 * * 1",
+      "Fill the weekly Excel report.",
+      "Weekly report",
+      undefined,
+      undefined,
+      "glm-5",
+      "company-platform",
+      "C:/Reports/JingYuAI",
+      ["xlsx"],
+    );
+
+    expect(execFileSpy.mock.calls[0][1]).toEqual([
+      "-m",
+      "hermes_cli.main",
+      "cron",
+      "create",
+      "0 9 * * 1",
+      "Fill the weekly Excel report.",
+      "--name",
+      "Weekly report",
+      "--model",
+      "glm-5",
+      "--provider",
+      "company-platform",
+      "--output-dir",
+      "C:/Reports/JingYuAI",
+      "--skill",
+      "xlsx",
+    ]);
+  });
+
   it("runs the CLI from the packaged repository with the resolved Hermes home", async () => {
     await cronjobs.triggerCronJob("job-123");
 

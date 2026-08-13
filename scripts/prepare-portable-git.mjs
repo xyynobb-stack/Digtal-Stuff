@@ -22,6 +22,26 @@ function isComplete(destination) {
   );
 }
 
+/**
+ * Move an extracted runtime into its final location. GitHub's Windows runners
+ * keep temporary files on C: while the checked-out repository is on D:, where
+ * renameSync cannot cross the volume boundary (EXDEV). Copy-and-remove is the
+ * equivalent fallback for that layout.
+ */
+export function moveExtractedRuntime(
+  source,
+  destination,
+  { renameSync = fs.renameSync, cpSync = fs.cpSync, rmSync = fs.rmSync } = {},
+) {
+  try {
+    renameSync(source, destination);
+  } catch (error) {
+    if (error?.code !== "EXDEV") throw error;
+    cpSync(source, destination, { recursive: true });
+    rmSync(source, { recursive: true, force: true });
+  }
+}
+
 async function download(url, archive) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -118,7 +138,7 @@ export async function preparePortableGit({
 
     fs.rmSync(destination, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.renameSync(extractionRoot, destination);
+    moveExtractedRuntime(extractionRoot, destination);
     fs.writeFileSync(
       marker,
       `${JSON.stringify({ version: PORTABLE_GIT_VERSION, arch, asset }, null, 2)}\n`,

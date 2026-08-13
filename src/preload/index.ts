@@ -3,6 +3,7 @@ import type { AppLocale } from "../shared/i18n/types";
 import type { Attachment } from "../shared/attachments";
 import type {
   ImportWritingTemplateResult,
+  ReplaceWritingTemplateResult,
   WritingTemplate,
 } from "../shared/writing-templates";
 import type { SessionModelOverride } from "../shared/model-override";
@@ -1100,6 +1101,24 @@ const hermesAPI = {
     profile?: string,
   ): Promise<ImportWritingTemplateResult> =>
     ipcRenderer.invoke("import-writing-template", profile),
+  updateWritingTemplateDescription: (
+    id: string,
+    description: string,
+    profile?: string,
+  ): Promise<WritingTemplate | null> =>
+    ipcRenderer.invoke(
+      "update-writing-template-description",
+      id,
+      description,
+      profile,
+    ),
+  replaceWritingTemplateFile: (
+    id: string,
+    profile?: string,
+  ): Promise<ReplaceWritingTemplateResult> =>
+    ipcRenderer.invoke("replace-writing-template-file", id, profile),
+  openWritingTemplate: (id: string, profile?: string): Promise<boolean> =>
+    ipcRenderer.invoke("open-writing-template", id, profile),
   getSkillContent: (skillPath: string): Promise<string> =>
     ipcRenderer.invoke("get-skill-content", skillPath),
   installSkill: (

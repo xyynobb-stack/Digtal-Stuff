@@ -12,12 +12,20 @@ import {
   Puzzle,
   Bot,
   ChevronDown,
+  Pencil,
+  VisionIcon,
+  FolderInput,
   TitleIcon as WritingTemplateIcon,
 } from "../../assets/icons";
 import type { LucideIcon } from "lucide-react";
 import { AgentMarkdown } from "../../components/AgentMarkdown";
 import { useI18n } from "../../components/useI18n";
 import { OrbLoader } from "../../components/OrbLoader";
+import {
+  AppModal,
+  AppModalDescription,
+  AppModalTitle,
+} from "../../components/modal/AppModal";
 import type {
   RegistryKind,
   RegistryItem,
@@ -61,6 +69,7 @@ const EMPTY: RegistryCatalog = {
 };
 
 type ActionState = "idle" | "working" | "done" | "error";
+type TemplateModalMode = "preview" | "edit" | null;
 
 export default function Discover({
   profile,
@@ -91,6 +100,13 @@ export default function Discover({
   const [writingTemplates, setWritingTemplates] = useState<WritingTemplate[]>(
     [],
   );
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
+    null,
+  );
+  const [templateModalMode, setTemplateModalMode] =
+    useState<TemplateModalMode>(null);
+  const [templateDescriptionDraft, setTemplateDescriptionDraft] = useState("");
+  const [templateSaving, setTemplateSaving] = useState(false);
   const [installed, setInstalled] = useState<{
     skills: string[];
     mcps: string[];
@@ -328,6 +344,73 @@ export default function Discover({
     window.dispatchEvent(new Event("hermes-writing-templates-changed"));
     toast.success(`已导入写作模板：${result.template?.name || "本地模板"}`);
     setTab("templates");
+    if (result.template) {
+      setSelectedTemplateId(result.template.id);
+      setTemplateDescriptionDraft(result.template.description ?? "");
+      setTemplateModalMode("edit");
+    }
+  }
+
+  const selectedTemplate =
+    writingTemplates.find((template) => template.id === selectedTemplateId) ??
+    null;
+
+  function openTemplateModal(mode: Exclude<TemplateModalMode, null>): void {
+    if (!selectedTemplate) return;
+    setTemplateDescriptionDraft(selectedTemplate.description ?? "");
+    setTemplateModalMode(mode);
+  }
+
+  async function handleSaveTemplateDescription(): Promise<void> {
+    if (!selectedTemplate || templateSaving) return;
+    setTemplateSaving(true);
+    try {
+      const updated = await window.hermesAPI.updateWritingTemplateDescription(
+        selectedTemplate.id,
+        templateDescriptionDraft,
+        profile,
+      );
+      if (!updated) {
+        toast.error("保存模板简介失败。");
+        return;
+      }
+      await loadWritingTemplates();
+      window.dispatchEvent(new Event("hermes-writing-templates-changed"));
+      setTemplateModalMode(null);
+      toast.success("模板简介已保存。");
+    } finally {
+      setTemplateSaving(false);
+    }
+  }
+
+  async function handleReplaceTemplateFile(): Promise<void> {
+    if (!selectedTemplate || templateSaving) return;
+    setTemplateSaving(true);
+    try {
+      const result = await window.hermesAPI.replaceWritingTemplateFile(
+        selectedTemplate.id,
+        profile,
+      );
+      if (result.canceled) return;
+      if (!result.success) {
+        toast.error(result.error || "替换模板文件失败。");
+        return;
+      }
+      await loadWritingTemplates();
+      window.dispatchEvent(new Event("hermes-writing-templates-changed"));
+      toast.success("模板文件已替换。");
+    } finally {
+      setTemplateSaving(false);
+    }
+  }
+
+  async function handleOpenTemplate(): Promise<void> {
+    if (!selectedTemplate) return;
+    const opened = await window.hermesAPI.openWritingTemplate(
+      selectedTemplate.id,
+      profile,
+    );
+    if (!opened) toast.error("无法打开模板文件。");
   }
 
   function tabCount(key: DiscoverTab): number {
@@ -427,7 +510,7 @@ export default function Discover({
       ? items.length > 0 || filteredUserSkills.length > 0
       : items.length > 0;
   const filteredWritingTemplates = writingTemplates.filter((template) =>
-    `${template.name} ${template.fileName} ${template.extension}`
+    `${template.name} ${template.description ?? ""} ${template.fileName} ${template.extension}`
       .toLowerCase()
       .includes(query.trim().toLowerCase()),
   );
@@ -517,6 +600,113 @@ export default function Discover({
 
   return (
     <div className="discover-container">
+      <AppModal
+        open={templateModalMode !== null && selectedTemplate !== null}
+        onOpenChange={(open) => {
+          if (!open) setTemplateModalMode(null);
+        }}
+        className="writing-template-modal"
+        overlayClassName="writing-template-modal-overlay"
+        labelledBy="writing-template-modal-title"
+        describedBy="writing-template-modal-description"
+      >
+        {selectedTemplate && (
+          <>
+            <div className="writing-template-modal-header">
+              <div>
+                <AppModalTitle
+                  id="writing-template-modal-title"
+                  className="writing-template-modal-title"
+                >
+                  {templateModalMode === "edit"
+                    ? "修改写作模板"
+                    : "预览写作模板"}
+                </AppModalTitle>
+                <AppModalDescription
+                  id="writing-template-modal-description"
+                  className="writing-template-modal-subtitle"
+                >
+                  {selectedTemplate.name}
+                </AppModalDescription>
+              </div>
+              <button
+                type="button"
+                className="btn-ghost discover-modal-close"
+                aria-label="关闭"
+                onClick={() => setTemplateModalMode(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="writing-template-modal-body">
+              <div className="writing-template-preview-file">
+                <WritingTemplateIcon size={24} />
+                <div>
+                  <strong>{selectedTemplate.fileName}</strong>
+                  <span>
+                    {selectedTemplate.extension.toUpperCase()} ·{" "}
+                    {selectedTemplate.size} 字节
+                  </span>
+                </div>
+              </div>
+
+              {templateModalMode === "edit" ? (
+                <label className="writing-template-description-field">
+                  <span>模板简介</span>
+                  <textarea
+                    className="input writing-template-description-input"
+                    value={templateDescriptionDraft}
+                    onChange={(event) =>
+                      setTemplateDescriptionDraft(event.target.value)
+                    }
+                    placeholder="请输入这份合同或模板的简单介绍"
+                    rows={5}
+                  />
+                </label>
+              ) : (
+                <section className="writing-template-preview-description">
+                  <h4>模板简介</h4>
+                  <p>{selectedTemplate.description || "暂无简介"}</p>
+                </section>
+              )}
+            </div>
+
+            <div className="writing-template-modal-footer">
+              {templateModalMode === "edit" ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => void handleReplaceTemplateFile()}
+                    disabled={templateSaving}
+                  >
+                    <FolderInput size={14} />
+                    替换模板文件
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => void handleSaveTemplateDescription()}
+                    disabled={templateSaving}
+                  >
+                    保存修改
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => void handleOpenTemplate()}
+                >
+                  <ExternalLink size={14} />
+                  打开模板文件
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </AppModal>
       {detailItem &&
         (() => {
           const { kind, item } = detailItem;
@@ -767,7 +957,15 @@ export default function Discover({
         ) : (
           <div className="discover-grid" data-testid="writing-templates-grid">
             {filteredWritingTemplates.map((template) => (
-              <div className="discover-card" key={template.id}>
+              <button
+                type="button"
+                className={`discover-card discover-card--clickable writing-template-card ${
+                  selectedTemplateId === template.id ? "is-selected" : ""
+                }`}
+                key={template.id}
+                aria-pressed={selectedTemplateId === template.id}
+                onClick={() => setSelectedTemplateId(template.id)}
+              >
                 <div className="discover-card-head">
                   <span className="discover-card-iconwrap">
                     <WritingTemplateIcon size={16} />
@@ -777,7 +975,10 @@ export default function Discover({
                     {template.extension.toUpperCase()}
                   </span>
                 </div>
-              </div>
+                {template.description && (
+                  <p className="discover-card-desc">{template.description}</p>
+                )}
+              </button>
             ))}
           </div>
         )
@@ -857,7 +1058,6 @@ export default function Discover({
                   {filteredUserSkills.length}
                 </span>
               </span>
-
             </div>
             <div className="discover-skill-section-list">
               {filteredUserSkills.length === 0 ? (
@@ -953,6 +1153,28 @@ export default function Discover({
               </div>
             );
           })}
+        </div>
+      )}
+      {tab === "templates" && (
+        <div className="writing-template-actions" aria-label="写作模板操作">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={!selectedTemplate}
+            onClick={() => openTemplateModal("preview")}
+          >
+            <VisionIcon size={15} />
+            预览
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={!selectedTemplate}
+            onClick={() => openTemplateModal("edit")}
+          >
+            <Pencil size={15} />
+            修改
+          </button>
         </div>
       )}
     </div>

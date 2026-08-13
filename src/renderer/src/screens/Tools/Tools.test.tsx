@@ -6,14 +6,14 @@ vi.mock("../../components/useI18n", () => ({
   useI18n: () => ({
     t: (key: string) =>
       ({
-        "tools.title": "工具",
-        "tools.mcpServers": "MCP 服务器",
-        "navigation.skills": "技能",
-        "tools.writingTemplates": "写作模板",
-        "tools.writingTemplateSearch": "搜索写作模板...",
-        "tools.writingTemplateEmptyTitle": "暂无写作模板",
+        "tools.title": "Tools",
+        "tools.mcpServers": "MCP Servers",
+        "navigation.skills": "Skills",
+        "tools.writingTemplates": "Writing templates",
+        "tools.writingTemplateSearch": "Search writing templates...",
+        "tools.writingTemplateEmptyTitle": "No writing templates yet",
         "tools.writingTemplateEmptyDescription":
-          "后续添加的写作模板会显示在这里。",
+          "Writing templates you add later will appear here.",
       })[key] ?? key,
   }),
 }));
@@ -32,8 +32,36 @@ describe("Capabilities writing templates entry", () => {
         getToolsets: vi.fn(async () => []),
         listMcpServers: vi.fn(async () => []),
         listWritingTemplates: vi.fn(async () => []),
+        updateWritingTemplateDescription: vi.fn(async () => null),
       },
     });
+  });
+
+  it("shows the saved template description instead of the source filename", async () => {
+    vi.mocked(window.hermesAPI.listWritingTemplates).mockResolvedValue([
+      {
+        id: "contract-123",
+        name: "Server rental contract",
+        description: "Standard contract for server equipment rental",
+        fileName: "server-contract.docx",
+        extension: "docx",
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        size: 128,
+        createdAt: "2026-08-12T00:00:00.000Z",
+        path: "C:\\templates\\server-contract.docx",
+      },
+    ]);
+    render(<Tools visible />);
+
+    await waitFor(() =>
+      expect(window.hermesAPI.getToolsets).toHaveBeenCalled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Writing templates/ }));
+
+    expect(
+      await screen.findByText("Standard contract for server equipment rental"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("server-contract.docx")).not.toBeInTheDocument();
   });
 
   it("replaces the MCP Servers tab with a writing templates view", async () => {
@@ -43,12 +71,15 @@ describe("Capabilities writing templates entry", () => {
     await waitFor(() =>
       expect(window.hermesAPI.getToolsets).toHaveBeenCalled(),
     );
-    expect(screen.queryByRole("button", { name: /MCP 服务器/ })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /MCP Servers/ }),
+    ).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /写作模板/ }));
-
+    fireEvent.click(screen.getByRole("button", { name: /Writing templates/ }));
     expect(screen.getByTestId("writing-templates-pane")).toBeInTheDocument();
-    expect(screen.getByText("暂无写作模板")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("搜索写作模板...")).toBeInTheDocument();
+    expect(screen.getByText("No writing templates yet")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Search writing templates..."),
+    ).toBeInTheDocument();
   });
 });

@@ -13313,6 +13313,144 @@ body:has(.shell-vibrant),
   border-color: var(--border-bright);
 }
 
+.writing-template-card.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.writing-template-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding-top: 8px;
+  flex-shrink: 0;
+}
+
+.writing-template-actions .btn {
+  min-width: 82px;
+  justify-content: center;
+}
+
+.writing-template-modal-overlay {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.writing-template-modal {
+  width: min(560px, calc(100vw - 40px));
+  height: fit-content;
+  max-height: min(680px, calc(100vh - 40px));
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--bg-secondary) 97%, transparent);
+  backdrop-filter: blur(26px) saturate(1.35);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.writing-template-modal-header,
+.writing-template-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  flex-shrink: 0;
+}
+
+.writing-template-modal-header {
+  border-bottom: 1px solid var(--border);
+}
+
+.writing-template-modal-footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+}
+
+.writing-template-modal-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.writing-template-modal-subtitle {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.writing-template-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.writing-template-preview-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--accent-text, var(--accent));
+}
+
+.writing-template-preview-file div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.writing-template-preview-file strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.writing-template-preview-file span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.writing-template-description-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.writing-template-description-input {
+  min-height: 110px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.writing-template-preview-description h4 {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.writing-template-preview-description p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
 /* Clickable card (installed skills open a detail modal). */
 .discover-card--clickable {
   width: 100%;

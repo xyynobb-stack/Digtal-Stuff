@@ -22,15 +22,19 @@ The Skill Creator starter guides a dialogue from trigger examples and scope thro
 
 The Discover tab row contains Skills, Agents, and 写作模板; MCPs and Workflows are not shown in this employee-facing navigation.
 
-Selecting 写作模板 opens a searchable template view. “添加写作模板” accepts common document formats beside the local-Skill import action, then refreshes every mounted template view.
+Selecting 写作模板 opens a searchable template view. “添加写作模板” accepts common document formats beside the local-Skill import action, then opens an application modal for the description and refreshes every mounted template view without relying on a browser prompt.
 
 [[src/main/writing-templates.ts#importWritingTemplate]] copies the selected file byte-for-byte into the current profile's `writing-templates` directory and writes only indexing metadata beside it. The desktop does not parse, normalize, or adapt document contents; [[src/main/writing-templates.ts#listWritingTemplates]] returns the stored originals for display and later Agent attachment.
+
+Employees can select a template and use the fixed bottom actions to preview its description and source-file details or modify it. Preview opens the original in its system application on request; modify updates the description or replaces the stored source through [[src/main/writing-templates.ts#replaceWritingTemplateFile]] while preserving the library id.
 
 ## Capabilities writing templates entry
 
 The bottom-left Capabilities destination opens [[src/renderer/src/screens/Tools/Tools.tsx#Tools]], whose employee tab row contains Tools, Skills, and 写作模板; the MCP Servers tab is hidden from this navigation.
 
 Selecting 写作模板 shows the same searchable profile-local collection as Discover. Both views receive the `hermes-writing-templates-changed` refresh event after import, so a template added in Discover appears without restarting the app.
+
+Template descriptions are collected after import and stored in each template's metadata so the Capabilities list can show a concise explanation instead of only the source filename; older metadata falls back to that filename.
 
 ## Chat template activation
 

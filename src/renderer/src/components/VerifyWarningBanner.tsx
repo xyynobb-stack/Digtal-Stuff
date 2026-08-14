@@ -1,18 +1,17 @@
 import { useI18n } from "./useI18n";
 
 interface VerifyWarningBannerProps {
-  onReinstall: () => void;
+  onRetry: () => void;
   onDismiss: () => void;
 }
 
 /**
  * Soft warning shown when checkInstall() succeeded (files exist) but the
- * deep `verifyInstall` probe failed. Replaces the previous hard-bounce to
- * the Welcome screen, which trapped restricted-network users in a reinstall
- * loop on every launch (#130).
+ * deep `verifyInstall` probe failed. Retry re-runs startup verification; it
+ * never launches an installer against a possibly managed runtime.
  */
 function VerifyWarningBanner({
-  onReinstall,
+  onRetry,
   onDismiss,
 }: VerifyWarningBannerProps): React.JSX.Element {
   const { t } = useI18n();
@@ -22,10 +21,10 @@ function VerifyWarningBanner({
       <div className="verify-warning-actions">
         <button
           className="btn btn-secondary btn-sm"
-          onClick={onReinstall}
+          onClick={onRetry}
           type="button"
         >
-          {t("errors.verifyReinstall")}
+          {t("common.retry")}
         </button>
         <button className="btn-ghost btn-sm" onClick={onDismiss} type="button">
           {t("errors.verifyDismiss")}

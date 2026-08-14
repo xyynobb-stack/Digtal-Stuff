@@ -70,13 +70,13 @@ const SIDEBAR_SCROLLBAR_HIDE_MS = 700;
 
 interface LayoutProps {
   verifyWarning?: boolean;
-  onReinstall?: () => void;
+  onRetryVerification?: () => void;
   onDismissVerifyWarning?: () => void;
 }
 
 function Layout({
   verifyWarning,
-  onReinstall,
+  onRetryVerification,
   onDismissVerifyWarning,
 }: LayoutProps = {}): React.JSX.Element {
   const { t } = useI18n();
@@ -803,9 +803,9 @@ function Layout({
             onNew={handleNewChat}
             getAppearance={getAppearance}
           />
-          {verifyWarning && onReinstall && onDismissVerifyWarning && (
+          {verifyWarning && onRetryVerification && onDismissVerifyWarning && (
             <VerifyWarningBanner
-              onReinstall={onReinstall}
+              onRetry={onRetryVerification}
               onDismiss={onDismissVerifyWarning}
             />
           )}

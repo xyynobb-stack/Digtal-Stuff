@@ -105,6 +105,9 @@ const hermesAPI = {
     installed: boolean;
     configured: boolean;
     hasApiKey: boolean;
+    verified: boolean;
+    managedRuntime: boolean;
+    activeProfile?: string;
   }> => ipcRenderer.invoke("check-install"),
 
   verifyInstall: (): Promise<boolean> => ipcRenderer.invoke("verify-install"),

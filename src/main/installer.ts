@@ -347,23 +347,59 @@ export function stopManagedRuntimeProcessesForUpgrade(
   return pids;
 }
 
-function validateRuntimeTree(
+export function validateRuntimeTree(
   runtimeRepo: string,
   pythonRoot: string,
   buildMarker: string,
   expectedBuildIdentity: string,
   sourcePythonExists: boolean,
+  requireRelocatedPaths = true,
+  platform = process.platform,
 ): string | null {
+  if (platform === "win32" && !sourcePythonExists) {
+    return "packaged Python runtime is missing from application resources";
+  }
   if (!existsSync(join(runtimeRepo, "tui_gateway", "server.py"))) {
     return "gateway source is missing";
   }
   const launcher =
-    process.platform === "win32"
+    platform === "win32"
       ? join(runtimeRepo, "venv", "Scripts", "python.exe")
       : join(runtimeRepo, "venv", "bin", "python");
   if (!existsSync(launcher)) return "Python virtual environment is incomplete";
-  if (sourcePythonExists && !existsSync(pythonRoot)) {
-    return "bundled Python runtime is missing";
+  const cli =
+    platform === "win32"
+      ? join(runtimeRepo, "venv", "Scripts", "hermes.exe")
+      : join(runtimeRepo, "hermes");
+  if (!existsSync(cli)) return "JingYuAI CLI launcher is incomplete";
+  if (sourcePythonExists) {
+    const { executable, home } = bundledPythonRuntimeLayout(
+      pythonRoot,
+      platform,
+    );
+    if (!existsSync(executable)) return "bundled Python executable is missing";
+    if (requireRelocatedPaths) {
+      const cfg = join(runtimeRepo, "venv", "pyvenv.cfg");
+      if (!existsSync(cfg))
+        return "Python virtual environment config is missing";
+      const config = readFileSync(cfg, "utf8");
+      const configuredHome = config.match(/^home\s*=\s*(.+)$/m)?.[1]?.trim();
+      const configuredExecutable = config
+        .match(/^executable\s*=\s*(.+)$/m)?.[1]
+        ?.trim();
+      const normalize = (value: string): string =>
+        resolve(value)
+          .replace(/[\\/]+/g, "/")
+          .toLowerCase();
+      if (
+        !configuredHome ||
+        !configuredExecutable ||
+        normalize(configuredHome) !== normalize(home) ||
+        normalize(configuredExecutable) !== normalize(executable)
+      ) {
+        return "Python virtual environment points outside the active runtime";
+      }
+    }
   }
   if (
     !existsSync(buildMarker) ||
@@ -374,7 +410,10 @@ function validateRuntimeTree(
   return null;
 }
 
-function repairRelocatedRuntime(runtimeRepo: string, pythonRoot: string): void {
+export function repairRelocatedRuntime(
+  runtimeRepo: string,
+  pythonRoot: string,
+): void {
   const cfg = join(runtimeRepo, "venv", "pyvenv.cfg");
   if (existsSync(cfg) && existsSync(pythonRoot)) {
     const { executable, home } = bundledPythonRuntimeLayout(pythonRoot);
@@ -388,6 +427,23 @@ function repairRelocatedRuntime(runtimeRepo: string, pythonRoot: string): void {
     writeFileSync(cfg, text, "utf-8");
   }
   repairBundledPythonImportPath(runtimeRepo);
+}
+
+function probeRelocatedRuntime(runtimeRepo: string): void {
+  const launcher =
+    process.platform === "win32"
+      ? join(runtimeRepo, "venv", "Scripts", "python.exe")
+      : join(runtimeRepo, "venv", "bin", "python");
+  execFileSync(launcher, ["-c", "import sys; print(sys.executable)"], {
+    cwd: runtimeRepo,
+    encoding: "utf8",
+    timeout: 15_000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PYTHONPATH: runtimeRepo,
+    },
+  });
 }
 
 function activateRuntime(
@@ -442,13 +498,20 @@ async function prepareBundledRuntime(): Promise<void> {
       const targetRepo = join(versionRoot, "hermes-agent");
       const targetPython = join(versionRoot, "python-runtime");
       const targetBuildMarker = join(versionRoot, "desktop-runtime-build.json");
-      const currentError = validateRuntimeTree(
+      let currentError = validateRuntimeTree(
         targetRepo,
         targetPython,
         targetBuildMarker,
         expectedBuildIdentity,
         existsSync(sourcePython),
       );
+      if (!currentError) {
+        try {
+          probeRelocatedRuntime(targetRepo);
+        } catch (error) {
+          currentError = `Python runtime probe failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
       const activationChanged =
         !activeRuntimeRepo(managedRoot) ||
         resolve(activeRuntimeRepo(managedRoot)) !== resolve(targetRepo);
@@ -478,13 +541,13 @@ async function prepareBundledRuntime(): Promise<void> {
             });
           }
           writeFileSync(stagingBuildMarker, expectedBuildIdentity, "utf8");
-          repairRelocatedRuntime(stagingRepo, stagingPython);
           const stagedError = validateRuntimeTree(
             stagingRepo,
             stagingPython,
             stagingBuildMarker,
             expectedBuildIdentity,
             existsSync(sourcePython),
+            false,
           );
           if (stagedError) throw new Error(stagedError);
 
@@ -498,6 +561,19 @@ async function prepareBundledRuntime(): Promise<void> {
             );
           }
           renameSync(stagingRoot, versionRoot);
+          // Repair paths only after the atomic rename. Writing staging paths
+          // into pyvenv.cfg makes the venv launcher look for a Python binary
+          // under the now-nonexistent `.staging-*` directory (exit code 103).
+          repairRelocatedRuntime(targetRepo, targetPython);
+          const finalError = validateRuntimeTree(
+            targetRepo,
+            targetPython,
+            targetBuildMarker,
+            expectedBuildIdentity,
+            existsSync(sourcePython),
+          );
+          if (finalError) throw new Error(finalError);
+          probeRelocatedRuntime(targetRepo);
         } catch (error) {
           const resolvedStaging = resolve(stagingRoot);
           const resolvedVersions = `${resolve(versionsRoot)}${sep}`;
@@ -793,6 +869,7 @@ export interface InstallStatus {
   configured: boolean;
   hasApiKey: boolean;
   verified: boolean;
+  managedRuntime: boolean;
   activeProfile?: string;
 }
 
@@ -1086,6 +1163,7 @@ export function checkInstallStatus(): InstallStatus {
       configured: true,
       hasApiKey: true,
       verified: true,
+      managedRuntime: Boolean(BUNDLED_RUNTIME_REPO && app?.isPackaged),
       activeProfile,
     };
   }
@@ -1129,7 +1207,14 @@ export function checkInstallStatus(): InstallStatus {
     }
   }
 
-  return { installed, configured, hasApiKey, verified, activeProfile };
+  return {
+    installed,
+    configured,
+    hasApiKey,
+    verified,
+    managedRuntime: Boolean(BUNDLED_RUNTIME_REPO && app?.isPackaged),
+    activeProfile,
+  };
 }
 
 // Lazy background verification: actually invoke Python to confirm the
@@ -1475,6 +1560,11 @@ export async function runInstall(
   onProgress: (progress: InstallProgress) => void,
   parentWindow?: BrowserWindow | null,
 ): Promise<void> {
+  if (app?.isPackaged && BUNDLED_RUNTIME_REPO) {
+    throw new Error(
+      "受管理的 JingYuAI 运行时不能使用通用安装器覆盖；请重试运行时修复。",
+    );
+  }
   const totalSteps = 7;
   let log = "";
   let currentStep = 1;

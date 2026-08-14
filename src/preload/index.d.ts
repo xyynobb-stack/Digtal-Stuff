@@ -57,6 +57,7 @@ interface InstallStatus {
   configured: boolean;
   hasApiKey: boolean;
   verified: boolean;
+  managedRuntime: boolean;
   activeProfile?: string;
 }
 

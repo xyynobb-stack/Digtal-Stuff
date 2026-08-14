@@ -52,6 +52,7 @@ function App(): React.JSX.Element {
     let next: Screen = "welcome";
     let error: string | null = null;
     let isRemote = false;
+    let managedRuntime = false;
     let checkingLocalRuntime = false;
 
     try {
@@ -82,6 +83,7 @@ function App(): React.JSX.Element {
         checkingLocalRuntime = true;
         const status = await window.hermesAPI.checkInstall();
         checkingLocalRuntime = false;
+        managedRuntime = status.managedRuntime;
         if (!status.installed) {
           next = "welcome";
         } else if (!status.hasApiKey) {
@@ -144,9 +146,18 @@ function App(): React.JSX.Element {
     // error immediately after a successful remote connect. (#47, #41, #30)
     if ((next === "main" || next === "setup") && !isRemote) {
       window.hermesAPI.verifyInstall().then((ok) => {
+        if (myRun !== runIdRef.current) return;
         // Files exist (checkInstall passed) but the probe failed. Surface
-        // a soft warning instead of bouncing to Welcome — see #130.
-        if (!ok) setVerifyWarning(true);
+        // managed runtime failures through the repair screen. Never send a
+        // packaged immutable runtime through the generic network installer.
+        if (!ok && managedRuntime) {
+          setInstallError(
+            "受管理的 JingYuAI 运行时健康检查失败。请重试运行时修复；不要重新安装 Agent。",
+          );
+          setScreen("runtime-error");
+        } else if (!ok) {
+          setVerifyWarning(true);
+        }
       });
     }
   }, []);
@@ -200,10 +211,9 @@ function App(): React.JSX.Element {
     handleRecheck();
   }
 
-  function handleVerifyReinstall(): void {
+  function handleVerifyRetry(): void {
     setVerifyWarning(false);
-    setInstallError(null);
-    setScreen("installing");
+    handleRecheck();
   }
 
   function handleDismissVerifyWarning(): void {
@@ -252,7 +262,7 @@ function App(): React.JSX.Element {
           <Setup
             onComplete={() => setScreen("main")}
             verifyWarning={verifyWarning}
-            onReinstall={handleVerifyReinstall}
+            onRetryVerification={handleVerifyRetry}
             onDismissVerifyWarning={handleDismissVerifyWarning}
           />
         );
@@ -260,7 +270,7 @@ function App(): React.JSX.Element {
         return (
           <Layout
             verifyWarning={verifyWarning}
-            onReinstall={handleVerifyReinstall}
+            onRetryVerification={handleVerifyRetry}
             onDismissVerifyWarning={handleDismissVerifyWarning}
           />
         );

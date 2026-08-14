@@ -16,7 +16,9 @@ import {
   hermesCliArgs,
   managedRuntimePidFiles,
   repairBundledPythonImportPath,
+  repairRelocatedRuntime,
   resolveBundledRuntimeRepo,
+  validateRuntimeTree,
   HERMES_PYTHON,
   HERMES_SCRIPT,
 } from "../src/main/installer";
@@ -123,6 +125,108 @@ describe("installer platform wiring", () => {
     expect(existsSync(sourcePathFile!)).toBe(true);
     expect(readFileSync(sourcePathFile!, "utf8")).toBe(`${runtimeRepo}\n`);
     expect(repairBundledPythonImportPath(runtimeRepo, "darwin")).toBeNull();
+  });
+
+  it("writes final runtime paths into a relocated Windows virtual environment", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-relocated-venv-test-"));
+    tempRoots.push(root);
+    const runtimeRepo = join(root, "hermes-agent");
+    const pythonRoot = join(root, "python-runtime");
+    mkdirSync(join(runtimeRepo, "venv", "Lib", "site-packages"), {
+      recursive: true,
+    });
+    mkdirSync(pythonRoot, { recursive: true });
+    writeFileSync(
+      join(runtimeRepo, "venv", "pyvenv.cfg"),
+      "home = C:\\stale\\.staging-runtime\\python-runtime\n" +
+        "executable = C:\\stale\\.staging-runtime\\python-runtime\\python.exe\n" +
+        "command = C:\\stale\\python.exe -m venv C:\\stale\\venv\n",
+      "utf8",
+    );
+
+    repairRelocatedRuntime(runtimeRepo, pythonRoot);
+
+    const config = readFileSync(
+      join(runtimeRepo, "venv", "pyvenv.cfg"),
+      "utf8",
+    );
+    const layout = bundledPythonRuntimeLayout(pythonRoot, "win32");
+    expect(config).toContain(`home = ${layout.home}`);
+    expect(config).toContain(`executable = ${layout.executable}`);
+    expect(config).toContain(
+      `command = ${layout.executable} -m venv ${join(runtimeRepo, "venv")}`,
+    );
+  });
+
+  it("rejects missing base Python and stale staging paths before activation", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-runtime-validation-"));
+    tempRoots.push(root);
+    const runtimeRepo = join(root, "hermes-agent");
+    const pythonRoot = join(root, "python-runtime");
+    const marker = join(root, "desktop-runtime-build.json");
+    const identity = "runtime-build-identity\n";
+    mkdirSync(join(runtimeRepo, "tui_gateway"), { recursive: true });
+    mkdirSync(join(runtimeRepo, "venv", "Scripts"), { recursive: true });
+    mkdirSync(join(runtimeRepo, "venv", "Lib", "site-packages"), {
+      recursive: true,
+    });
+    mkdirSync(pythonRoot, { recursive: true });
+    writeFileSync(join(runtimeRepo, "tui_gateway", "server.py"), "", "utf8");
+    writeFileSync(
+      join(runtimeRepo, "venv", "Scripts", "python.exe"),
+      "",
+      "utf8",
+    );
+    writeFileSync(
+      join(runtimeRepo, "venv", "Scripts", "hermes.exe"),
+      "",
+      "utf8",
+    );
+    writeFileSync(marker, identity, "utf8");
+    writeFileSync(
+      join(runtimeRepo, "venv", "pyvenv.cfg"),
+      "home = C:\\old\\.staging-runtime\\python-runtime\n" +
+        "executable = C:\\old\\.staging-runtime\\python-runtime\\python.exe\n",
+      "utf8",
+    );
+
+    expect(
+      validateRuntimeTree(
+        runtimeRepo,
+        pythonRoot,
+        marker,
+        identity,
+        true,
+        true,
+        "win32",
+      ),
+    ).toBe("bundled Python executable is missing");
+
+    writeFileSync(join(pythonRoot, "python.exe"), "", "utf8");
+    expect(
+      validateRuntimeTree(
+        runtimeRepo,
+        pythonRoot,
+        marker,
+        identity,
+        true,
+        true,
+        "win32",
+      ),
+    ).toBe("Python virtual environment points outside the active runtime");
+
+    repairRelocatedRuntime(runtimeRepo, pythonRoot);
+    expect(
+      validateRuntimeTree(
+        runtimeRepo,
+        pythonRoot,
+        marker,
+        identity,
+        true,
+        true,
+        "win32",
+      ),
+    ).toBeNull();
   });
 
   it("builds platform-specific Hermes CLI invocation args", () => {

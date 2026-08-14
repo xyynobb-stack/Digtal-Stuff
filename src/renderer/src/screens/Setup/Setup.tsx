@@ -14,14 +14,14 @@ import {
 interface SetupProps {
   onComplete: () => void;
   verifyWarning?: boolean;
-  onReinstall?: () => void;
+  onRetryVerification?: () => void;
   onDismissVerifyWarning?: () => void;
 }
 
 function Setup({
   onComplete,
   verifyWarning,
-  onReinstall,
+  onRetryVerification,
   onDismissVerifyWarning,
 }: SetupProps): React.JSX.Element {
   const { t } = useI18n();
@@ -129,9 +129,9 @@ function Setup({
 
   return (
     <div className="screen setup-screen">
-      {verifyWarning && onReinstall && onDismissVerifyWarning && (
+      {verifyWarning && onRetryVerification && onDismissVerifyWarning && (
         <VerifyWarningBanner
-          onReinstall={onReinstall}
+          onRetry={onRetryVerification}
           onDismiss={onDismissVerifyWarning}
         />
       )}

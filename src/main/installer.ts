@@ -4,12 +4,14 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
+  rmSync,
   statSync,
   writeFileSync,
   unlinkSync,
 } from "fs";
 import { cp } from "fs/promises";
-import { join, delimiter, posix, resolve, win32 } from "path";
+import { join, delimiter, posix, resolve, sep, win32 } from "path";
 import { homedir, tmpdir } from "os";
 import { randomBytes } from "crypto";
 import { app, type BrowserWindow } from "electron";
@@ -25,7 +27,10 @@ import { precacheSudoCredentials } from "./sudoCreds";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
 import { installPackagedPresetContent } from "./preset-content";
 import { mergeBundledEmployeeLookupToken } from "./employee-lookup-token";
-import { desktopRuntimeBuildIdentity } from "./runtime-build";
+import {
+  desktopRuntimeBuildIdentity,
+  desktopRuntimeVersionName,
+} from "./runtime-build";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -109,36 +114,318 @@ if (HERMES_DESKTOP_USER_DATA_DIR) {
 // location after the first window is created so a large offline runtime never
 // blocks (or crashes) Electron while the main-process bundle is being loaded.
 //
-// A prior package can leave a partial tree in userData (for example, a
-// hermes-agent directory without its venv). Never treat the presence of the
-// repository directory alone as proof that the runtime is complete: repair
-// missing runtime directories from the new package on every packaged launch.
+// A prior package can leave a partial tree in userData. Never repair that tree
+// in place: each build gets an immutable version directory, prepared in a
+// private sibling and made active only after validation.
 export function resolveBundledRuntimeRepo(
   resourcesRoot: string,
   userDataRoot: string,
   packaged: boolean,
+  desktopVersion = "",
 ): string {
   if (!packaged || !resourcesRoot || !userDataRoot) return "";
-  const sourceRepo = join(resourcesRoot, "hermes-runtime", "hermes-agent");
-  const targetRepo = join(userDataRoot, "hermes-runtime", "hermes-agent");
-  return existsSync(sourceRepo) || existsSync(targetRepo) ? targetRepo : "";
+  const sourceRoot = join(resourcesRoot, "hermes-runtime");
+  const sourceRepo = join(sourceRoot, "hermes-agent");
+  if (existsSync(sourceRepo)) {
+    const markerPath = join(sourceRoot, "desktop-runtime-build.json");
+    const marker = existsSync(markerPath)
+      ? readFileSync(markerPath, "utf8")
+      : "";
+    const versionName = desktopRuntimeVersionName(marker, desktopVersion);
+    return join(
+      userDataRoot,
+      "hermes-runtime",
+      "versions",
+      versionName,
+      "hermes-agent",
+    );
+  }
+
+  const activePointer = join(
+    userDataRoot,
+    "hermes-runtime",
+    "active-runtime.json",
+  );
+  if (existsSync(activePointer)) {
+    try {
+      const active = JSON.parse(readFileSync(activePointer, "utf8")) as {
+        repo?: unknown;
+      };
+      if (typeof active.repo === "string" && existsSync(active.repo)) {
+        return active.repo;
+      }
+    } catch {
+      // Fall through to the pre-versioned runtime for an older installation.
+    }
+  }
+  const legacyRepo = join(userDataRoot, "hermes-runtime", "hermes-agent");
+  return existsSync(legacyRepo) ? legacyRepo : "";
+}
+
+function activeRuntimeRepo(managedRoot: string): string {
+  const activePointer = join(managedRoot, "active-runtime.json");
+  if (!existsSync(activePointer)) return "";
+  try {
+    const active = JSON.parse(readFileSync(activePointer, "utf8")) as {
+      repo?: unknown;
+    };
+    return typeof active.repo === "string" ? active.repo : "";
+  } catch {
+    return "";
+  }
+}
+
+interface ManagedPidFile {
+  path: string;
+  pid: number;
+}
+
+function parseManagedPidFile(path: string): number | null {
+  if (!existsSync(path)) return null;
+  try {
+    const raw = readFileSync(path, "utf8").trim();
+    const value = raw.startsWith("{")
+      ? (JSON.parse(raw) as { pid?: unknown }).pid
+      : Number.parseInt(raw, 10);
+    return typeof value === "number" && Number.isInteger(value) && value > 0
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** PID files owned by desktop gateways/dashboard processes across profiles. */
+export function managedRuntimePidFiles(hermesHome: string): ManagedPidFile[] {
+  const profileHomes = [hermesHome];
+  const profilesRoot = join(hermesHome, "profiles");
+  if (existsSync(profilesRoot)) {
+    try {
+      for (const entry of readdirSync(profilesRoot, { withFileTypes: true })) {
+        if (entry.isDirectory())
+          profileHomes.push(join(profilesRoot, entry.name));
+      }
+    } catch {
+      // The runtime process scan below remains the fallback.
+    }
+  }
+  const result: ManagedPidFile[] = [];
+  for (const home of profileHomes) {
+    for (const filename of ["gateway.pid", "dashboard-desktop.pid"]) {
+      const path = join(home, filename);
+      const pid = parseManagedPidFile(path);
+      if (pid) result.push({ path, pid });
+    }
+  }
+  return result;
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function windowsPythonPid(pid: number): boolean {
+  try {
+    const output = execFileSync(
+      "tasklist.exe",
+      ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"],
+      { encoding: "utf8", windowsHide: true },
+    ).trim();
+    return /^"python(?:w)?\.exe"/i.test(output);
+  } catch {
+    return false;
+  }
+}
+
+function managedRuntimeProcessPids(runtimeRoot: string): number[] {
+  if (!existsSync(runtimeRoot)) return [];
+  if (process.platform === "win32") {
+    const script = `
+$root = [IO.Path]::GetFullPath($env:JINGYU_MANAGED_RUNTIME_ROOT)
+Get-CimInstance Win32_Process |
+  Where-Object {
+    $_.ProcessId -ne $PID -and
+    $_.Name -match '^python(w)?\\.exe$' -and
+    $_.ExecutablePath -and
+    ([IO.Path]::GetFullPath($_.ExecutablePath)).StartsWith(
+      $root,
+      [StringComparison]::OrdinalIgnoreCase
+    )
+  } |
+  ForEach-Object { $_.ProcessId }
+`;
+    try {
+      const output = execFileSync(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", script],
+        {
+          encoding: "utf8",
+          windowsHide: true,
+          env: {
+            ...process.env,
+            JINGYU_MANAGED_RUNTIME_ROOT: resolve(runtimeRoot),
+          },
+        },
+      );
+      return output
+        .split(/\r?\n/)
+        .map((line) => Number.parseInt(line.trim(), 10))
+        .filter((pid) => Number.isInteger(pid) && pid > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  try {
+    const output = execFileSync("ps", ["-axo", "pid=,command="], {
+      encoding: "utf8",
+    });
+    const normalizedRoot = resolve(runtimeRoot);
+    return output
+      .split(/\r?\n/)
+      .map((line) => {
+        const match = line.match(/^\s*(\d+)\s+(.+)$/);
+        if (!match || !match[2].includes(normalizedRoot)) return 0;
+        return /(?:^|[/\s])python(?:\d+(?:\.\d+)*)?(?:\s|$)/i.test(match[2])
+          ? Number.parseInt(match[1], 10)
+          : 0;
+      })
+      .filter((pid) => pid > 0 && pid !== process.pid);
+  } catch {
+    return [];
+  }
+}
+
+function terminateManagedProcess(pid: number): void {
+  if (!processIsAlive(pid)) return;
+  if (process.platform === "win32") {
+    execFileSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    return;
+  }
+  process.kill(pid, "SIGTERM");
+}
+
+/** Stop stale packaged gateway/dashboard trees before activating a new build. */
+export function stopManagedRuntimeProcessesForUpgrade(
+  hermesHome: string,
+  runtimeRoot: string,
+): number[] {
+  const pidFiles = managedRuntimePidFiles(hermesHome);
+  const discovered = managedRuntimeProcessPids(runtimeRoot);
+  const ownedPidFilePids = pidFiles
+    .map((entry) => entry.pid)
+    .filter(
+      (pid) =>
+        discovered.includes(pid) ||
+        (process.platform === "win32"
+          ? windowsPythonPid(pid)
+          : processIsAlive(pid)),
+    );
+  const pids = [...new Set([...discovered, ...ownedPidFilePids])];
+  for (const pid of pids) terminateManagedProcess(pid);
+  const survivors = pids.filter(processIsAlive);
+  if (survivors.length > 0) {
+    throw new Error(
+      `旧版 gateway/dashboard 进程未能停止: ${survivors.join(", ")}`,
+    );
+  }
+  for (const entry of pidFiles) {
+    try {
+      unlinkSync(entry.path);
+    } catch {
+      // A stale marker cannot block the immutable runtime switch.
+    }
+  }
+  return pids;
+}
+
+function validateRuntimeTree(
+  runtimeRepo: string,
+  pythonRoot: string,
+  buildMarker: string,
+  expectedBuildIdentity: string,
+  sourcePythonExists: boolean,
+): string | null {
+  if (!existsSync(join(runtimeRepo, "tui_gateway", "server.py"))) {
+    return "gateway source is missing";
+  }
+  const launcher =
+    process.platform === "win32"
+      ? join(runtimeRepo, "venv", "Scripts", "python.exe")
+      : join(runtimeRepo, "venv", "bin", "python");
+  if (!existsSync(launcher)) return "Python virtual environment is incomplete";
+  if (sourcePythonExists && !existsSync(pythonRoot)) {
+    return "bundled Python runtime is missing";
+  }
+  if (
+    !existsSync(buildMarker) ||
+    readFileSync(buildMarker, "utf8") !== expectedBuildIdentity
+  ) {
+    return "runtime build marker does not match the package";
+  }
+  return null;
+}
+
+function repairRelocatedRuntime(runtimeRepo: string, pythonRoot: string): void {
+  const cfg = join(runtimeRepo, "venv", "pyvenv.cfg");
+  if (existsSync(cfg) && existsSync(pythonRoot)) {
+    const { executable, home } = bundledPythonRuntimeLayout(pythonRoot);
+    const text = readFileSync(cfg, "utf-8")
+      .replace(/^home\s*=.*$/m, `home = ${home}`)
+      .replace(/^executable\s*=.*$/m, `executable = ${executable}`)
+      .replace(
+        /^command\s*=.*$/m,
+        `command = ${executable} -m venv ${join(runtimeRepo, "venv")}`,
+      );
+    writeFileSync(cfg, text, "utf-8");
+  }
+  repairBundledPythonImportPath(runtimeRepo);
+}
+
+function activateRuntime(
+  managedRoot: string,
+  versionName: string,
+  targetRepo: string,
+  expectedBuildIdentity: string,
+): void {
+  const activePointer = join(managedRoot, "active-runtime.json");
+  const pointerTemp = join(
+    managedRoot,
+    `.active-runtime-${randomBytes(4).toString("hex")}.tmp`,
+  );
+  writeFileSync(
+    pointerTemp,
+    `${JSON.stringify(
+      {
+        version: versionName,
+        repo: targetRepo,
+        buildIdentity: expectedBuildIdentity,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  renameSync(pointerTemp, activePointer);
 }
 
 async function prepareBundledRuntime(): Promise<void> {
   if (!app?.isPackaged) return;
   const sourceRoot = join(process.resourcesPath, "hermes-runtime");
-  const targetRoot = join(app.getPath("userData"), "hermes-runtime");
+  const managedRoot = join(app.getPath("userData"), "hermes-runtime");
   const sourceRepo = join(sourceRoot, "hermes-agent");
-  const targetRepo = join(targetRoot, "hermes-agent");
-  const sourceVenv = join(sourceRepo, "venv");
-  const targetVenv = join(targetRepo, "venv");
   const sourcePython = join(sourceRoot, "python-runtime");
-  const targetPython = join(targetRoot, "python-runtime");
   const sourceBuildMarker = join(sourceRoot, "desktop-runtime-build.json");
-  const targetBuildMarker = join(targetRoot, "desktop-runtime-build.json");
   try {
     if (existsSync(sourceRepo)) {
-      mkdirSync(targetRoot, { recursive: true });
       const packagedBuildMarker = existsSync(sourceBuildMarker)
         ? readFileSync(sourceBuildMarker, "utf8")
         : "";
@@ -146,91 +433,93 @@ async function prepareBundledRuntime(): Promise<void> {
         packagedBuildMarker,
         app.getVersion(),
       );
-      const installedBuildMarker = existsSync(targetBuildMarker)
-        ? readFileSync(targetBuildMarker, "utf8")
-        : "";
-      const runtimeBuildChanged =
-        expectedBuildIdentity !== installedBuildMarker;
+      const versionName = desktopRuntimeVersionName(
+        packagedBuildMarker,
+        app.getVersion(),
+      );
+      const versionsRoot = join(managedRoot, "versions");
+      const versionRoot = join(versionsRoot, versionName);
+      const targetRepo = join(versionRoot, "hermes-agent");
+      const targetPython = join(versionRoot, "python-runtime");
+      const targetBuildMarker = join(versionRoot, "desktop-runtime-build.json");
+      const currentError = validateRuntimeTree(
+        targetRepo,
+        targetPython,
+        targetBuildMarker,
+        expectedBuildIdentity,
+        existsSync(sourcePython),
+      );
+      const activationChanged =
+        !activeRuntimeRepo(managedRoot) ||
+        resolve(activeRuntimeRepo(managedRoot)) !== resolve(targetRepo);
 
-      if (!existsSync(targetRepo) || runtimeBuildChanged) {
-        // All Python modules in a packaged runtime are one compatibility unit.
-        // Updating only run_agent.py can leave it importing symbols that do not
-        // exist in an older tools/skills_tool.py. Refresh the complete managed
-        // tree once for each packaged runtime build.
-        await cp(sourceRepo, targetRepo, { recursive: true, force: true });
-        if (existsSync(sourcePython)) {
-          await cp(sourcePython, targetPython, {
-            recursive: true,
-            force: true,
-          });
-        }
-        writeFileSync(targetBuildMarker, expectedBuildIdentity, "utf8");
-      } else if (existsSync(sourceVenv) && !existsSync(targetVenv)) {
-        // Preserve the existing agent tree, but restore a missing venv from
-        // the package. This is the tree used by Kanban and scheduled tasks.
-        await cp(sourceVenv, targetVenv, { recursive: true });
-      } else if (existsSync(sourceVenv)) {
-        // A partially copied venv can lack its launchers. Merge only missing
-        // files so an existing runtime is not overwritten. macOS uses `bin`,
-        // while Windows uses `Scripts`.
-        const { launcherDirectory } = bundledPythonRuntimeLayout(targetPython);
-        const sourceLaunchers = join(sourceVenv, launcherDirectory);
-        if (existsSync(sourceLaunchers)) {
-          await cp(sourceLaunchers, join(targetVenv, launcherDirectory), {
-            recursive: true,
-            force: false,
-          });
-        }
+      if (currentError || activationChanged) {
+        stopManagedRuntimeProcessesForUpgrade(HERMES_HOME, managedRoot);
       }
 
-      if (
-        !runtimeBuildChanged &&
-        existsSync(sourcePython) &&
-        !existsSync(targetPython)
-      ) {
-        await cp(sourcePython, targetPython, { recursive: true });
-      }
-    }
-    // These small desktop overlays are still repaired on every launch within
-    // one build. Cross-build changes use the marker above and refresh the full
-    // managed tree so module interfaces cannot become skewed.
-    const managedRuntimeOverlays = [
-      join("tools", "browser_tool.py"),
-      join("tools", "skills_tool.py"),
-      join("agent", "runtime_cwd.py"),
-      join("agent", "system_prompt.py"),
-      join("agent", "prompt_builder.py"),
-      "run_agent.py",
-    ];
-    if (existsSync(targetRepo)) {
-      for (const relativePath of managedRuntimeOverlays) {
-        const sourceFile = join(sourceRepo, relativePath);
-        if (existsSync(sourceFile)) {
-          await cp(sourceFile, join(targetRepo, relativePath));
-        }
-      }
-    }
-    const cfg = join(targetRepo, "venv", "pyvenv.cfg");
-    if (existsSync(cfg) && existsSync(targetPython)) {
-      const { executable, home } = bundledPythonRuntimeLayout(targetPython);
-      const text = readFileSync(cfg, "utf-8")
-        .replace(/^home\s*=.*$/m, `home = ${home}`)
-        .replace(/^executable\s*=.*$/m, `executable = ${executable}`)
-        .replace(
-          /^command\s*=.*$/m,
-          `command = ${executable} -m venv ${join(targetRepo, "venv")}`,
+      if (currentError) {
+        mkdirSync(versionsRoot, { recursive: true });
+        const stagingRoot = join(
+          versionsRoot,
+          `.staging-${versionName}-${randomBytes(6).toString("hex")}`,
         );
-      writeFileSync(cfg, text, "utf-8");
+        const stagingRepo = join(stagingRoot, "hermes-agent");
+        const stagingPython = join(stagingRoot, "python-runtime");
+        const stagingBuildMarker = join(
+          stagingRoot,
+          "desktop-runtime-build.json",
+        );
+        try {
+          await cp(sourceRepo, stagingRepo, { recursive: true, force: false });
+          if (existsSync(sourcePython)) {
+            await cp(sourcePython, stagingPython, {
+              recursive: true,
+              force: false,
+            });
+          }
+          writeFileSync(stagingBuildMarker, expectedBuildIdentity, "utf8");
+          repairRelocatedRuntime(stagingRepo, stagingPython);
+          const stagedError = validateRuntimeTree(
+            stagingRepo,
+            stagingPython,
+            stagingBuildMarker,
+            expectedBuildIdentity,
+            existsSync(sourcePython),
+          );
+          if (stagedError) throw new Error(stagedError);
+
+          if (existsSync(versionRoot)) {
+            renameSync(
+              versionRoot,
+              join(
+                versionsRoot,
+                `.failed-${versionName}-${randomBytes(4).toString("hex")}`,
+              ),
+            );
+          }
+          renameSync(stagingRoot, versionRoot);
+        } catch (error) {
+          const resolvedStaging = resolve(stagingRoot);
+          const resolvedVersions = `${resolve(versionsRoot)}${sep}`;
+          if (resolvedStaging.startsWith(resolvedVersions)) {
+            rmSync(resolvedStaging, { recursive: true, force: true });
+          }
+          throw error;
+        }
+      }
+      activateRuntime(
+        managedRoot,
+        versionName,
+        targetRepo,
+        expectedBuildIdentity,
+      );
     }
-    repairBundledPythonImportPath(targetRepo);
   } catch (error) {
-    // Startup will surface the normal "Python not found" diagnostic if the
-    // bundled files could not be copied.
-    console.error(
-      "[installer] Could not prepare the bundled runtime:",
-      error instanceof Error ? error.message : String(error),
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("[installer] Could not prepare the bundled runtime:", detail);
+    throw new Error(
+      `JingYuAI 运行时升级失败/文件被占用。请关闭旧版 JingYuAI、gateway 和 dashboard 进程后重试。${detail ? ` ${detail}` : ""}`,
     );
-    throw error;
   }
 }
 
@@ -238,6 +527,7 @@ const BUNDLED_RUNTIME_REPO = resolveBundledRuntimeRepo(
   app?.isPackaged ? process.resourcesPath : "",
   app?.isPackaged ? app.getPath("userData") : "",
   Boolean(app?.isPackaged),
+  app?.isPackaged ? app.getVersion() : "",
 );
 let bundledRuntimePreparation: Promise<void> | null = null;
 
@@ -249,11 +539,18 @@ let bundledRuntimePreparation: Promise<void> | null = null;
 // @lat: [[main-process#Offline Windows runtime]]
 export function initializeBundledRuntime(): Promise<void> {
   if (!bundledRuntimePreparation) {
-    bundledRuntimePreparation = prepareBundledRuntime().then(async () => {
+    const attempt = prepareBundledRuntime().then(async () => {
       await installBundledPresetContent();
       installBundledLookupToken();
       installBundledSoulRules();
     });
+    const guarded = attempt.catch((error) => {
+      if (bundledRuntimePreparation === guarded) {
+        bundledRuntimePreparation = null;
+      }
+      throw error;
+    });
+    bundledRuntimePreparation = guarded;
   }
   return bundledRuntimePreparation;
 }

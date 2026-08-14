@@ -20,6 +20,7 @@ interface SessionModelIdentity {
   base_url?: string;
   model?: string;
   provider?: string;
+  requested_provider?: string;
 }
 
 interface SessionResponse {
@@ -34,6 +35,7 @@ interface SessionResponse {
 interface ModelOptionsResponse {
   model?: string;
   provider?: string;
+  requested_provider?: string;
   providers?: ModelOptionProvider[];
 }
 
@@ -45,11 +47,6 @@ interface ModelOptionProvider {
   models?: string[];
   name?: string;
   slug: string;
-}
-
-interface SlashExecResponse {
-  output?: string;
-  warning?: string;
 }
 
 interface ImageAttachBytesResponse {
@@ -272,34 +269,9 @@ export async function ensureDashboardRuntimeSession(
   const seedMessages = dashboardSeedMessagesFromTranscript(params.messages, {
     excludeUserId: params.excludeSeedUserId ?? null,
   });
-  let createProvider = params.provider;
-  if (params.model && createProvider === "custom") {
-    try {
-      const resolved = await params.client.request<SessionModelIdentity>(
-        "model.resolve",
-        {
-          provider: createProvider,
-          model: params.model,
-          base_url: params.modelBaseUrl,
-        },
-      );
-      createProvider = resolved.provider || createProvider;
-    } catch (err) {
-      // Older remote dashboards do not have the local routing RPC. Preserve
-      // their existing bare-custom behavior without falling back to the slow
-      // model.options inventory on the chat path.
-      if (!dashboardRpcMethodUnsupportedError(err)) throw err;
-    }
-  }
-  // A named provider can be applied atomically while the gateway builds the
-  // new Agent. Bare `custom` still needs the existing live-session switch,
-  // because it does not identify which custom endpoint should be used.
   const createdModelOverride =
-    params.model &&
-    createProvider &&
-    createProvider !== "auto" &&
-    createProvider !== "custom"
-      ? { model: params.model, provider: createProvider }
+    params.model && params.provider && params.provider !== "auto"
+      ? { model: params.model, provider: params.provider }
       : undefined;
   const created = await params.client.request<SessionResponse>(
     "session.create",
@@ -309,6 +281,9 @@ export async function ensureDashboardRuntimeSession(
       ...(params.contextFolder ? { cwd: params.contextFolder } : {}),
       ...(params.profile ? { profile: params.profile } : {}),
       ...(createdModelOverride ?? {}),
+      ...(createdModelOverride && params.modelBaseUrl
+        ? { base_url: params.modelBaseUrl }
+        : {}),
     },
   );
 
@@ -617,6 +592,13 @@ export function dashboardModelMatches(
   if (!liveProvider || !liveModel) return false;
   if (liveModel !== model) return false;
   if (liveProvider === provider) return true;
+
+  if (
+    provider === "custom" &&
+    (live?.requested_provider || "").trim().toLowerCase() === "custom"
+  ) {
+    return true;
+  }
 
   // Named custom providers can be reported by Hermes Agent as custom:<slug>
   // while Hermes One's older model config still treats them as custom rows.
@@ -980,6 +962,7 @@ export function useDashboardChatTransport({
   const createdWithSelectedModelRef = useRef<{
     model: string;
     provider: string;
+    requested_provider?: string;
     sessionId: string;
   } | null>(null);
   const recreateRuntimeSessionRef = useRef(false);
@@ -1344,6 +1327,7 @@ export function useDashboardChatTransport({
         createdWithSelectedModelRef.current =
           responseIdentity?.model && responseIdentity.provider
             ? {
+                ...responseIdentity,
                 model: responseIdentity.model,
                 provider: responseIdentity.provider,
                 sessionId: targetSessionId,
@@ -1393,7 +1377,6 @@ export function useDashboardChatTransport({
       const selected = selectedModelRef.current;
       const selectedModel = selected.model;
       const selectedProvider = selected.provider;
-      const selectedBaseUrl = selected.modelBaseUrl;
       const command = dashboardModelCommand(selectedProvider, selectedModel);
       if (!command) return sessionId;
       const createdWithModel = createdWithSelectedModelRef.current;
@@ -1405,40 +1388,9 @@ export function useDashboardChatTransport({
         appliedModelRef.current = `${sessionId}\n${createdWithModel.provider}\n${selectedModel}`;
         return sessionId;
       }
-      const resetRuntimeSession = async (
-        targetSessionId: string,
-      ): Promise<string> => {
-        const storedSessionId = storedSessionIdRef.current;
-        await client
-          .request("session.close", { session_id: targetSessionId })
-          .catch(() => undefined);
-        runtimeSessionIdRef.current = null;
-        storedSessionIdRef.current = storedSessionId;
-        reasoningSegmentClosedRef.current = false;
-        appliedModelRef.current = null;
-        return ensureRuntimeSession(client);
-      };
-
       const switchAndValidate = async (
         targetSessionId: string,
       ): Promise<string> => {
-        let dashboardProvider = selectedProvider;
-        if (selectedProvider === "custom") {
-          try {
-            const resolved = await client.request<SessionModelIdentity>(
-              "model.resolve",
-              {
-                session_id: targetSessionId,
-                provider: selectedProvider,
-                model: selectedModel,
-                base_url: selectedBaseUrl,
-              },
-            );
-            dashboardProvider = resolved.provider || selectedProvider;
-          } catch (err) {
-            if (!dashboardRpcMethodUnsupportedError(err)) throw err;
-          }
-        }
         const readIdentity = async (): Promise<SessionModelIdentity | null> => {
           try {
             return await client.request<SessionModelIdentity>(
@@ -1453,59 +1405,43 @@ export function useDashboardChatTransport({
         const before = await readIdentity();
         if (
           before &&
-          dashboardModelMatches(dashboardProvider, selectedModel, before)
+          dashboardModelMatches(selectedProvider, selectedModel, before)
         ) {
-          appliedModelRef.current = `${targetSessionId}\n${dashboardProvider}\n${selectedModel}`;
+          appliedModelRef.current = `${targetSessionId}\n${before.provider || selectedProvider}\n${selectedModel}`;
           return targetSessionId;
         }
 
-        const resolvedCommand = dashboardModelCommand(
-          dashboardProvider,
-          selectedModel,
-        );
-        if (!resolvedCommand) return targetSessionId;
-        const key = `${targetSessionId}\n${dashboardProvider}\n${selectedModel}`;
-        let slashResponse: SlashExecResponse | null = null;
+        const key = `${targetSessionId}\n${selectedProvider}\n${selectedModel}`;
+        let switched: SessionModelIdentity | null = null;
         if (appliedModelRef.current !== key) {
-          slashResponse = await client.request<SlashExecResponse>(
-            "slash.exec",
+          switched = await client.request<SessionModelIdentity>(
+            "session.model.set",
             {
               session_id: targetSessionId,
-              command: resolvedCommand,
+              provider: selectedProvider,
+              model: selectedModel,
+              base_url: selected.modelBaseUrl,
             },
           );
         }
 
-        const live = await readIdentity();
+        const live = switched || (await readIdentity());
         if (
           live &&
-          !dashboardModelMatches(dashboardProvider, selectedModel, live)
+          !dashboardModelMatches(selectedProvider, selectedModel, live)
         ) {
           appliedModelRef.current = null;
-          const warning = slashResponse?.warning
-            ? `; /model warning: ${slashResponse.warning}`
-            : "";
-          const output = slashResponse?.output
-            ? `; /model output: ${slashResponse.output}`
-            : "";
           throw new Error(
-            `JingYuAI dashboard did not switch to ${dashboardProvider}/${selectedModel}; live model is ${live.provider || "unknown"}/${live.model || "unknown"}${warning}${output}`,
+            `JingYuAI dashboard did not switch to ${selectedProvider}/${selectedModel}; live model is ${live.provider || "unknown"}/${live.model || "unknown"}`,
           );
         }
         appliedModelRef.current = key;
         return targetSessionId;
       };
 
-      try {
-        return await switchAndValidate(sessionId);
-      } catch (err) {
-        if (!isDashboardSlashWorkerExitError(err)) throw err;
-        appliedModelRef.current = null;
-        const freshSessionId = await resetRuntimeSession(sessionId);
-        return switchAndValidate(freshSessionId);
-      }
+      return switchAndValidate(sessionId);
     },
-    [ensureRuntimeSession],
+    [],
   );
 
   const syncDashboardAttachments = useCallback(

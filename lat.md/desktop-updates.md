@@ -14,6 +14,8 @@ Stable and beta workflows build Windows x64 NSIS installers; only the stable cha
 
 `.github/workflows/release.yml` runs on pushes to `release`, reads `package.json`, builds the Windows installer, and publishes a normal GitHub Release with `latest.yml`, the setup executable, and its blockmap.
 
+Before building the bundled Dashboard, both workflows apply the repository-owned Agent overlays to the committed offline runtime and verify the cold-start model/session RPCs. This keeps packaged behavior aligned with overlay sources without rebuilding the environment-specific runtime snapshot.
+
 `.github/workflows/beta-release.yml` runs on pushes to `beta` or manual dispatch, stamps a `-beta.<run>` prerelease version, and publishes the equivalent Windows artifacts with `beta.yml`.
 
 The updater leaves `allowPrerelease` disabled, so stable clients ignore beta prereleases. Testers install beta builds manually from the prerelease page.
@@ -31,6 +33,10 @@ The installers include the managed Hermes Agent and matching Python runtime unde
 Windows packages also include full PortableGit. Local staging and both release channels download the pinned distribution into `build/offline-runtime/git`; Agent processes use it directly from packaged resources without a second copy in user data. Staging falls back to copy-and-remove when CI temporary files and the repository are on different Windows volumes.
 
 Windows CI rebuilds the ignored virtual environment with `pip install -e .` and injects the employee lookup secret without committing it. Because editable metadata records the CI checkout path, first-launch Runtime preparation writes a scoped `.pth` entry for the relocated managed Agent, and Dashboard startup also prepends that Agent root to `PYTHONPATH`. This preserves the neutral backend cwd that prevents bundled `AGENTS.md` discovery while keeping `hermes_cli` importable. Stable and beta workflows reject incomplete Python, Agent, PortableGit, or environment resources.
+
+Installed runtimes are immutable version directories keyed by the app version and packaged runtime marker. Upgrades stop tracked gateway/dashboard processes, stage and repair the new tree in a private sibling, validate it, and switch `active-runtime.json` only after an atomic rename; no upgrade writes into the directory used by the old Python process. The dashboard records its PID beside each profile, and Windows process discovery under the managed runtime root covers older builds that predate that marker.
+
+If staging, validation, process shutdown, or the active switch fails, startup preserves the previous version and raises a runtime-upgrade error. The renderer shows a dedicated retry screen instead of interpreting the failure as an uninstalled Agent and silently returning to Welcome.
 
 Offline staging excludes the Agent repository's top-level development `assets` only; nested runtime directories such as `hermes_cli/web_dist/assets` remain part of the package. Stable and beta workflows build the Dashboard frontend and verify that every JS/CSS file referenced by `index.html` exists both before and after Electron packaging, preventing a partial SPA from crashing the API/WebSocket server during startup.
 

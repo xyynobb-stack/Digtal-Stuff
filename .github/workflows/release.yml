@@ -78,6 +78,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Apply desktop Agent overlays
+        run: npm run apply:offline-runtime-overlays
+
       - name: Download PortableGit runtime
         run: npm run prepare:portable-git
 
@@ -158,6 +161,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not install Hermes Agent into bundled venv" }
             & $venvPython -c "import hermes_cli, run_agent"
             if ($LASTEXITCODE -ne 0) { throw "Bundled Hermes Agent import check failed" }
+            & $venvPython -c "from tui_gateway import server; required = {'model.options', 'session.create', 'session.model.set'}; missing = required - server._methods.keys(); assert not missing, missing"
+            if ($LASTEXITCODE -ne 0) { throw "Desktop Agent RPC registration check failed" }
           } finally {
             Pop-Location
           }

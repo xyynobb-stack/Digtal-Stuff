@@ -1,6 +1,6 @@
 {
   "name": "hermes-desktop",
-  "version": "0.7.16",
+  "version": "0.7.17",
   "description": "JingYuAI Desktop — self-improving AI assistant",
   "main": "./out/main/index.js",
   "author": "fathah",
@@ -24,6 +24,7 @@
     "dev:fresh": "HERMES_HOME=$(mktemp -d -t hermes-fresh) electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "prepare:portable-git": "node scripts/prepare-portable-git.mjs",
+    "apply:offline-runtime-overlays": "node scripts/apply-offline-runtime-overlays.mjs",
     "prepare:offline-runtime": "node scripts/prepare-offline-runtime.mjs",
     "prepare:offline-runtime-mac": "node scripts/prepare-offline-runtime-mac.mjs",
     "build:offline-win": "npm run prepare:offline-runtime && npm run build && electron-builder --win",

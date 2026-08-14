@@ -487,18 +487,19 @@ describe("ensureDashboardRuntimeSession", () => {
     ]);
   });
 
-  it("resolves a generic custom provider locally before creating the session", async () => {
+  it("sends the complete custom route to session.create for server-side resolution", async () => {
     const calls: Array<{ method: string; params: unknown }> = [];
     const client = {
       async request(method: string, params?: unknown): Promise<unknown> {
         calls.push({ method, params });
-        if (method === "model.resolve") {
-          return { model: "deepseek-chat", provider: "deepseek" };
-        }
         return {
           session_id: "live-created",
           stored_session_id: "stored-new",
-          info: { model: "deepseek-chat", provider: "deepseek" },
+          info: {
+            model: "deepseek-chat",
+            provider: "company-platform",
+            requested_provider: "custom",
+          },
         };
       },
     };
@@ -513,27 +514,25 @@ describe("ensureDashboardRuntimeSession", () => {
 
     expect(result.modelIdentity).toEqual({
       model: "deepseek-chat",
-      provider: "deepseek",
+      provider: "company-platform",
+      requested_provider: "custom",
     });
-    expect(calls.map((call) => call.method)).toEqual([
-      "model.resolve",
-      "session.create",
-    ]);
+    expect(calls.map((call) => call.method)).toEqual(["session.create"]);
     expect(calls).not.toContainEqual(
       expect.objectContaining({ method: "model.options" }),
     );
-    expect(calls[1]?.params).toMatchObject({
+    expect(calls[0]?.params).toMatchObject({
       model: "deepseek-chat",
-      provider: "deepseek",
+      provider: "custom",
+      base_url: "https://api.deepseek.com/v1",
     });
   });
 
-  it("keeps old remote dashboards compatible without calling model.options", async () => {
+  it("does not put model.options on the custom session creation path", async () => {
     const calls: Array<{ method: string; params: unknown }> = [];
     const client = {
       async request(method: string, params?: unknown): Promise<unknown> {
         calls.push({ method, params });
-        if (method === "model.resolve") throw new Error("method not found");
         return {
           session_id: "live-created",
           stored_session_id: "stored-new",
@@ -553,10 +552,7 @@ describe("ensureDashboardRuntimeSession", () => {
     ).resolves.toMatchObject({
       modelIdentity: { model: "deepseek-chat", provider: "custom" },
     });
-    expect(calls.map((call) => call.method)).toEqual([
-      "model.resolve",
-      "session.create",
-    ]);
+    expect(calls.map((call) => call.method)).toEqual(["session.create"]);
     expect(calls).not.toContainEqual(
       expect.objectContaining({ method: "model.options" }),
     );

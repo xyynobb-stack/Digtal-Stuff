@@ -1,6 +1,14 @@
 import { spawn, type ChildProcess } from "child_process";
 import { randomBytes } from "crypto";
-import { closeSync, existsSync, mkdirSync, openSync } from "fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "fs";
 import http from "http";
 import https from "https";
 import net from "net";
@@ -186,6 +194,36 @@ function dashboardLogPath(profile: string | undefined): string {
   const dir = profileHome(profile);
   mkdirSync(dir, { recursive: true });
   return join(dir, "dashboard-stderr.log");
+}
+
+function dashboardPidPath(profile: string | undefined): string {
+  return join(profileHome(profile), "dashboard-desktop.pid");
+}
+
+function writeDashboardPid(profile: string | undefined, pid: number): void {
+  const path = dashboardPidPath(profile);
+  mkdirSync(profileHome(profile), { recursive: true });
+  writeFileSync(
+    path,
+    `${JSON.stringify({ pid, runtime: HERMES_REPO, startedAt: Date.now() })}\n`,
+    "utf8",
+  );
+}
+
+function clearDashboardPid(profile: string | undefined, pid: number): void {
+  const path = dashboardPidPath(profile);
+  if (!existsSync(path)) return;
+  try {
+    const stored = JSON.parse(readFileSync(path, "utf8")) as { pid?: unknown };
+    if (stored.pid !== pid) return;
+  } catch {
+    // Malformed files are stale and safe to remove.
+  }
+  try {
+    unlinkSync(path);
+  } catch {
+    // Best effort; the upgrade process also clears stale managed PID files.
+  }
 }
 
 function dashboardBackendCwd(profile: string | undefined): string {
@@ -673,6 +711,23 @@ export async function startDashboard(
     };
   }
   closeSync(stderrFd);
+  if (typeof proc.pid === "number") {
+    try {
+      writeDashboardPid(resolvedProfile, proc.pid);
+    } catch (err) {
+      try {
+        proc.kill();
+      } catch {
+        // Preserve the PID-file error below.
+      }
+      return {
+        supported: true,
+        running: false,
+        logPath,
+        error: `Could not record managed dashboard process: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
 
   const connection: DashboardConnection = {
     baseUrl,
@@ -702,6 +757,8 @@ export async function startDashboard(
   dashboards.set(key, managed);
   proc.once("exit", () => {
     if (dashboards.get(key)?.proc === proc) dashboards.delete(key);
+    if (typeof proc.pid === "number")
+      clearDashboardPid(resolvedProfile, proc.pid);
   });
 
   try {
@@ -713,6 +770,8 @@ export async function startDashboard(
     } catch {
       // Ignore shutdown errors for a failed probe; the log path is returned.
     }
+    if (typeof proc.pid === "number")
+      clearDashboardPid(resolvedProfile, proc.pid);
     const failed: DashboardStatus = {
       supported: true,
       running: false,
@@ -748,6 +807,9 @@ export function stopDashboard(profile?: string): boolean {
     managed.proc.kill();
   } catch {
     return false;
+  }
+  if (typeof managed.proc.pid === "number") {
+    clearDashboardPid(managed.connection.profile, managed.proc.pid);
   }
   return true;
 }

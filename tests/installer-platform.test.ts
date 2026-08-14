@@ -1,17 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { delimiter, join } from "path";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from "fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import {
   bundledPythonRuntimeLayout,
   bundledPortableGitLayout,
   getEnhancedPath,
   hermesCliArgs,
+  managedRuntimePidFiles,
   repairBundledPythonImportPath,
   resolveBundledRuntimeRepo,
   HERMES_PYTHON,
   HERMES_SCRIPT,
 } from "../src/main/installer";
+import { desktopRuntimeVersionName } from "../src/main/runtime-build";
 
 const tempRoots: string[] = [];
 
@@ -48,7 +57,14 @@ describe("installer platform wiring", () => {
     tempRoots.push(root);
     const resources = join(root, "resources");
     const userData = join(root, "user-data");
-    const expected = join(userData, "hermes-runtime", "hermes-agent");
+    const marker = '{"buildId":"release-test"}\n';
+    const expected = join(
+      userData,
+      "hermes-runtime",
+      "versions",
+      desktopRuntimeVersionName(marker, "0.7.17"),
+      "hermes-agent",
+    );
 
     expect(resolveBundledRuntimeRepo(resources, userData, false)).toBe("");
     expect(resolveBundledRuntimeRepo(resources, userData, true)).toBe("");
@@ -56,7 +72,34 @@ describe("installer platform wiring", () => {
     mkdirSync(join(resources, "hermes-runtime", "hermes-agent"), {
       recursive: true,
     });
-    expect(resolveBundledRuntimeRepo(resources, userData, true)).toBe(expected);
+    writeFileSync(
+      join(resources, "hermes-runtime", "desktop-runtime-build.json"),
+      marker,
+      "utf8",
+    );
+    expect(resolveBundledRuntimeRepo(resources, userData, true, "0.7.17")).toBe(
+      expected,
+    );
+  });
+
+  it("discovers managed gateway and dashboard PID files across profiles", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-managed-pids-test-"));
+    tempRoots.push(root);
+    mkdirSync(join(root, "profiles", "work"), { recursive: true });
+    writeFileSync(join(root, "gateway.pid"), '{"pid":101}\n', "utf8");
+    writeFileSync(
+      join(root, "profiles", "work", "dashboard-desktop.pid"),
+      '{"pid":202}\n',
+      "utf8",
+    );
+
+    expect(managedRuntimePidFiles(root)).toEqual([
+      { path: join(root, "gateway.pid"), pid: 101 },
+      {
+        path: join(root, "profiles", "work", "dashboard-desktop.pid"),
+        pid: 202,
+      },
+    ]);
   });
 
   it("uses the platform path delimiter in the enhanced PATH", () => {

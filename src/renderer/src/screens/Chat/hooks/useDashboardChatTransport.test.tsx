@@ -218,17 +218,19 @@ describe("useDashboardChatTransport recovery", () => {
     );
   });
 
-  it("resolves a named custom provider before creating the Agent", async () => {
+  it("lets session.create resolve the complete custom route atomically", async () => {
     const request = vi.fn(async (method: string, params?: unknown) => {
       void params;
-      if (method === "model.resolve") {
-        return {
-          model: "Kimi-2.6",
-          provider: "company-platform",
-        };
-      }
       if (method === "session.create") {
-        return { session_id: "live", stored_session_id: "stored" };
+        return {
+          session_id: "live",
+          stored_session_id: "stored",
+          info: {
+            model: "glm-5.2",
+            provider: "company-platform",
+            requested_provider: "custom",
+          },
+        };
       }
       return {};
     });
@@ -246,12 +248,13 @@ describe("useDashboardChatTransport recovery", () => {
 
     expect(result.createdModelOverride).toEqual({
       model: "glm-5.2",
-      provider: "company-platform",
+      provider: "custom",
     });
     expect(request).toHaveBeenCalledWith("session.create", {
       cols: 96,
       model: "glm-5.2",
-      provider: "company-platform",
+      provider: "custom",
+      base_url: "https://models.company.test/v1/",
     });
   });
 
@@ -418,14 +421,12 @@ describe("useDashboardChatTransport recovery", () => {
       if (method === "model.identity") {
         return { model: liveModel, provider: liveProvider };
       }
-      if (method === "slash.exec") {
-        const command = String((params as { command?: string })?.command || "");
-        const match = command.match(/^\/model\s+(.+?)\s+--provider\s+(.+)$/);
-        if (match) {
-          liveModel = match[1];
-          liveProvider = match[2];
-        }
-        return {};
+      if (method === "session.model.set") {
+        liveModel = String((params as { model?: string })?.model || "");
+        liveProvider = String(
+          (params as { provider?: string })?.provider || "",
+        );
+        return { model: liveModel, provider: liveProvider };
       }
       return {};
     });
@@ -449,10 +450,12 @@ describe("useDashboardChatTransport recovery", () => {
     });
 
     expect(requests).toContainEqual({
-      method: "slash.exec",
+      method: "session.model.set",
       params: {
         session_id: "live",
-        command: "/model good-model --provider good-provider",
+        model: "good-model",
+        provider: "good-provider",
+        base_url: undefined,
       },
     });
     expect(requests).toContainEqual({

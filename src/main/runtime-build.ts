@@ -1,3 +1,5 @@
+import { createHash } from "crypto";
+
 /**
  * Build the identity stored beside the writable packaged runtime.
  *
@@ -27,4 +29,24 @@ export function desktopRuntimeBuildIdentity(
     null,
     2,
   )}\n`;
+}
+
+/**
+ * Stable, filesystem-safe directory name for one immutable packaged runtime.
+ * The desktop version keeps folders recognizable; the digest prevents two
+ * runtime snapshots published under the same version from sharing a tree.
+ */
+export function desktopRuntimeVersionName(
+  packagedMarker: string,
+  desktopVersion: string,
+): string {
+  const version = (desktopVersion.trim() || "unknown").replace(
+    /[^a-zA-Z0-9._-]+/g,
+    "-",
+  );
+  const digest = createHash("sha256")
+    .update(desktopRuntimeBuildIdentity(packagedMarker, desktopVersion))
+    .digest("hex")
+    .slice(0, 16);
+  return `${version}-${digest}`;
 }

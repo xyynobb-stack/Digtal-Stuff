@@ -10,9 +10,16 @@ import Install from "./screens/Install/Install";
 import Setup from "./screens/Setup/Setup";
 import Layout from "./screens/Layout/Layout";
 import SplashScreen from "./screens/SplashScreen/SplashScreen";
+import RuntimeFailure from "./screens/RuntimeFailure/RuntimeFailure";
 import { captureScreenView } from "./utils/analytics";
 
-type Screen = "splash" | "welcome" | "installing" | "setup" | "main";
+type Screen =
+  | "splash"
+  | "welcome"
+  | "installing"
+  | "runtime-error"
+  | "setup"
+  | "main";
 
 // Minimum time the splash stays visible so the background video plays
 // through. Gateway / config checks happen during this window.
@@ -43,8 +50,9 @@ function App(): React.JSX.Element {
     const myRun = ++runIdRef.current;
     const startedAt = Date.now();
     let next: Screen = "welcome";
-    const error: string | null = null;
+    let error: string | null = null;
     let isRemote = false;
+    let checkingLocalRuntime = false;
 
     try {
       setSplashStatus("Checking connection…");
@@ -71,7 +79,9 @@ function App(): React.JSX.Element {
         }
       } else {
         setSplashStatus("Checking local install…");
+        checkingLocalRuntime = true;
         const status = await window.hermesAPI.checkInstall();
+        checkingLocalRuntime = false;
         if (!status.installed) {
           next = "welcome";
         } else if (!status.hasApiKey) {
@@ -100,8 +110,13 @@ function App(): React.JSX.Element {
           ]);
         }
       }
-    } catch {
-      next = "welcome";
+    } catch (err) {
+      if (checkingLocalRuntime) {
+        error = err instanceof Error ? err.message : String(err);
+        next = "runtime-error";
+      } else {
+        next = "welcome";
+      }
     }
 
     // Abandoned by a newer run (the user switched modes mid-connect) — leave
@@ -170,6 +185,12 @@ function App(): React.JSX.Element {
     runInstallCheck();
   }
 
+  function handleRuntimeRetry(): void {
+    setInstallError(null);
+    setScreen("splash");
+    runInstallCheck();
+  }
+
   async function handleSwitchToLocal(): Promise<void> {
     // Tear down any in-flight SSH tunnel so a hung connect attempt doesn't keep
     // running (or race the local recheck) after we switch.
@@ -217,6 +238,13 @@ function App(): React.JSX.Element {
             onComplete={handleInstallComplete}
             onFailed={handleInstallFailed}
             onCancel={() => setScreen("welcome")}
+          />
+        );
+      case "runtime-error":
+        return (
+          <RuntimeFailure
+            error={installError || "未知运行时升级错误"}
+            onRetry={handleRuntimeRetry}
           />
         );
       case "setup":

@@ -36,6 +36,8 @@ Every dashboard send resolves its model, provider, and base URL from the latest 
 
 [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] keeps that routing identity in a live ref and reads it when creating, switching, and validating the runtime session. This prevents a previous conversation model from being reused by a stale UI callback while the picker already displays the new model.
 
+New dashboard sessions send the full identity to `session.create`, whose desktop gateway wrapper resolves the final named route before deferred Agent construction. Resumed sessions use `session.model.set`, an in-process session RPC that bypasses slash-worker initialization and never writes the profile's global model setting.
+
 ## Desktop-only persistence
 
 The selected model/provider is saved in a desktop-owned table keyed by session id, without storing API keys.
@@ -46,7 +48,7 @@ The selected model/provider is saved in a desktop-owned table keyed by session i
 
 Text-only legacy turns can use the CLI fallback when a session override changes provider or base URL away from `config.yaml`.
 
-The upstream desktop model applies the session switch on the active gateway session with `/model <model> --provider <provider>`, then attaches media and submits on that same session. Hermes Desktop's dashboard transport follows that path; [[src/main/hermes.ts#shouldForceCliForSessionOverride]] keeps the CLI escape hatch only for text-only legacy fallback, where it can pass `-m <model>` and `--provider` without dropping attachments. Same-provider model swaps stay on the gateway/API path, where the new `model` string is sufficient. Remote (SSH) mode has no local CLI transport, so it remains limited to the model string.
+The dashboard transport applies the full route through `session.create` or `session.model.set`, then attaches media and submits on that same session. [[src/main/hermes.ts#shouldForceCliForSessionOverride]] keeps the CLI escape hatch only for text-only legacy fallback, where it can pass `-m <model>` and `--provider` without dropping attachments. Same-provider model swaps stay on the gateway/API path, where the new `model` string is sufficient. Remote (SSH) mode has no local CLI transport, so it remains limited to the model string.
 
 ## Attachment turns stay on session transport
 

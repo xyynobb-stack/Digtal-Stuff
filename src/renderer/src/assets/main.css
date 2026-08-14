@@ -749,6 +749,71 @@ body:has(.shell-vibrant),
   gap: 0;
 }
 
+.runtime-failure-screen {
+  position: relative;
+  text-align: center;
+  gap: 0;
+  background:
+    radial-gradient(
+      circle at 50% 35%,
+      rgba(239, 68, 68, 0.09),
+      transparent 34%
+    ),
+    var(--bg-primary);
+}
+
+.runtime-failure-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 24px 0 14px;
+  border-radius: 50%;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+}
+
+.runtime-failure-title {
+  margin: 0 0 10px;
+  font-size: 26px;
+  color: var(--text-primary);
+}
+
+.runtime-failure-subtitle,
+.runtime-failure-hint {
+  max-width: 560px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.runtime-failure-subtitle {
+  margin: 0 0 18px;
+  font-size: 14px;
+}
+
+.runtime-failure-detail {
+  width: min(620px, 80vw);
+  max-height: 180px;
+  overflow: auto;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.22);
+  color: #fca5a5;
+  font: 12px/1.55 var(--font-mono);
+  text-align: left;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.runtime-failure-hint {
+  margin: 0 0 20px;
+  font-size: 13px;
+}
+
 .welcome-logo {
   border-radius: var(--radius-lg);
 }

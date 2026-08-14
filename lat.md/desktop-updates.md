@@ -32,6 +32,8 @@ Windows packages also include full PortableGit. Local staging and both release c
 
 Windows CI rebuilds the ignored virtual environment with `pip install -e .` and injects the employee lookup secret without committing it. Because editable metadata records the CI checkout path, first-launch Runtime preparation writes a scoped `.pth` entry for the relocated managed Agent, and Dashboard startup also prepends that Agent root to `PYTHONPATH`. This preserves the neutral backend cwd that prevents bundled `AGENTS.md` discovery while keeping `hermes_cli` importable. Stable and beta workflows reject incomplete Python, Agent, PortableGit, or environment resources.
 
+Offline staging excludes the Agent repository's top-level development `assets` only; nested runtime directories such as `hermes_cli/web_dist/assets` remain part of the package. Stable and beta workflows build the Dashboard frontend and verify that every JS/CSS file referenced by `index.html` exists both before and after Electron packaging, preventing a partial SPA from crashing the API/WebSocket server during startup.
+
 Installed NSIS builds may update this bundled runtime together with the Electron app. Development, portable execution, and macOS remain excluded from automatic updates by [[src/main/app/updater.ts#setupUpdater]].
 
 The first build that enables this channel must be installed manually on existing employee devices because older bundled builds disabled their updater. Later stable versions can update through GitHub Releases.

@@ -81,6 +81,31 @@ jobs:
       - name: Download PortableGit runtime
         run: npm run prepare:portable-git
 
+      - name: Build bundled Dashboard frontend
+        shell: pwsh
+        run: |
+          $agentRoot = (Resolve-Path "build/offline-runtime/hermes-agent").Path
+          Push-Location $agentRoot
+          try {
+            npm ci --workspace web
+            if ($LASTEXITCODE -ne 0) { throw "Could not install Dashboard frontend dependencies" }
+            npm run build --workspace web
+            if ($LASTEXITCODE -ne 0) { throw "Could not build Dashboard frontend" }
+          } finally {
+            Pop-Location
+            foreach ($dependencyRoot in @(
+              (Join-Path $agentRoot "node_modules"),
+              (Join-Path $agentRoot "web/node_modules")
+            )) {
+              if (Test-Path -LiteralPath $dependencyRoot) {
+                Remove-Item -LiteralPath $dependencyRoot -Recurse -Force
+              }
+            }
+          }
+          node scripts/verify-dashboard-web-dist.mjs `
+            "build/offline-runtime/hermes-agent/hermes_cli/web_dist"
+          if ($LASTEXITCODE -ne 0) { throw "Dashboard frontend verification failed" }
+
       - name: Verify bundled Windows runtime
         shell: pwsh
         env:
@@ -88,6 +113,8 @@ jobs:
         run: |
           $required = @(
             "build/offline-runtime/hermes-agent/run_agent.py",
+            "build/offline-runtime/hermes-agent/hermes_cli/web_dist/index.html",
+            "build/offline-runtime/hermes-agent/hermes_cli/web_dist/assets",
             "build/offline-runtime/python-runtime/python.exe",
             "build/offline-runtime/git/bin/bash.exe",
             "build/offline-runtime/git/cmd/git.exe",
@@ -166,6 +193,8 @@ jobs:
           $runtime = (Resolve-Path "dist/win-unpacked/resources/hermes-runtime").Path
           $required = @(
             "$runtime/hermes-agent/run_agent.py",
+            "$runtime/hermes-agent/hermes_cli/web_dist/index.html",
+            "$runtime/hermes-agent/hermes_cli/web_dist/assets",
             "$runtime/hermes-agent/venv/Scripts/python.exe",
             "$runtime/hermes-agent/venv/Scripts/hermes.exe",
             "$runtime/python-runtime/python.exe",
@@ -178,6 +207,9 @@ jobs:
               throw "Packaged Windows runtime is incomplete: missing $path"
             }
           }
+          node scripts/verify-dashboard-web-dist.mjs `
+            "$runtime/hermes-agent/hermes_cli/web_dist"
+          if ($LASTEXITCODE -ne 0) { throw "Packaged Dashboard frontend verification failed" }
           Push-Location "$runtime/hermes-agent"
           try {
             & "$runtime/hermes-agent/venv/Scripts/python.exe" -c "import hermes_cli, run_agent"

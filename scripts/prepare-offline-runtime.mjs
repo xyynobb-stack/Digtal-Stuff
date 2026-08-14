@@ -3,6 +3,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
 import { preparePortableGit } from "./prepare-portable-git.mjs";
+import { shouldCopyAgentRuntimeEntry } from "./offline-runtime-copy-filter.mjs";
+import { verifyDashboardWebDist } from "./verify-dashboard-web-dist.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const outputRoot = path.join(projectRoot, "build", "offline-runtime");
@@ -42,24 +44,16 @@ const runtimeBuild = {
   generatedAt: new Date().toISOString(),
 };
 
-const excluded = new Set([
-  ".git",
-  "node_modules",
-  "tests",
-  "tests-js",
-  "docs",
-  "website",
-  "assets",
-  "contributors",
-  "__pycache__",
-]);
 const copyRepo = (src, dest) =>
   fs.cpSync(src, dest, {
     recursive: true,
-    filter: (name) => !excluded.has(path.basename(name)),
+    filter: (name) => shouldCopyAgentRuntimeEntry(src, name),
   });
 
 copyRepo(sourceRepo, path.join(outputRoot, "hermes-agent"));
+verifyDashboardWebDist(
+  path.join(outputRoot, "hermes-agent", "hermes_cli", "web_dist"),
+);
 patchCronOutputDirectories(path.join(outputRoot, "hermes-agent"));
 
 // Package the builder's profile-local user content separately from the

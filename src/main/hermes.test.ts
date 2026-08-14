@@ -62,6 +62,7 @@ import {
   getRemoteAuthHeader,
   sendMessage,
   shouldForceCliForSessionOverride,
+  shouldUseTuiGatewayClient,
   stopHealthPolling,
   transcribeAudio,
 } from "./hermes";
@@ -73,6 +74,13 @@ const mockedGetConnectionConfig = vi.mocked(getConnectionConfig);
 const mockedReadEnv = vi.mocked(readEnv);
 const mockedProviderListSafe = vi.mocked(providerListSafe);
 const mockedSpawn = vi.mocked(spawn);
+
+describe("local Dashboard process ownership", () => {
+  // @lat: [[chat-commands#Transport connection lifecycle]]
+  it("keeps the legacy main-process TUI gateway disabled", () => {
+    expect(shouldUseTuiGatewayClient()).toBe(false);
+  });
+});
 
 function testConnection(
   fields: Partial<ConnectionConfig> = {},

@@ -889,12 +889,15 @@ function getTuiGatewayClient(profile?: string): TuiGatewayClient {
   return client;
 }
 
-function shouldUseTuiGatewayClient(): boolean {
-  return (
-    process.env.VITEST !== "true" &&
-    process.env.NODE_ENV !== "test" &&
-    process.env.npm_lifecycle_event !== "test"
-  );
+// @lat: [[chat-commands#Transport connection lifecycle]]
+export function shouldUseTuiGatewayClient(): boolean {
+  // Local desktop chat now has one canonical backend: the renderer-managed
+  // `hermes serve --isolated` Dashboard. The main-process TUI gateway used to
+  // warm a second `hermes dashboard` process on ports 9120-9199, which could
+  // create the session first from the packaged Agent source directory. Keep
+  // every legacy creation call behind this permanent gate so neither startup,
+  // gateway launch, profile switching, nor API fallback can spawn it.
+  return false;
 }
 
 function warmTuiGatewayClient(profile?: string): void {

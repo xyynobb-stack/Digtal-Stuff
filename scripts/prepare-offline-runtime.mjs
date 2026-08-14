@@ -51,6 +51,19 @@ const copyRepo = (src, dest) =>
   });
 
 copyRepo(sourceRepo, path.join(outputRoot, "hermes-agent"));
+// Desktop-owned gateway extensions are copied after the upstream Agent so a
+// release build is reproducible and does not depend on which Agent checkout
+// happens to be installed on the packaging machine.
+const agentOverlayRoot = path.join(
+  projectRoot,
+  "resources",
+  "hermes-agent-overlays",
+);
+if (fs.existsSync(agentOverlayRoot)) {
+  fs.cpSync(agentOverlayRoot, path.join(outputRoot, "hermes-agent"), {
+    recursive: true,
+  });
+}
 verifyDashboardWebDist(
   path.join(outputRoot, "hermes-agent", "hermes_cli", "web_dist"),
 );
@@ -108,6 +121,31 @@ const gatewayServerPath = path.join(
 let gatewayServer = fs
   .readFileSync(gatewayServerPath, "utf8")
   .replace(/\r\n/g, "\n");
+if (
+  !gatewayServer.includes(
+    "methods_desktop_cold_start as _methods_desktop_cold_start",
+  )
+) {
+  const importAnchor = `    methods_complete as _methods_complete,`;
+  const registerAnchor = `    _methods_tools,\n):`;
+  if (
+    !gatewayServer.includes(importAnchor) ||
+    !gatewayServer.includes(registerAnchor)
+  ) {
+    throw new Error(
+      `Desktop cold-start registration marker not found: ${gatewayServerPath}`,
+    );
+  }
+  gatewayServer = gatewayServer
+    .replace(
+      importAnchor,
+      `${importAnchor}\n    methods_desktop_cold_start as _methods_desktop_cold_start,`,
+    )
+    .replace(
+      registerAnchor,
+      `    _methods_tools,\n    _methods_desktop_cold_start,\n):`,
+    );
+}
 const lazyModelMirrorBlock = `        if name == "model" and arg and agent:
             result = _apply_model_switch(sid, session, arg)
             return result.get("warning", "")`;

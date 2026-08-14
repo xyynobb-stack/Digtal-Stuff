@@ -221,17 +221,10 @@ describe("useDashboardChatTransport recovery", () => {
   it("resolves a named custom provider before creating the Agent", async () => {
     const request = vi.fn(async (method: string, params?: unknown) => {
       void params;
-      if (method === "model.options") {
+      if (method === "model.resolve") {
         return {
           model: "Kimi-2.6",
-          provider: "custom",
-          providers: [
-            {
-              slug: "company-platform",
-              base_url: "https://models.company.test/v1",
-              models: ["glm-5.2"],
-            },
-          ],
+          provider: "company-platform",
         };
       }
       if (method === "session.create") {
@@ -325,8 +318,8 @@ describe("useDashboardChatTransport recovery", () => {
         }
         return {};
       }
-      if (method === "model.options") {
-        return { model: liveModel, provider: liveProvider, providers: [] };
+      if (method === "model.identity") {
+        return { model: liveModel, provider: liveProvider };
       }
       return {};
     });
@@ -422,8 +415,8 @@ describe("useDashboardChatTransport recovery", () => {
       if (method === "session.create") {
         return { session_id: "live", stored_session_id: "stored" };
       }
-      if (method === "model.options") {
-        return { model: liveModel, provider: liveProvider, providers: [] };
+      if (method === "model.identity") {
+        return { model: liveModel, provider: liveProvider };
       }
       if (method === "slash.exec") {
         const command = String((params as { command?: string })?.command || "");
@@ -469,6 +462,9 @@ describe("useDashboardChatTransport recovery", () => {
         text: "sent by an input holding the previous callback",
       },
     });
+    expect(requests.some((request) => request.method === "model.options")).toBe(
+      false,
+    );
   });
 
   it("discards an in-flight dashboard client after the connection mode changes", async () => {
@@ -488,8 +484,8 @@ describe("useDashboardChatTransport recovery", () => {
       if (method === "session.create") {
         return { session_id: "live-new", stored_session_id: "stored-new" };
       }
-      if (method === "model.options") {
-        return { model: "bad-model", provider: "bad-provider", providers: [] };
+      if (method === "model.identity") {
+        return { model: "bad-model", provider: "bad-provider" };
       }
       return {};
     });

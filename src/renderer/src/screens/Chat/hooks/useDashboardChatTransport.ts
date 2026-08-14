@@ -16,8 +16,14 @@ import type { ActiveTurn, Attachment, ChatMessage, UsageState } from "../types";
 import { addAttachmentRefsToSessionEnvelope } from "../sessionSkillEnvelope";
 import type { DesktopSessionContinuationItem } from "../../../../../shared/session-continuation";
 
+interface SessionModelIdentity {
+  base_url?: string;
+  model?: string;
+  provider?: string;
+}
+
 interface SessionResponse {
-  info?: unknown;
+  info?: SessionModelIdentity;
   messages?: unknown[];
   message_count?: number;
   resumed?: string;
@@ -82,6 +88,7 @@ interface EnsureDashboardRuntimeSessionResult {
     provider: string;
   };
   created: boolean;
+  modelIdentity?: SessionModelIdentity;
   runtimeSessionId: string;
   storedSessionId: string;
 }
@@ -251,6 +258,7 @@ export async function ensureDashboardRuntimeSession(
       }
       return {
         created: false,
+        modelIdentity: resumed.info,
         runtimeSessionId: resumed.session_id,
         storedSessionId: resumed.stored_session_id || resumed.resumed || stored,
       };
@@ -266,16 +274,22 @@ export async function ensureDashboardRuntimeSession(
   });
   let createProvider = params.provider;
   if (params.model && createProvider === "custom") {
-    const inventory = await params.client.request<ModelOptionsResponse>(
-      "model.options",
-      {},
-    );
-    createProvider = resolveDashboardProviderForModel(
-      createProvider,
-      params.model,
-      params.modelBaseUrl,
-      inventory,
-    );
+    try {
+      const resolved = await params.client.request<SessionModelIdentity>(
+        "model.resolve",
+        {
+          provider: createProvider,
+          model: params.model,
+          base_url: params.modelBaseUrl,
+        },
+      );
+      createProvider = resolved.provider || createProvider;
+    } catch (err) {
+      // Older remote dashboards do not have the local routing RPC. Preserve
+      // their existing bare-custom behavior without falling back to the slow
+      // model.options inventory on the chat path.
+      if (!dashboardRpcMethodUnsupportedError(err)) throw err;
+    }
   }
   // A named provider can be applied atomically while the gateway builds the
   // new Agent. Bare `custom` still needs the existing live-session switch,
@@ -301,6 +315,7 @@ export async function ensureDashboardRuntimeSession(
   return {
     createdModelOverride,
     created: true,
+    modelIdentity: created.info,
     runtimeSessionId: created.session_id,
     storedSessionId: created.stored_session_id || created.session_id,
   };
@@ -352,24 +367,6 @@ function builtInProviderForCustomBaseUrl(
   return preset.id;
 }
 
-function modelOptionsSummary(
-  live: ModelOptionsResponse | null | undefined,
-): string {
-  const providers = live?.providers ?? [];
-  const custom = providers
-    .filter((provider) => provider.slug?.toLowerCase().startsWith("custom:"))
-    .slice(0, 8)
-    .map((provider) => {
-      const models = (provider.models ?? []).slice(0, 3).join(", ");
-      const modelSuffix = models ? ` models=[${models}]` : "";
-      const url = normalizeBaseUrl(providerBaseUrl(provider));
-      const urlSuffix = url ? ` url=${url}` : "";
-      return `${provider.slug}${urlSuffix}${modelSuffix}`;
-    });
-
-  return custom.length ? custom.join("; ") : "no custom providers listed";
-}
-
 function base64FromDataUrl(dataUrl: string | undefined): string {
   if (!dataUrl) return "";
   const comma = dataUrl.indexOf(",");
@@ -410,6 +407,10 @@ export function dashboardDataUrlForTextAttachment(
 }
 
 function dashboardAttachmentUnsupportedError(err: unknown): boolean {
+  return dashboardRpcMethodUnsupportedError(err);
+}
+
+function dashboardRpcMethodUnsupportedError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return /unknown method|method not found|not found|unsupported/i.test(message);
 }
@@ -1339,12 +1340,20 @@ export function useDashboardChatTransport({
         runtimeSessionIdRef.current = targetSessionId;
         lastRuntimeSessionWasCreatedRef.current = response.created;
         justCreated = response.created;
-        createdWithSelectedModelRef.current = response.createdModelOverride
-          ? {
-              ...response.createdModelOverride,
-              sessionId: targetSessionId,
-            }
-          : null;
+        const responseIdentity = response.modelIdentity;
+        createdWithSelectedModelRef.current =
+          responseIdentity?.model && responseIdentity.provider
+            ? {
+                model: responseIdentity.model,
+                provider: responseIdentity.provider,
+                sessionId: targetSessionId,
+              }
+            : response.createdModelOverride
+              ? {
+                  ...response.createdModelOverride,
+                  sessionId: targetSessionId,
+                }
+              : null;
         if (justCreated && contextFolder) {
           lastSyncedCwdRef.current = contextFolder;
         }
@@ -1390,7 +1399,7 @@ export function useDashboardChatTransport({
       const createdWithModel = createdWithSelectedModelRef.current;
       if (
         createdWithModel?.sessionId === sessionId &&
-        createdWithModel.model === selectedModel
+        dashboardModelMatches(selectedProvider, selectedModel, createdWithModel)
       ) {
         createdWithSelectedModelRef.current = null;
         appliedModelRef.current = `${sessionId}\n${createdWithModel.provider}\n${selectedModel}`;
@@ -1413,58 +1422,41 @@ export function useDashboardChatTransport({
       const switchAndValidate = async (
         targetSessionId: string,
       ): Promise<string> => {
-        let before = await client.request<ModelOptionsResponse>(
-          "model.options",
-          {
-            session_id: targetSessionId,
-          },
-        );
-        let dashboardProvider = resolveDashboardProviderForModel(
-          selectedProvider,
-          selectedModel,
-          selectedBaseUrl,
-          before,
-        );
-
-        if (
-          storedSessionIdRef.current &&
-          !dashboardModelMatches(dashboardProvider, selectedModel, before) &&
-          (selectedProvider === "custom" ||
-            (before.provider || "").toLowerCase().startsWith("custom"))
-        ) {
-          targetSessionId = await resetRuntimeSession(targetSessionId);
-          before = await client.request<ModelOptionsResponse>("model.options", {
-            session_id: targetSessionId,
-          });
-          dashboardProvider = resolveDashboardProviderForModel(
-            selectedProvider,
-            selectedModel,
-            selectedBaseUrl,
-            before,
-          );
-          if (dashboardModelMatches(dashboardProvider, selectedModel, before)) {
-            appliedModelRef.current = `${targetSessionId}\n${dashboardProvider}\n${selectedModel}`;
-            return targetSessionId;
+        let dashboardProvider = selectedProvider;
+        if (selectedProvider === "custom") {
+          try {
+            const resolved = await client.request<SessionModelIdentity>(
+              "model.resolve",
+              {
+                session_id: targetSessionId,
+                provider: selectedProvider,
+                model: selectedModel,
+                base_url: selectedBaseUrl,
+              },
+            );
+            dashboardProvider = resolved.provider || selectedProvider;
+          } catch (err) {
+            if (!dashboardRpcMethodUnsupportedError(err)) throw err;
           }
         }
-
-        if (
-          selectedProvider === "custom" &&
-          dashboardProvider === "custom" &&
-          storedSessionIdRef.current
-        ) {
-          targetSessionId = await resetRuntimeSession(targetSessionId);
-
-          const rebuilt = await client.request<ModelOptionsResponse>(
-            "model.options",
-            {
-              session_id: targetSessionId,
-            },
-          );
-          if (dashboardModelMatches("custom", selectedModel, rebuilt)) {
-            appliedModelRef.current = `${targetSessionId}\ncustom\n${selectedModel}`;
-            return targetSessionId;
+        const readIdentity = async (): Promise<SessionModelIdentity | null> => {
+          try {
+            return await client.request<SessionModelIdentity>(
+              "model.identity",
+              { session_id: targetSessionId },
+            );
+          } catch (err) {
+            if (dashboardRpcMethodUnsupportedError(err)) return null;
+            throw err;
           }
+        };
+        const before = await readIdentity();
+        if (
+          before &&
+          dashboardModelMatches(dashboardProvider, selectedModel, before)
+        ) {
+          appliedModelRef.current = `${targetSessionId}\n${dashboardProvider}\n${selectedModel}`;
+          return targetSessionId;
         }
 
         const resolvedCommand = dashboardModelCommand(
@@ -1484,13 +1476,11 @@ export function useDashboardChatTransport({
           );
         }
 
-        const live = await client.request<ModelOptionsResponse>(
-          "model.options",
-          {
-            session_id: targetSessionId,
-          },
-        );
-        if (!dashboardModelMatches(dashboardProvider, selectedModel, live)) {
+        const live = await readIdentity();
+        if (
+          live &&
+          !dashboardModelMatches(dashboardProvider, selectedModel, live)
+        ) {
           appliedModelRef.current = null;
           const warning = slashResponse?.warning
             ? `; /model warning: ${slashResponse.warning}`
@@ -1499,7 +1489,7 @@ export function useDashboardChatTransport({
             ? `; /model output: ${slashResponse.output}`
             : "";
           throw new Error(
-            `JingYuAI dashboard did not switch to ${dashboardProvider}/${selectedModel}; live model is ${live.provider || "unknown"}/${live.model || "unknown"}${warning}${output}; custom inventory: ${modelOptionsSummary(before)}`,
+            `JingYuAI dashboard did not switch to ${dashboardProvider}/${selectedModel}; live model is ${live.provider || "unknown"}/${live.model || "unknown"}${warning}${output}`,
           );
         }
         appliedModelRef.current = key;

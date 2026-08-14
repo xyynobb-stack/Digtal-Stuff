@@ -61,6 +61,8 @@ export interface DashboardStatus {
 interface ManagedDashboard {
   proc: ChildProcess;
   connection: DashboardConnection;
+  phase: "starting" | "ready";
+  ready: Promise<DashboardStatus>;
 }
 
 const dashboards = new Map<string, ManagedDashboard>();
@@ -347,7 +349,11 @@ async function waitForDashboardReady(
   let lastError: unknown;
   while (Date.now() < deadline) {
     try {
-      await requestJson(`${connection.baseUrl}/api/status`, connection.token);
+      // Startup only needs process/router liveness. `/api/status` performs
+      // config, gateway and platform discovery and is intentionally much more
+      // expensive on a fresh Windows install. The renderer's real `/api/ws`
+      // connection is the transport readiness check.
+      await requestJson(`${connection.baseUrl}/api/health`, connection.token);
       return;
     } catch (err) {
       lastError = err;
@@ -540,6 +546,7 @@ export async function getDashboardStatus(
 
   const managed = getManagedDashboard(profile);
   if (managed) {
+    if (managed.phase === "starting") return managed.ready;
     return {
       supported: true,
       running: true,
@@ -594,6 +601,7 @@ export async function freshDashboardWebSocketUrl(
 export async function startDashboard(
   profile?: string,
 ): Promise<DashboardStatus> {
+  // @lat: [[chat-commands#Transport connection lifecycle]]
   const config = getConnectionConfig();
   const mode =
     config.mode === "remote" || config.mode === "ssh" ? config.mode : "local";
@@ -603,6 +611,7 @@ export async function startDashboard(
 
   const existing = getManagedDashboard(profile);
   if (existing) {
+    if (existing.phase === "starting") return existing.ready;
     return {
       supported: true,
       running: true,
@@ -677,14 +686,26 @@ export async function startDashboard(
     logPath,
   };
 
-  dashboards.set(key, { proc, connection });
+  let settleReady!: (status: DashboardStatus) => void;
+  const ready = new Promise<DashboardStatus>((resolve) => {
+    settleReady = resolve;
+  });
+  const managed: ManagedDashboard = {
+    proc,
+    connection,
+    phase: "starting",
+    ready,
+  };
+  // Publish the process and its readiness promise atomically. A concurrent
+  // caller must await this exact startup attempt instead of treating a live PID
+  // as proof that HTTP/WebSocket routing is ready.
+  dashboards.set(key, managed);
   proc.once("exit", () => {
     if (dashboards.get(key)?.proc === proc) dashboards.delete(key);
   });
 
   try {
     await waitForDashboardReady(connection, 45_000);
-    await probeDashboardWebSocket(connection, 5_000);
   } catch (err) {
     dashboards.delete(key);
     try {
@@ -692,7 +713,7 @@ export async function startDashboard(
     } catch {
       // Ignore shutdown errors for a failed probe; the log path is returned.
     }
-    return {
+    const failed: DashboardStatus = {
       supported: true,
       running: false,
       logPath,
@@ -703,9 +724,19 @@ export async function startDashboard(
         .filter(Boolean)
         .join("; "),
     };
+    settleReady(failed);
+    return failed;
   }
 
-  return { supported: true, running: true, connection, logPath };
+  managed.phase = "ready";
+  const started: DashboardStatus = {
+    supported: true,
+    running: true,
+    connection,
+    logPath,
+  };
+  settleReady(started);
+  return started;
 }
 
 export function stopDashboard(profile?: string): boolean {

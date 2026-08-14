@@ -458,7 +458,11 @@ describe("ensureDashboardRuntimeSession", () => {
     const client = {
       async request(method: string, params?: unknown): Promise<unknown> {
         calls.push({ method, params });
-        return { session_id: "live-resumed", resumed: "stored-1" };
+        return {
+          session_id: "live-resumed",
+          resumed: "stored-1",
+          info: { model: "deepseek-chat", provider: "deepseek" },
+        };
       },
     };
 
@@ -471,6 +475,7 @@ describe("ensureDashboardRuntimeSession", () => {
       }),
     ).resolves.toEqual({
       created: false,
+      modelIdentity: { model: "deepseek-chat", provider: "deepseek" },
       runtimeSessionId: "live-resumed",
       storedSessionId: "stored-1",
     });
@@ -480,6 +485,81 @@ describe("ensureDashboardRuntimeSession", () => {
         params: { session_id: "stored-1", cols: 96, profile: "work" },
       },
     ]);
+  });
+
+  it("resolves a generic custom provider locally before creating the session", async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const client = {
+      async request(method: string, params?: unknown): Promise<unknown> {
+        calls.push({ method, params });
+        if (method === "model.resolve") {
+          return { model: "deepseek-chat", provider: "deepseek" };
+        }
+        return {
+          session_id: "live-created",
+          stored_session_id: "stored-new",
+          info: { model: "deepseek-chat", provider: "deepseek" },
+        };
+      },
+    };
+
+    const result = await ensureDashboardRuntimeSession({
+      client,
+      messages: [],
+      model: "deepseek-chat",
+      modelBaseUrl: "https://api.deepseek.com/v1",
+      provider: "custom",
+    });
+
+    expect(result.modelIdentity).toEqual({
+      model: "deepseek-chat",
+      provider: "deepseek",
+    });
+    expect(calls.map((call) => call.method)).toEqual([
+      "model.resolve",
+      "session.create",
+    ]);
+    expect(calls).not.toContainEqual(
+      expect.objectContaining({ method: "model.options" }),
+    );
+    expect(calls[1]?.params).toMatchObject({
+      model: "deepseek-chat",
+      provider: "deepseek",
+    });
+  });
+
+  it("keeps old remote dashboards compatible without calling model.options", async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const client = {
+      async request(method: string, params?: unknown): Promise<unknown> {
+        calls.push({ method, params });
+        if (method === "model.resolve") throw new Error("method not found");
+        return {
+          session_id: "live-created",
+          stored_session_id: "stored-new",
+          info: { model: "deepseek-chat", provider: "custom" },
+        };
+      },
+    };
+
+    await expect(
+      ensureDashboardRuntimeSession({
+        client,
+        messages: [],
+        model: "deepseek-chat",
+        modelBaseUrl: "https://api.deepseek.com/v1",
+        provider: "custom",
+      }),
+    ).resolves.toMatchObject({
+      modelIdentity: { model: "deepseek-chat", provider: "custom" },
+    });
+    expect(calls.map((call) => call.method)).toEqual([
+      "model.resolve",
+      "session.create",
+    ]);
+    expect(calls).not.toContainEqual(
+      expect.objectContaining({ method: "model.options" }),
+    );
   });
 
   it("creates a seeded session when a stale stored id cannot be resumed", async () => {

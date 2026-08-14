@@ -30,7 +30,7 @@ The installers include the managed Hermes Agent and matching Python runtime unde
 
 Windows packages also include full PortableGit. Local staging and both release channels download the pinned distribution into `build/offline-runtime/git`; Agent processes use it directly from packaged resources without a second copy in user data. Staging falls back to copy-and-remove when CI temporary files and the repository are on different Windows volumes.
 
-Windows CI rebuilds the ignored virtual environment with `pip install -e .` and injects the employee lookup secret without committing it. Stable and beta workflows reject incomplete Python, Agent, PortableGit, or environment resources.
+Windows CI rebuilds the ignored virtual environment with `pip install -e .` and injects the employee lookup secret without committing it. Because editable metadata records the CI checkout path, first-launch Runtime preparation writes a scoped `.pth` entry for the relocated managed Agent, and Dashboard startup also prepends that Agent root to `PYTHONPATH`. This preserves the neutral backend cwd that prevents bundled `AGENTS.md` discovery while keeping `hermes_cli` importable. Stable and beta workflows reject incomplete Python, Agent, PortableGit, or environment resources.
 
 Installed NSIS builds may update this bundled runtime together with the Electron app. Development, portable execution, and macOS remain excluded from automatic updates by [[src/main/app/updater.ts#setupUpdater]].
 

@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { delimiter, join } from "path";
-import { mkdtempSync, mkdirSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import {
   bundledPythonRuntimeLayout,
   bundledPortableGitLayout,
   getEnhancedPath,
   hermesCliArgs,
+  repairBundledPythonImportPath,
   resolveBundledRuntimeRepo,
   HERMES_PYTHON,
   HERMES_SCRIPT,
@@ -63,6 +64,22 @@ describe("installer platform wiring", () => {
 
     expect(enhancedPath).toContain(process.env.PATH || "");
     expect(enhancedPath.split(delimiter).length).toBeGreaterThan(1);
+  });
+
+  it("repairs relocated Windows editable installs with a runtime-root pth file", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-python-path-test-"));
+    tempRoots.push(root);
+    const runtimeRepo = join(root, "hermes-agent");
+    mkdirSync(join(runtimeRepo, "venv", "Lib", "site-packages"), {
+      recursive: true,
+    });
+
+    const sourcePathFile = repairBundledPythonImportPath(runtimeRepo, "win32");
+
+    expect(sourcePathFile).not.toBeNull();
+    expect(existsSync(sourcePathFile!)).toBe(true);
+    expect(readFileSync(sourcePathFile!, "utf8")).toBe(`${runtimeRepo}\n`);
+    expect(repairBundledPythonImportPath(runtimeRepo, "darwin")).toBeNull();
   });
 
   it("builds platform-specific Hermes CLI invocation args", () => {

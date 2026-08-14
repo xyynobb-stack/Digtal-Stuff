@@ -14,7 +14,10 @@ import {
   HERMES_PYTHON,
   HERMES_REPO,
 } from "./installer";
-import { buildLocalDashboardCliArgs } from "./dashboard-launch";
+import {
+  buildLocalDashboardCliArgs,
+  withPythonSourceRoot,
+} from "./dashboard-launch";
 import { dashboardWebSocketUrlForRenderer } from "./dashboard-websocket-relay";
 import { ensureLocalDashboardCompatibility } from "./hermes-agent-compat";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
@@ -633,17 +636,20 @@ export async function startDashboard(
   try {
     proc = spawn(HERMES_PYTHON, hermesCliArgs(cliArgs), {
       cwd: dashboardBackendCwd(resolvedProfile),
-      env: {
-        ...process.env,
-        PATH: getEnhancedPath(),
-        HOME: process.env.HOME || homedir(),
-        HERMES_HOME,
-        HERMES_DASHBOARD_SESSION_TOKEN: token,
-        HERMES_DESKTOP: "1",
-        // `hermes serve` also sets this itself. Exporting it protects older
-        // compatible runtimes and guarantees the SPA is never mounted.
-        HERMES_SERVE_HEADLESS: "1",
-      },
+      env: withPythonSourceRoot(
+        {
+          ...process.env,
+          PATH: getEnhancedPath(),
+          HOME: process.env.HOME || homedir(),
+          HERMES_HOME,
+          HERMES_DASHBOARD_SESSION_TOKEN: token,
+          HERMES_DESKTOP: "1",
+          // `hermes serve` also sets this itself. Exporting it protects older
+          // compatible runtimes and guarantees the SPA is never mounted.
+          HERMES_SERVE_HEADLESS: "1",
+        },
+        HERMES_REPO,
+      ),
       stdio: ["ignore", "ignore", stderrFd],
       detached: false,
       ...HIDDEN_SUBPROCESS_OPTIONS,

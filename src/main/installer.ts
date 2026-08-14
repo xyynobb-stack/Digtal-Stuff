@@ -55,6 +55,26 @@ export function bundledPythonRuntimeLayout(
   };
 }
 
+/**
+ * Repair the import path for a relocated Windows offline venv.
+ *
+ * CI builds the managed Agent with an editable install, whose generated
+ * finder contains absolute paths to the CI checkout. A `.pth` entry pointing
+ * at the writable runtime repo keeps every venv subprocess importable after
+ * relocation, including processes that intentionally use a neutral cwd.
+ */
+export function repairBundledPythonImportPath(
+  runtimeRepo: string,
+  platform = process.platform,
+): string | null {
+  if (platform !== "win32" || !runtimeRepo) return null;
+  const sitePackages = join(runtimeRepo, "venv", "Lib", "site-packages");
+  if (!existsSync(sitePackages)) return null;
+  const sourcePathFile = join(sitePackages, "jingyu-runtime-root.pth");
+  writeFileSync(sourcePathFile, `${resolve(runtimeRepo)}\n`, "utf8");
+  return sourcePathFile;
+}
+
 /** Locate the complete PortableGit tree shipped beside the offline runtime. */
 // @lat: [[desktop-updates#Bundled runtime updates]]
 export function bundledPortableGitLayout(
@@ -202,6 +222,7 @@ async function prepareBundledRuntime(): Promise<void> {
         );
       writeFileSync(cfg, text, "utf-8");
     }
+    repairBundledPythonImportPath(targetRepo);
   } catch (error) {
     // Startup will surface the normal "Python not found" diagnostic if the
     // bundled files could not be copied.

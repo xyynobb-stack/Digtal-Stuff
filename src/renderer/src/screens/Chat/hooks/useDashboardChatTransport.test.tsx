@@ -153,6 +153,7 @@ describe("useDashboardChatTransport recovery", () => {
       configurable: true,
       value: {
         freshDashboardWsUrl: vi.fn(async () => "ws://fresh-dashboard"),
+        recordColdStartTiming: vi.fn(),
         recordSessionContinuation: vi.fn(async () => true),
         recordSessionLocalError: vi.fn(async () => true),
         startDashboard: vi.fn(async () => ({
@@ -179,6 +180,58 @@ describe("useDashboardChatTransport recovery", () => {
 
     expect(window.hermesAPI.freshDashboardWsUrl).toHaveBeenCalledTimes(1);
     expect(dashboardMock.connect).toHaveBeenCalledWith("ws://fresh-dashboard");
+  });
+
+  it("records submit, first model output, first text output, and completion once", async () => {
+    // @lat: [[main-process#Cold-start timing diagnostics]]
+    dashboardMock.request.mockImplementation(async (method) => {
+      if (method === "session.create") {
+        return { session_id: "live", stored_session_id: "stored" };
+      }
+      return {};
+    });
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+
+    await act(async () => {
+      await api.send?.("measure this turn");
+    });
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        type: "reasoning.delta",
+        session_id: "live",
+        payload: { text: "thinking" },
+      });
+      dashboardMock.onEvent?.({
+        type: "message.delta",
+        session_id: "live",
+        payload: { text: "first" },
+      });
+      dashboardMock.onEvent?.({
+        type: "message.delta",
+        session_id: "live",
+        payload: { text: " second" },
+      });
+      dashboardMock.onEvent?.({
+        type: "message.complete",
+        session_id: "live",
+        payload: { final_response: "first second" },
+      });
+    });
+
+    const stages = vi
+      .mocked(window.hermesAPI.recordColdStartTiming)
+      .mock.calls.map(([event]) => event.stage);
+    expect(
+      stages.filter((stage) => stage === "chat.prompt_submit_sent"),
+    ).toHaveLength(1);
+    expect(stages.filter((stage) => stage === "chat.first_delta")).toHaveLength(
+      1,
+    );
+    expect(
+      stages.filter((stage) => stage === "chat.first_message_delta"),
+    ).toHaveLength(1);
+    expect(stages.filter((stage) => stage === "chat.complete")).toHaveLength(1);
   });
 
   it("creates a fresh Agent with the selected model instead of racing /model", async () => {

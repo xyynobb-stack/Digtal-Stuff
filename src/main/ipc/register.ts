@@ -54,6 +54,11 @@ import {
 } from "../gpu-fallback";
 import type { GpuPreferenceMode } from "../../shared/gpu";
 import {
+  COLD_START_TIMING_STAGES,
+  type ColdStartTimingEvent,
+} from "../../shared/cold-start-timing";
+import { recordColdStartTiming } from "../cold-start-timing";
+import {
   checkInstallStatus,
   initializeBundledRuntime,
   verifyInstall,
@@ -684,6 +689,19 @@ export function registerIpcHandlers(context: IpcContext): void {
     openExternalUrl,
   } = context;
   const mainWindow = getMainWindow();
+  ipcMain.on("record-cold-start-timing", (_event, timing: unknown) => {
+    if (!timing || typeof timing !== "object") return;
+    const candidate = timing as Partial<ColdStartTimingEvent>;
+    if (
+      typeof candidate.stage !== "string" ||
+      !COLD_START_TIMING_STAGES.includes(
+        candidate.stage as ColdStartTimingEvent["stage"],
+      )
+    ) {
+      return;
+    }
+    recordColdStartTiming(candidate as ColdStartTimingEvent);
+  });
   // Installation
   ipcMain.handle("check-install", async () => {
     await initializeBundledRuntime();

@@ -31,6 +31,7 @@ import {
   desktopRuntimeBuildIdentity,
   desktopRuntimeVersionName,
 } from "./runtime-build";
+import { recordColdStartTiming } from "./cold-start-timing";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -615,12 +616,18 @@ let bundledRuntimePreparation: Promise<void> | null = null;
 // @lat: [[main-process#Offline Windows runtime]]
 export function initializeBundledRuntime(): Promise<void> {
   if (!bundledRuntimePreparation) {
+    recordColdStartTiming({ stage: "runtime.prepare_started" });
     const attempt = prepareBundledRuntime().then(async () => {
       await installBundledPresetContent();
       installBundledLookupToken();
       installBundledSoulRules();
+      recordColdStartTiming({ stage: "runtime.ready" });
     });
     const guarded = attempt.catch((error) => {
+      recordColdStartTiming({
+        stage: "runtime.failed",
+        detail: error instanceof Error ? error.message : String(error),
+      });
       if (bundledRuntimePreparation === guarded) {
         bundledRuntimePreparation = null;
       }

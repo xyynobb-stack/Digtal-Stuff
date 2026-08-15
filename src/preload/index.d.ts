@@ -40,6 +40,7 @@ import type {
 } from "../shared/messaging-platforms";
 import type { ChatToolEvent } from "../shared/chat-stream";
 import type { GpuPreferenceMode, GpuStatus } from "../shared/gpu";
+import type { ColdStartTimingEvent } from "../shared/cold-start-timing";
 
 interface ElectronAPI {
   process: {
@@ -235,6 +236,8 @@ interface KanbanCreateTaskInput {
 }
 
 interface HermesAPI {
+  recordColdStartTiming: (event: ColdStartTimingEvent) => void;
+
   // Installation
   checkInstall: () => Promise<InstallStatus>;
   verifyInstall: () => Promise<boolean>;

@@ -76,6 +76,14 @@ Offline builds also stage `resources/employee-default-soul.md`. On packaged star
 
 The offline runtime preparation also overlays the bundled browser navigation behavior: keyword input, blank/new-tab navigation, and Google/Bing/DuckDuckGo search URLs resolve to Baidu, while ordinary destination URLs remain unchanged. This keeps Chromium as the automation engine but makes Baidu the default search entry for the packaged Windows client. Overlays are part of the staged compatibility unit and are repaired only inside staging, never in a live version directory.
 
+## Cold-start timing diagnostics
+
+Cold-start diagnostics measure readiness and first-response latency without changing installation, transport, session, or model behavior.
+
+[[src/main/cold-start-timing.ts#ColdStartTimingTracker]] correlates desktop readiness, Runtime preparation, Dashboard spawn/readiness, send, WebSocket readiness, `prompt.submit`, the first non-empty model delta, the first text `message.delta`, and completion. [[src/main/cold-start-timing.ts#recordColdStartTiming]] writes JSONL records to `%APPDATA%\hermes-desktop\cold-start-timing.log`; records contain identifiers and durations but never prompt or response text.
+
+The renderer records send and stream boundaries through the sandboxed preload bridge in [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]]. Every write is best-effort and exception-isolated, so a missing, locked, or unwritable diagnostic log cannot delay or fail installation and chat.
+
 ## Packaged preset user content
 
 Windows and macOS offline builds can distribute builder-selected custom Skills and writing templates as immediately usable, editable content in every new installation.

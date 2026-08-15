@@ -15,6 +15,7 @@ import type { AgentCommandsCatalogResponse } from "../slash/types";
 import type { ActiveTurn, Attachment, ChatMessage, UsageState } from "../types";
 import { addAttachmentRefsToSessionEnvelope } from "../sessionSkillEnvelope";
 import type { DesktopSessionContinuationItem } from "../../../../../shared/session-continuation";
+import type { ColdStartTimingEvent } from "../../../../../shared/cold-start-timing";
 
 interface SessionModelIdentity {
   base_url?: string;
@@ -189,6 +190,7 @@ export async function submitDashboardPromptWithRecovery(
   client: DashboardPromptClient,
   params: {
     onRecoveredSessionId?: (sessionId: string) => void;
+    onSubmit?: () => void;
     sessionId: string;
     storedSessionId?: string | null;
     text: string;
@@ -204,6 +206,7 @@ export async function submitDashboardPromptWithRecovery(
       ? { profile: params.profile }
       : {};
   try {
+    params.onSubmit?.();
     await client.request("prompt.submit", {
       session_id: params.sessionId,
       text: params.text,
@@ -225,6 +228,7 @@ export async function submitDashboardPromptWithRecovery(
     }
 
     params.onRecoveredSessionId?.(recoveredSessionId);
+    params.onSubmit?.();
     await client.request("prompt.submit", {
       session_id: recoveredSessionId,
       text: params.text,
@@ -972,6 +976,22 @@ export function useDashboardChatTransport({
     DesktopSessionContinuationItem[]
   >([]);
   const lastSyncedCwdRef = useRef<string | null>(null);
+  const activeTimingRef = useRef<{
+    firstDeltaRecorded: boolean;
+    firstMessageDeltaRecorded: boolean;
+    turnId: string;
+  } | null>(null);
+
+  const recordTiming = useCallback((event: ColdStartTimingEvent): void => {
+    try {
+      window.hermesAPI.recordColdStartTiming?.({
+        ...event,
+        atMs: event.atMs ?? Date.now(),
+      });
+    } catch {
+      // A diagnostic bridge failure must never affect the active chat turn.
+    }
+  }, []);
 
   useEffect(() => {
     // `messagesRef` is the synchronous source of truth for `handleGatewayEvent`:
@@ -1038,6 +1058,37 @@ export function useDashboardChatTransport({
       }
       logDashboardEvent(event, "accepted", runtimeSessionId);
 
+      const timing = activeTimingRef.current;
+      if (
+        timing &&
+        (event.type === "message.delta" || event.type === "reasoning.delta")
+      ) {
+        const payload = asRecord(event.payload);
+        const delta = String(payload.text ?? payload.delta ?? "");
+        if (delta.length > 0) {
+          if (!timing.firstDeltaRecorded) {
+            timing.firstDeltaRecorded = true;
+            recordTiming({
+              stage: "chat.first_delta",
+              turnId: timing.turnId,
+              deltaKind:
+                event.type === "reasoning.delta" ? "reasoning" : "message",
+            });
+          }
+          if (
+            event.type === "message.delta" &&
+            !timing.firstMessageDeltaRecorded
+          ) {
+            timing.firstMessageDeltaRecorded = true;
+            recordTiming({
+              stage: "chat.first_message_delta",
+              turnId: timing.turnId,
+              deltaKind: "message",
+            });
+          }
+        }
+      }
+
       // Background (`/btw`) prompts run on a separate agent and report back via
       // `background.complete` — outside the main turn lifecycle, so render the
       // answer as a standalone agent message without touching isLoading or the
@@ -1087,6 +1138,32 @@ export function useDashboardChatTransport({
       setMessages(nextMessages);
 
       if (event.type === "message.complete") {
+        if (timing) {
+          if (!failed && !timing.firstDeltaRecorded) {
+            timing.firstDeltaRecorded = true;
+            recordTiming({
+              stage: "chat.first_delta",
+              turnId: timing.turnId,
+              deltaKind: "message",
+            });
+          }
+          if (!failed && !timing.firstMessageDeltaRecorded) {
+            timing.firstMessageDeltaRecorded = true;
+            recordTiming({
+              stage: "chat.first_message_delta",
+              turnId: timing.turnId,
+              deltaKind: "message",
+            });
+          }
+          recordTiming({
+            stage: failed ? "chat.failed" : "chat.complete",
+            turnId: timing.turnId,
+            ...(failed
+              ? { detail: completionErrorMessage(event.payload) }
+              : {}),
+          });
+          activeTimingRef.current = null;
+        }
         if (failed) {
           appliedModelRef.current = null;
           recreateRuntimeSessionRef.current = true;
@@ -1161,6 +1238,7 @@ export function useDashboardChatTransport({
     [
       activeTurnRef,
       connectionMode,
+      recordTiming,
       setIsLoading,
       setMessages,
       setToolProgress,
@@ -1488,6 +1566,22 @@ export function useDashboardChatTransport({
           return true;
         }
       }
+      const timingTurnId =
+        activeTurnRef.current?.turnId ?? `dashboard-${Date.now()}`;
+      activeTimingRef.current = {
+        firstDeltaRecorded: false,
+        firstMessageDeltaRecorded: false,
+        turnId: timingTurnId,
+      };
+      recordTiming({ stage: "chat.send", turnId: timingTurnId });
+      const finishTimingFailed = (detail: string): void => {
+        recordTiming({
+          stage: "chat.failed",
+          turnId: timingTurnId,
+          detail,
+        });
+        activeTimingRef.current = null;
+      };
       const dashboardText = dashboardPromptTextForAttachments(
         text,
         attachments,
@@ -1519,6 +1613,7 @@ export function useDashboardChatTransport({
         }
       };
       const failActiveTurn = (message: string): true => {
+        finishTimingFailed(message);
         const activeTurn = activeTurnRef.current;
         if (activeTurn) activeTurn.status = "failed";
         let failedMessages: ChatMessage[] | null = null;
@@ -1550,7 +1645,10 @@ export function useDashboardChatTransport({
         return true;
       };
       if (dashboardText === null) {
-        if (fallbackOnUnavailable) return false;
+        if (fallbackOnUnavailable) {
+          finishTimingFailed("dashboard attachment fallback");
+          return false;
+        }
         return failActiveTurn(
           "Dashboard chat supports image attachments only in this build. Use Auto or Legacy for mixed file attachments.",
         );
@@ -1559,6 +1657,10 @@ export function useDashboardChatTransport({
       let client: DashboardGatewayClient;
       try {
         client = await ensureClient();
+        recordTiming({
+          stage: "chat.websocket_ready",
+          turnId: timingTurnId,
+        });
       } catch (err) {
         // Dashboard was reachable but the chat WS wouldn't connect: do NOT fall
         // back to the /v1 path — over the dashboard tunnel /v1 doesn't exist and
@@ -1571,6 +1673,7 @@ export function useDashboardChatTransport({
         }
         if (fallbackOnUnavailable) {
           console.warn("Falling back to legacy chat transport.", err);
+          finishTimingFailed("dashboard unavailable; using legacy transport");
           return false;
         }
         const message = err instanceof Error ? err.message : String(err);
@@ -1619,7 +1722,10 @@ export function useDashboardChatTransport({
           attachments,
         );
         if (!syncedAttachments.handled) {
-          if (fallbackOnUnavailable) return false;
+          if (fallbackOnUnavailable) {
+            finishTimingFailed("dashboard attachment fallback");
+            return false;
+          }
           return failActiveTurn(
             "JingYuAI dashboard could not attach the selected file. Use Auto or Legacy to fall back to the legacy attachment path.",
           );
@@ -1633,6 +1739,11 @@ export function useDashboardChatTransport({
           storedSessionId: storedSessionIdRef.current,
           text: submitText,
           profile,
+          onSubmit: () =>
+            recordTiming({
+              stage: "chat.prompt_submit_sent",
+              turnId: timingTurnId,
+            }),
           onRecoveredSessionId: (recoveredSessionId) => {
             runtimeSessionIdRef.current = recoveredSessionId;
           },
@@ -1658,6 +1769,7 @@ export function useDashboardChatTransport({
       setMessages,
       setToolProgress,
       profile,
+      recordTiming,
     ],
   );
 

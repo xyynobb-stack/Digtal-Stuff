@@ -38,6 +38,7 @@ import type {
   SshHermesTargetInspection,
   SshDockerProvisionResult,
 } from "../shared/ssh-docker";
+import type { ColdStartTimingEvent } from "../shared/cold-start-timing";
 
 /**
  * Mirror of the renderer-side `CredentialPoolEntry` ambient type
@@ -100,6 +101,9 @@ const electronAPI = {
 };
 
 const hermesAPI = {
+  recordColdStartTiming: (event: ColdStartTimingEvent): void =>
+    ipcRenderer.send("record-cold-start-timing", event),
+
   // Installation
   checkInstall: (): Promise<{
     installed: boolean;

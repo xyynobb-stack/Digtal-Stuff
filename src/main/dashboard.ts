@@ -43,6 +43,7 @@ import {
   normalizeProfileName,
   profileHome,
 } from "./utils";
+import { recordColdStartTiming } from "./cold-start-timing";
 
 export interface DashboardConnection {
   baseUrl: string;
@@ -678,6 +679,7 @@ export async function startDashboard(
   const logPath = dashboardLogPath(resolvedProfile);
   const stderrFd = openSync(logPath, "a");
   const cliArgs = buildLocalDashboardCliArgs(resolvedProfile, port);
+  recordColdStartTiming({ stage: "dashboard.spawn_started" });
 
   let proc: ChildProcess;
   try {
@@ -703,6 +705,10 @@ export async function startDashboard(
     });
   } catch (err) {
     closeSync(stderrFd);
+    recordColdStartTiming({
+      stage: "dashboard.failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
     return {
       supported: true,
       running: false,
@@ -783,11 +789,16 @@ export async function startDashboard(
         .filter(Boolean)
         .join("; "),
     };
+    recordColdStartTiming({
+      stage: "dashboard.failed",
+      detail: failed.error,
+    });
     settleReady(failed);
     return failed;
   }
 
   managed.phase = "ready";
+  recordColdStartTiming({ stage: "dashboard.ready" });
   const started: DashboardStatus = {
     supported: true,
     running: true,

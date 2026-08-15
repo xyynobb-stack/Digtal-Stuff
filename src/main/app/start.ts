@@ -21,6 +21,7 @@ import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
 import { setupUpdater } from "./updater";
 import { initializeBundledRuntime } from "../installer";
+import { recordColdStartTiming } from "../cold-start-timing";
 
 const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "JingYuAI";
 const OPEN_DEVTOOLS_ON_START =
@@ -51,6 +52,7 @@ export function startMainProcess(): void {
   setupUpdater({ getMainWindow: () => mainWindow });
 
   app.whenReady().then(() => {
+    recordColdStartTiming({ stage: "desktop.ready" });
     electronApp.setAppUserModelId("com.jingyuai.desktop");
 
     app.on("browser-window-created", (_, window) => {

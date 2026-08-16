@@ -161,8 +161,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not install Hermes Agent into bundled venv" }
             & $venvPython -c "import hermes_cli, run_agent"
             if ($LASTEXITCODE -ne 0) { throw "Bundled Hermes Agent import check failed" }
-            & $venvPython -c "from tui_gateway import server; required = {'model.options', 'session.create', 'session.model.set'}; missing = required - server._methods.keys(); assert not missing, missing"
+            & $venvPython -c "from tui_gateway import server; required = {'model.options', 'model.identity', 'model.resolve', 'session.create', 'session.model.set'}; missing = required - server._methods.keys(); assert not missing, missing"
             if ($LASTEXITCODE -ne 0) { throw "Desktop Agent RPC registration check failed" }
+            & $venvPython -c "from tui_gateway import server; route = server._desktop_route_identity({'provider':'ci-provider','model':'ci-model','base_url':'https://ci.invalid/v1'}); assert route['route_id'].startswith('route:v1:')"
+            if ($LASTEXITCODE -ne 0) { throw "Desktop Agent route identity check failed" }
           } finally {
             Pop-Location
           }

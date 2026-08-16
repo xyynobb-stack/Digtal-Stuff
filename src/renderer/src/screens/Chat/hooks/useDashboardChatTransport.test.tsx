@@ -311,6 +311,164 @@ describe("useDashboardChatTransport recovery", () => {
     });
   });
 
+  it("keeps one warm session when a generic selection resolves to any provider alias", async () => {
+    // @lat: [[model-selection#Stable runtime route identity]]
+    const requests: Array<{ method: string; params: unknown }> = [];
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.create") {
+        return {
+          session_id: "live",
+          stored_session_id: "stored",
+          info: {
+            route_id: "route:v1:initial",
+            model: "bad-model",
+            provider: "bad-provider",
+          },
+        };
+      }
+      if (method === "model.resolve") {
+        return {
+          route_id: "route:v1:future-model",
+          model: "future-model",
+          provider: "provider-added-after-release",
+        };
+      }
+      if (method === "model.identity") {
+        return {
+          route_id: "route:v1:initial",
+          model: "bad-model",
+          provider: "bad-provider",
+        };
+      }
+      if (method === "session.model.set") {
+        return {
+          route_id: "route:v1:future-model",
+          model: "future-model",
+          provider: "provider-added-after-release",
+        };
+      }
+      return {};
+    });
+
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("first");
+      dashboardMock.onEvent?.({
+        type: "message.complete",
+        session_id: "live",
+        payload: { final_response: "first answer" },
+      });
+      api.setProvider?.("custom");
+      api.setModel?.("future-model");
+      api.activeTurnRef!.current = { ...activeRecoveryTurn };
+    });
+    await act(async () => {
+      await api.send?.("second");
+      dashboardMock.onEvent?.({
+        type: "message.complete",
+        session_id: "live",
+        payload: { final_response: "second answer" },
+      });
+      api.activeTurnRef!.current = {
+        ...activeRecoveryTurn,
+        turnId: "turn-third",
+        userId: "u-third",
+      };
+    });
+    await act(async () => {
+      await api.send?.("third");
+    });
+
+    expect(
+      requests.filter((request) => request.method === "session.create"),
+    ).toHaveLength(1);
+    expect(
+      requests.filter((request) => request.method === "model.resolve"),
+    ).toHaveLength(1);
+    expect(
+      requests.filter((request) => request.method === "session.model.set"),
+    ).toEqual([
+      {
+        method: "session.model.set",
+        params: {
+          session_id: "live",
+          route_id: "route:v1:future-model",
+          provider: "custom",
+          model: "future-model",
+          base_url: undefined,
+        },
+      },
+    ]);
+  });
+
+  it("does not rebuild the Agent after a route validation error", async () => {
+    // @lat: [[model-selection#Stable runtime route identity]]
+    const requests: Array<{ method: string; params: unknown }> = [];
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.create") {
+        return {
+          session_id: "live",
+          stored_session_id: "stored",
+          info: {
+            route_id: "route:v1:initial",
+            model: "bad-model",
+            provider: "bad-provider",
+          },
+        };
+      }
+      if (method === "model.resolve") {
+        return {
+          route_id: "route:v1:wanted",
+          model: "future-model",
+          provider: "future-provider",
+        };
+      }
+      if (method === "model.identity" || method === "session.model.set") {
+        return {
+          route_id: "route:v1:initial",
+          model: "bad-model",
+          provider: "bad-provider",
+        };
+      }
+      return {};
+    });
+
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("first");
+      dashboardMock.onEvent?.({
+        type: "message.complete",
+        session_id: "live",
+        payload: { final_response: "first answer" },
+      });
+      api.setProvider?.("custom");
+      api.setModel?.("future-model");
+      api.activeTurnRef!.current = { ...activeRecoveryTurn };
+    });
+    await act(async () => {
+      await api.send?.("route mismatch");
+      api.activeTurnRef!.current = {
+        ...activeRecoveryTurn,
+        turnId: "turn-retry",
+        userId: "u-retry",
+      };
+    });
+    await act(async () => {
+      await api.send?.("retry without rebuilding");
+    });
+
+    expect(
+      requests.filter((request) => request.method === "session.create"),
+    ).toHaveLength(1);
+    expect(
+      requests.filter((request) => request.method === "session.close"),
+    ).toHaveLength(0);
+  });
+
   it("surfaces OAuth login requirements without legacy fallback", async () => {
     // @lat: [[remote-dashboard-oauth#Test specifications#OAuth no-fallback]]
     const onUnavailable = vi.fn();

@@ -30,6 +30,16 @@ The override is a `SessionModelOverride` (`{provider, model, baseUrl}`), not a b
 
 The picker builds it via [[src/renderer/src/screens/Chat/hooks/useModelConfig.ts#effectiveOverrideBaseUrl]], the same baseUrl rule `selectModel` applies (keep the URL only for `custom`/`ollama-cloud`; clear it for named providers that have a canonical base URL), so the session pick and a persisted save can't drift. It is threaded renderer → preload IPC → main `sendMessage` as `modelOverride`.
 
+## Stable runtime route identity
+
+Dashboard sessions use an opaque backend-issued `route_id` so dynamic providers, newly advertised models, provider aliases, and same-name models on different endpoints require no desktop mapping table.
+
+[[resources/hermes-agent-overlays/tui_gateway/methods_desktop_cold_start.py#_route_identity]] hashes the resolved provider, normalized endpoint, and model into a versioned identity without including credentials. `model.resolve`, `session.create`, `session.model.set`, and `model.identity` all return that identity; `session.model.set` rejects a stale supplied id before mutating the session.
+
+[[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#dashboardRouteMatches]] compares route ids when available. For an older Dashboard, it compares the exact normalized identity returned by `model.resolve`, never inferred `custom` or brand aliases. A successful route is cached for the live session, so ordinary later turns skip model resolution and retain the warm Agent.
+
+Route validation failure is a control-plane error, not evidence that the runtime session is corrupt. The renderer reports it without setting the session-recreation flag; transport and session failures still use the existing recovery path.
+
 ## Latest picker identity wins
 
 Every dashboard send resolves its model, provider, and base URL from the latest rendered picker state, even if the composer invokes a send callback captured before the user changed models.

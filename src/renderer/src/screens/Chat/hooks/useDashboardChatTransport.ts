@@ -18,10 +18,12 @@ import type { DesktopSessionContinuationItem } from "../../../../../shared/sessi
 import type { ColdStartTimingEvent } from "../../../../../shared/cold-start-timing";
 
 interface SessionModelIdentity {
+  api_mode?: string;
   base_url?: string;
   model?: string;
   provider?: string;
   requested_provider?: string;
+  route_id?: string;
 }
 
 interface SessionResponse {
@@ -33,10 +35,7 @@ interface SessionResponse {
   stored_session_id?: string | null;
 }
 
-interface ModelOptionsResponse {
-  model?: string;
-  provider?: string;
-  requested_provider?: string;
+interface ModelOptionsResponse extends SessionModelIdentity {
   providers?: ModelOptionProvider[];
 }
 
@@ -46,7 +45,6 @@ interface ModelOptionProvider {
   baseUrl?: string;
   is_current?: boolean;
   models?: string[];
-  name?: string;
   slug: string;
 }
 
@@ -582,7 +580,7 @@ export function resolveDashboardProviderForModel(
 export function dashboardModelMatches(
   requestedProvider: string | undefined,
   requestedModel: string | undefined,
-  live: ModelOptionsResponse | null | undefined,
+  live: SessionModelIdentity | null | undefined,
 ): boolean {
   if (!requestedProvider || requestedProvider === "auto" || !requestedModel) {
     return true;
@@ -595,18 +593,34 @@ export function dashboardModelMatches(
 
   if (!liveProvider || !liveModel) return false;
   if (liveModel !== model) return false;
-  if (liveProvider === provider) return true;
+  return liveProvider === provider;
+}
 
-  if (
-    provider === "custom" &&
-    (live?.requested_provider || "").trim().toLowerCase() === "custom"
-  ) {
-    return true;
+export function dashboardRouteMatches(
+  expected: SessionModelIdentity | null | undefined,
+  live: SessionModelIdentity | null | undefined,
+): boolean {
+  const expectedRouteId = (expected?.route_id || "").trim();
+  const liveRouteId = (live?.route_id || "").trim();
+  if (expectedRouteId || liveRouteId) {
+    return !!expectedRouteId && expectedRouteId === liveRouteId;
   }
+  return dashboardModelMatches(expected?.provider, expected?.model, live);
+}
 
-  // Named custom providers can be reported by Hermes Agent as custom:<slug>
-  // while Hermes One's older model config still treats them as custom rows.
-  return provider === "custom" && liveProvider.startsWith("custom:");
+function dashboardSelectionKey(
+  provider: string | undefined,
+  model: string | undefined,
+  baseUrl: string | undefined,
+): string {
+  return `${provider || ""}\n${model || ""}\n${normalizeBaseUrl(baseUrl)}`;
+}
+
+class DashboardModelRouteMismatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DashboardModelRouteMismatchError";
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -963,10 +977,17 @@ export function useDashboardChatTransport({
   selectedModelRef.current = { model, modelBaseUrl, provider };
   const reasoningSegmentClosedRef = useRef(false);
   const appliedModelRef = useRef<string | null>(null);
+  const resolvedRouteRef = useRef<{
+    identity: SessionModelIdentity;
+    selectionKey: string;
+  } | null>(null);
   const createdWithSelectedModelRef = useRef<{
+    api_mode?: string;
+    base_url?: string;
     model: string;
     provider: string;
     requested_provider?: string;
+    route_id?: string;
     sessionId: string;
   } | null>(null);
   const recreateRuntimeSessionRef = useRef(false);
@@ -1016,6 +1037,7 @@ export function useDashboardChatTransport({
     runtimeSessionIdRef.current = null;
     reasoningSegmentClosedRef.current = false;
     appliedModelRef.current = null;
+    resolvedRouteRef.current = null;
     createdWithSelectedModelRef.current = null;
     recreateRuntimeSessionRef.current = false;
     lastRuntimeSessionWasCreatedRef.current = false;
@@ -1025,8 +1047,9 @@ export function useDashboardChatTransport({
 
   useEffect(() => {
     appliedModelRef.current = null;
+    resolvedRouteRef.current = null;
     createdWithSelectedModelRef.current = null;
-  }, [model, provider]);
+  }, [model, modelBaseUrl, provider]);
 
   useEffect(() => {
     clientGenerationRef.current += 1;
@@ -1037,6 +1060,7 @@ export function useDashboardChatTransport({
     runtimeSessionIdRef.current = null;
     reasoningSegmentClosedRef.current = false;
     appliedModelRef.current = null;
+    resolvedRouteRef.current = null;
     createdWithSelectedModelRef.current = null;
     recreateRuntimeSessionRef.current = false;
     lastRuntimeSessionWasCreatedRef.current = false;
@@ -1402,6 +1426,16 @@ export function useDashboardChatTransport({
         lastRuntimeSessionWasCreatedRef.current = response.created;
         justCreated = response.created;
         const responseIdentity = response.modelIdentity;
+        if (response.created && responseIdentity?.route_id) {
+          resolvedRouteRef.current = {
+            identity: responseIdentity,
+            selectionKey: dashboardSelectionKey(
+              selected.provider,
+              selected.model,
+              selected.modelBaseUrl,
+            ),
+          };
+        }
         createdWithSelectedModelRef.current =
           responseIdentity?.model && responseIdentity.provider
             ? {
@@ -1457,13 +1491,47 @@ export function useDashboardChatTransport({
       const selectedProvider = selected.provider;
       const command = dashboardModelCommand(selectedProvider, selectedModel);
       if (!command) return sessionId;
+
+      const selectionKey = dashboardSelectionKey(
+        selectedProvider,
+        selectedModel,
+        selected.modelBaseUrl,
+      );
+      let expected =
+        resolvedRouteRef.current?.selectionKey === selectionKey
+          ? resolvedRouteRef.current.identity
+          : null;
+      if (!expected) {
+        try {
+          const resolved = await client.request<SessionModelIdentity>(
+            "model.resolve",
+            {
+              provider: selectedProvider,
+              model: selectedModel,
+              base_url: selected.modelBaseUrl,
+            },
+          );
+          expected =
+            resolved?.route_id || (resolved?.provider && resolved?.model)
+              ? resolved
+              : { provider: selectedProvider, model: selectedModel };
+          resolvedRouteRef.current = { identity: expected, selectionKey };
+        } catch (err) {
+          if (!dashboardRpcMethodUnsupportedError(err)) throw err;
+          expected = { provider: selectedProvider, model: selectedModel };
+        }
+      }
+
+      const appliedKey = `${sessionId}\n${expected.route_id || `${expected.provider || ""}/${expected.model || ""}`}`;
+      if (appliedModelRef.current === appliedKey) return sessionId;
+
       const createdWithModel = createdWithSelectedModelRef.current;
       if (
         createdWithModel?.sessionId === sessionId &&
-        dashboardModelMatches(selectedProvider, selectedModel, createdWithModel)
+        dashboardRouteMatches(expected, createdWithModel)
       ) {
         createdWithSelectedModelRef.current = null;
-        appliedModelRef.current = `${sessionId}\n${createdWithModel.provider}\n${selectedModel}`;
+        appliedModelRef.current = appliedKey;
         return sessionId;
       }
       const switchAndValidate = async (
@@ -1481,39 +1549,30 @@ export function useDashboardChatTransport({
           }
         };
         const before = await readIdentity();
-        if (
-          before &&
-          dashboardModelMatches(selectedProvider, selectedModel, before)
-        ) {
-          appliedModelRef.current = `${targetSessionId}\n${before.provider || selectedProvider}\n${selectedModel}`;
+        if (before && dashboardRouteMatches(expected, before)) {
+          appliedModelRef.current = appliedKey;
           return targetSessionId;
         }
 
-        const key = `${targetSessionId}\n${selectedProvider}\n${selectedModel}`;
-        let switched: SessionModelIdentity | null = null;
-        if (appliedModelRef.current !== key) {
-          switched = await client.request<SessionModelIdentity>(
-            "session.model.set",
-            {
-              session_id: targetSessionId,
-              provider: selectedProvider,
-              model: selectedModel,
-              base_url: selected.modelBaseUrl,
-            },
-          );
-        }
+        const switched = await client.request<SessionModelIdentity>(
+          "session.model.set",
+          {
+            session_id: targetSessionId,
+            ...(expected.route_id ? { route_id: expected.route_id } : {}),
+            provider: selectedProvider,
+            model: selectedModel,
+            base_url: selected.modelBaseUrl,
+          },
+        );
 
         const live = switched || (await readIdentity());
-        if (
-          live &&
-          !dashboardModelMatches(selectedProvider, selectedModel, live)
-        ) {
+        if (live && !dashboardRouteMatches(expected, live)) {
           appliedModelRef.current = null;
-          throw new Error(
-            `JingYuAI dashboard did not switch to ${selectedProvider}/${selectedModel}; live model is ${live.provider || "unknown"}/${live.model || "unknown"}`,
+          throw new DashboardModelRouteMismatchError(
+            `JingYuAI dashboard did not activate model route ${expected.route_id || `${expected.provider || "unknown"}/${expected.model || "unknown"}`}; live route is ${live.route_id || `${live.provider || "unknown"}/${live.model || "unknown"}`}`,
           );
         }
-        appliedModelRef.current = key;
+        appliedModelRef.current = appliedKey;
         return targetSessionId;
       };
 
@@ -1751,7 +1810,9 @@ export function useDashboardChatTransport({
         return true;
       } catch (err) {
         appliedModelRef.current = null;
-        recreateRuntimeSessionRef.current = true;
+        if (!(err instanceof DashboardModelRouteMismatchError)) {
+          recreateRuntimeSessionRef.current = true;
+        }
         const message = err instanceof Error ? err.message : String(err);
         return failActiveTurn(message);
       }

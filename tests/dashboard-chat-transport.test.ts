@@ -13,6 +13,7 @@ import {
   dashboardPromptTextForAttachments,
   dashboardModelCommand,
   dashboardModelMatches,
+  dashboardRouteMatches,
   resolveDashboardProviderForModel,
   syncDashboardAttachmentsForSubmit,
   submitDashboardPromptWithRecovery,
@@ -231,13 +232,13 @@ describe("dashboardModelMatches", () => {
     ).toBe(true);
   });
 
-  it("accepts Hermes Agent custom provider slugs for JingYuAI custom rows", () => {
+  it("does not guess that differently named providers are equivalent", () => {
     expect(
       dashboardModelMatches("custom", "deepseek-v4-pro", {
         provider: "custom:deepseek-v4-pro",
         model: "deepseek-v4-pro",
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("rejects stale live provider state after a failed provider turn", () => {
@@ -251,6 +252,35 @@ describe("dashboardModelMatches", () => {
 
   it("does not require a live model for auto mode", () => {
     expect(dashboardModelMatches("auto", "whatever", null)).toBe(true);
+  });
+});
+
+describe("dashboardRouteMatches", () => {
+  // @lat: [[model-selection#Stable runtime route identity]]
+  it("matches an arbitrary resolved provider alias by route id", () => {
+    expect(
+      dashboardRouteMatches(
+        {
+          route_id: "route:v1:abc",
+          provider: "company-platform",
+          model: "future-model-1",
+        },
+        {
+          route_id: "route:v1:abc",
+          provider: "provider-renamed-later",
+          model: "future-model-1",
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("distinguishes same-name models on different routes", () => {
+    expect(
+      dashboardRouteMatches(
+        { route_id: "route:v1:endpoint-a", model: "shared-model" },
+        { route_id: "route:v1:endpoint-b", model: "shared-model" },
+      ),
+    ).toBe(false);
   });
 });
 

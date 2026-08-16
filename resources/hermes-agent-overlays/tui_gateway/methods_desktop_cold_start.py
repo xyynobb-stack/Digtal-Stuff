@@ -1,5 +1,8 @@
 """JingYuAI desktop cold-start RPCs installed into the packaged gateway."""
 
+import hashlib
+import json
+
 from .method_ctx import HandlerRegistry
 
 _registry = HandlerRegistry()
@@ -20,6 +23,35 @@ def _configured_models(value):
             if model:
                 result.append(model)
     return result
+
+
+def _route_identity(route):
+    """Attach an opaque, stable identity to one resolved runtime route."""
+    provider = str(route.get("provider") or "").strip()
+    model = str(route.get("model") or "").strip()
+    base_url = str(route.get("base_url") or "").strip().rstrip("/").lower()
+    endpoint_scope = (
+        base_url
+        if provider.lower() == "custom"
+        or provider.lower().startswith("custom:")
+        else ""
+    )
+    canonical = json.dumps(
+        {
+            "version": 1,
+            "provider": provider.lower(),
+            "model": model,
+            "endpoint": endpoint_scope,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    identity = dict(route)
+    identity["route_id"] = "route:v1:" + hashlib.sha256(
+        canonical.encode("utf-8")
+    ).hexdigest()
+    return identity
 
 
 def _local_snapshot(ctx):
@@ -73,17 +105,27 @@ def _local_snapshot(ctx):
 
 
 def _resolve_model_route(ctx, requested, model, base_url):
-    """Resolve a billing-class provider to a concrete local route."""
+    """Resolve a user selection to one concrete, catalog-independent route."""
     requested = str(requested or "").strip()
     model = str(model or "").strip()
     normalized_url = str(base_url or "").strip().rstrip("/").lower()
     if requested.lower() != "custom":
-        return {
-            "model": model,
-            "provider": requested,
-            "requested_provider": requested,
-            "base_url": str(base_url or "").strip(),
-        }
+        config = ctx.user_providers.get(requested, {})
+        config = config if isinstance(config, dict) else {}
+        return _route_identity(
+            {
+                "model": model,
+                "provider": requested,
+                "requested_provider": requested,
+                "base_url": str(
+                    base_url
+                    or config.get("base_url")
+                    or config.get("api_url")
+                    or ""
+                ).strip(),
+                "api_mode": str(config.get("api_mode") or "").strip(),
+            }
+        )
 
     candidates = [
         (str(slug), config)
@@ -98,29 +140,35 @@ def _resolve_model_route(ctx, requested, model, base_url):
     resolved = requested
     resolved_url = str(base_url or "").strip()
     model_matches = []
+    resolved_api_mode = ""
     for slug, config in candidates:
         configured_url = str(
             config.get("base_url") or config.get("api_url") or ""
         ).strip()
         models = _configured_models(config.get("models"))
         if model and model in models:
-            model_matches.append((slug, configured_url))
+            model_matches.append(
+                (slug, configured_url, str(config.get("api_mode") or "").strip())
+            )
         if (
             normalized_url
             and configured_url.rstrip("/").lower() == normalized_url
-            and (not models or model in models)
         ):
             resolved = slug
             resolved_url = configured_url or resolved_url
+            resolved_api_mode = str(config.get("api_mode") or "").strip()
             break
     if resolved == requested and not normalized_url and len(model_matches) == 1:
-        resolved, resolved_url = model_matches[0]
-    return {
-        "model": model,
-        "provider": resolved,
-        "requested_provider": requested,
-        "base_url": resolved_url,
-    }
+        resolved, resolved_url, resolved_api_mode = model_matches[0]
+    return _route_identity(
+        {
+            "model": model,
+            "provider": resolved,
+            "requested_provider": requested,
+            "base_url": resolved_url,
+            "api_mode": resolved_api_mode,
+        }
+    )
 
 
 # @lat: [[chat-commands#Cold-session model selection]]
@@ -226,15 +274,21 @@ def model_identity(rid, params: dict) -> dict:
             override.get("base_url") or resumed.get("base_url_override") or ""
         )
     override = session.get("model_override") or {}
-    return _ok(
-        rid,
+    effective_api_mode = str(override.get("api_mode") or "")
+    if agent is not None:
+        effective_api_mode = str(
+            getattr(agent, "api_mode", "") or effective_api_mode
+        )
+    identity = _desktop_route_identity(
         {
             "model": str(info.get("model") or ""),
             "provider": str(info.get("provider") or ""),
             "base_url": base_url,
             "requested_provider": str(override.get("requested_provider") or ""),
-        },
+            "api_mode": effective_api_mode,
+        }
     )
+    return _ok(rid, identity)
 
 
 @method("model.resolve")
@@ -293,6 +347,8 @@ def desktop_session_create(rid, params: dict) -> dict:
             "provider": route_provider or None,
             "requested_provider": requested_provider,
             "base_url": route_base_url or None,
+            "api_mode": route.get("api_mode") or None,
+            "route_id": route.get("route_id"),
         }
         if session.get("agent_build_started"):
             session["pending_model_switch"] = {
@@ -303,12 +359,7 @@ def desktop_session_create(rid, params: dict) -> dict:
             }
         info = result.setdefault("info", {})
         info.update(
-            {
-                "model": requested_model,
-                "provider": route_provider,
-                "requested_provider": requested_provider,
-                "base_url": route_base_url,
-            }
+            route
         )
     except Exception as exc:
         _sessions.pop(sid, None)
@@ -333,6 +384,7 @@ def session_model_set(rid, params: dict) -> dict:
     requested_provider = str(params.get("provider") or "").strip()
     requested_model = str(params.get("model") or "").strip()
     requested_base_url = str(params.get("base_url") or "").strip()
+    requested_route_id = str(params.get("route_id") or "").strip()
     if not requested_model:
         return _err(rid, 4004, "model value required")
 
@@ -350,6 +402,9 @@ def session_model_set(rid, params: dict) -> dict:
         )
         route_provider = str(route.get("provider") or requested_provider).strip()
         route_base_url = str(route.get("base_url") or requested_base_url).strip()
+        route_id = str(route.get("route_id") or "").strip()
+        if requested_route_id and requested_route_id != route_id:
+            return _err(rid, 4092, "model route changed; resolve it again")
         raw = (
             f"{requested_model} --provider {route_provider}"
             if route_provider
@@ -362,6 +417,8 @@ def session_model_set(rid, params: dict) -> dict:
                 "provider": route_provider or None,
                 "requested_provider": requested_provider or None,
                 "base_url": route_base_url or None,
+                "api_mode": route.get("api_mode") or None,
+                "route_id": route_id,
             }
             # A resume pre-warm may already be constructing the old route. The
             # pending switch is consumed immediately before the first model call,
@@ -385,16 +442,29 @@ def session_model_set(rid, params: dict) -> dict:
             session.setdefault("model_override", {})[
                 "requested_provider"
             ] = requested_provider or None
+            session["model_override"].update(
+                {
+                    "api_mode": route.get("api_mode") or None,
+                    "route_id": route_id,
+                }
+            )
 
         effective = session.get("model_override") or {}
-        return _ok(
-            rid,
+        effective_identity = _desktop_route_identity(
             {
                 "model": str(effective.get("model") or requested_model),
                 "provider": str(effective.get("provider") or route_provider),
                 "requested_provider": requested_provider,
                 "base_url": str(effective.get("base_url") or route_base_url),
-            },
+                "api_mode": str(effective.get("api_mode") or ""),
+            }
+        )
+        session.setdefault("model_override", {})["route_id"] = effective_identity[
+            "route_id"
+        ]
+        return _ok(
+            rid,
+            effective_identity,
         )
     except Exception as exc:
         return _err(rid, 5030, str(exc))
@@ -408,6 +478,7 @@ def register(server) -> None:
     # there first so model.options can call it after registration.
     vars(server)["_desktop_local_model_options_snapshot"] = _local_snapshot
     vars(server)["_desktop_configured_models"] = _configured_models
+    vars(server)["_desktop_route_identity"] = _route_identity
     vars(server)["_desktop_resolve_model_route"] = _resolve_model_route
     vars(server)["_desktop_original_session_create"] = vars(server)["_methods"][
         "session.create"

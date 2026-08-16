@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -32,6 +38,26 @@ describe("offline Agent runtime copy filter", () => {
         join(sourceRepo, "web", "node_modules"),
       ),
     ).toBe(false);
+  });
+});
+
+describe("desktop Agent model-route overlay", () => {
+  // @lat: [[model-selection#Stable runtime route identity]]
+  it("packages the generic route resolver and stable route id contract", () => {
+    const source = readFileSync(
+      join(
+        process.cwd(),
+        "resources",
+        "hermes-agent-overlays",
+        "tui_gateway",
+        "methods_desktop_cold_start.py",
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain('@method("model.resolve")');
+    expect(source).toContain('identity["route_id"] = "route:v1:"');
+    expect(source).toContain('params.get("route_id")');
   });
 });
 

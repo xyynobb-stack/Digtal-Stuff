@@ -74,6 +74,8 @@ export function applyOfflineRuntimeOverlays({
   const methodsSource = fs.readFileSync(desktopMethods, "utf8");
   for (const requiredMethod of [
     '@method("model.options")',
+    '@method("model.identity")',
+    '@method("model.resolve")',
     '@method("session.create")',
     '@method("session.model.set")',
   ]) {

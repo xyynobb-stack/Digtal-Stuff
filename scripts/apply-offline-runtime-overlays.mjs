@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { patchDashboardColdStartSource } from "./patch-dashboard-cold-start.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
@@ -50,6 +51,11 @@ export function applyOfflineRuntimeOverlays({
   overlayRoot = path.join(projectRoot, "resources", "hermes-agent-overlays"),
 } = {}) {
   const gatewayServerPath = path.join(agentRoot, "tui_gateway", "server.py");
+  const dashboardServerPath = path.join(
+    agentRoot,
+    "hermes_cli",
+    "web_server.py",
+  );
   if (!fs.existsSync(agentRoot)) {
     throw new Error(`Staged Hermes Agent runtime not found: ${agentRoot}`);
   }
@@ -59,12 +65,20 @@ export function applyOfflineRuntimeOverlays({
   if (!fs.existsSync(gatewayServerPath)) {
     throw new Error(`Gateway server not found: ${gatewayServerPath}`);
   }
+  if (!fs.existsSync(dashboardServerPath)) {
+    throw new Error(`Dashboard server not found: ${dashboardServerPath}`);
+  }
 
   fs.cpSync(overlayRoot, agentRoot, { recursive: true, force: true });
   const patched = patchGatewayServerSource(
     fs.readFileSync(gatewayServerPath, "utf8"),
   );
   fs.writeFileSync(gatewayServerPath, patched, "utf8");
+  fs.writeFileSync(
+    dashboardServerPath,
+    patchDashboardColdStartSource(fs.readFileSync(dashboardServerPath, "utf8")),
+    "utf8",
+  );
 
   const desktopMethods = path.join(
     agentRoot,
@@ -84,7 +98,7 @@ export function applyOfflineRuntimeOverlays({
     }
   }
 
-  return { agentRoot, gatewayServerPath, desktopMethods };
+  return { agentRoot, gatewayServerPath, dashboardServerPath, desktopMethods };
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";

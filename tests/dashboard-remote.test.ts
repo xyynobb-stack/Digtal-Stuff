@@ -31,6 +31,7 @@ import {
   probeDashboardWebSocket,
   remoteDashboardConnectionFromConfig,
   sshDashboardConnectionFromTunnel,
+  waitForDashboardReady,
 } from "../src/main/dashboard";
 
 let server: http.Server | null = null;
@@ -351,5 +352,45 @@ describe("probeDashboardWebSocket", () => {
     ).rejects.toThrow(
       /WebSocket is unavailable \(403: embedded chat disabled\)/,
     );
+  });
+});
+
+describe("waitForDashboardReady", () => {
+  // @lat: [[chat-commands#Layered desktop readiness]]
+  it("does not report ready until both health and chat WebSocket are ready", async () => {
+    const { url } = await startServer((req, res) => {
+      if (req.url === "/api/health") {
+        res.setHeader("content-type", "application/json");
+        res.end('{"ok":true}');
+        return;
+      }
+      res.statusCode = 404;
+      res.end();
+    });
+    server!.on("upgrade", (_req, socket) => {
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\n" +
+          "Upgrade: websocket\r\n" +
+          "Connection: Upgrade\r\n" +
+          "\r\n",
+      );
+      socket.destroy();
+    });
+    const stages: string[] = [];
+
+    await waitForDashboardReady(
+      {
+        baseUrl: url,
+        wsUrl: url.replace("http:", "ws:") + "/api/ws?token=token",
+        token: "token",
+        mode: "local",
+      },
+      2_000,
+      (event) => {
+        stages.push(event.stage);
+      },
+    );
+
+    expect(stages).toEqual(["dashboard.http_ready", "dashboard.chat_ready"]);
   });
 });

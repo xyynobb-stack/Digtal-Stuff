@@ -967,6 +967,8 @@ export function useDashboardChatTransport({
   // immediately. Reset on connection change (see the effect below).
   const dashboardUnavailableRef = useRef(false);
   const runtimeSessionIdRef = useRef<string | null>(null);
+  const runtimeSessionCreationRef =
+    useRef<Promise<EnsureDashboardRuntimeSessionResult> | null>(null);
   const storedSessionIdRef = useRef<string | null>(hermesSessionId);
   const messagesRef = useRef<ChatMessage[]>(messages);
   // Model changes can race a composer callback that was captured by the input
@@ -1035,6 +1037,7 @@ export function useDashboardChatTransport({
     if (hermesSessionId === storedSessionIdRef.current) return;
     storedSessionIdRef.current = hermesSessionId;
     runtimeSessionIdRef.current = null;
+    runtimeSessionCreationRef.current = null;
     reasoningSegmentClosedRef.current = false;
     appliedModelRef.current = null;
     resolvedRouteRef.current = null;
@@ -1058,6 +1061,7 @@ export function useDashboardChatTransport({
     clientRef.current = null;
     connectingRef.current = null;
     runtimeSessionIdRef.current = null;
+    runtimeSessionCreationRef.current = null;
     reasoningSegmentClosedRef.current = false;
     appliedModelRef.current = null;
     resolvedRouteRef.current = null;
@@ -1401,18 +1405,31 @@ export function useDashboardChatTransport({
         const stored = storedSessionIdRef.current;
         const excludeSeedUserId =
           options.excludeSeedUserId ?? activeTurnRef.current?.userId ?? null;
-        const response = await ensureDashboardRuntimeSession({
-          client,
-          contextFolder,
-          excludeSeedUserId,
-          forceCreate: options.forceCreate ?? false,
-          messages: messagesRef.current,
-          model: selected.model,
-          modelBaseUrl: selected.modelBaseUrl,
-          profile,
-          provider: selected.provider,
-          storedSessionId: stored,
-        });
+        let pending = runtimeSessionCreationRef.current;
+        if (!pending || options.forceCreate) {
+          pending = ensureDashboardRuntimeSession({
+            client,
+            contextFolder,
+            excludeSeedUserId,
+            forceCreate: options.forceCreate ?? false,
+            messages: messagesRef.current,
+            model: selected.model,
+            modelBaseUrl: selected.modelBaseUrl,
+            profile,
+            provider: selected.provider,
+            storedSessionId: stored,
+          });
+          runtimeSessionCreationRef.current = pending;
+        }
+
+        let response: EnsureDashboardRuntimeSessionResult;
+        try {
+          response = await pending;
+        } finally {
+          if (runtimeSessionCreationRef.current === pending) {
+            runtimeSessionCreationRef.current = null;
+          }
+        }
 
         if (stored && response.created) {
           pendingRecoveredContinuationRef.current =
@@ -1580,6 +1597,55 @@ export function useDashboardChatTransport({
     },
     [],
   );
+
+  useEffect(() => {
+    // @lat: [[chat-commands#Layered desktop readiness]]
+    // Local Desktop owns this backend, so establish the WebSocket, runtime
+    // session and selected model while the user is reading the composer. A
+    // send that races this effect shares both the connection promise and the
+    // session-creation promise instead of creating a second cold session.
+    if (
+      !enabled ||
+      connectionMode !== "local" ||
+      activeTurnRef.current !== null
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    recordTiming({ stage: "dashboard.session_prewarm_started" });
+    void (async () => {
+      const client = await ensureClient();
+      const sessionId = await ensureRuntimeSession(client);
+      await ensureSelectedModel(client, sessionId);
+      if (!cancelled) recordTiming({ stage: "dashboard.session_ready" });
+    })().catch((err) => {
+      if (cancelled) return;
+      recordTiming({
+        stage: "dashboard.session_failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      // Pre-warm is opportunistic. The normal send path retries the same
+      // readiness chain and remains the authoritative user-facing error path.
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTurnRef,
+    connectionMode,
+    contextFolder,
+    enabled,
+    ensureClient,
+    ensureRuntimeSession,
+    ensureSelectedModel,
+    model,
+    modelBaseUrl,
+    profile,
+    provider,
+    recordTiming,
+  ]);
 
   const syncDashboardAttachments = useCallback(
     async (
@@ -1754,6 +1820,7 @@ export function useDashboardChatTransport({
               .catch(() => undefined);
           }
           runtimeSessionIdRef.current = null;
+          runtimeSessionCreationRef.current = null;
           reasoningSegmentClosedRef.current = false;
           appliedModelRef.current = null;
         }

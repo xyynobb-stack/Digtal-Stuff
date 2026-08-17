@@ -34,9 +34,21 @@ Every dashboard turn first connects a JSON-RPC WebSocket to the gateway; that ha
 
 Local desktop chat has exactly one Dashboard owner: the renderer starts the managed `hermes serve --isolated` backend through [[src/main/dashboard.ts#startDashboard]]. The older main-process `TuiGatewayClient` remains permanently disabled by [[src/main/hermes.ts#shouldUseTuiGatewayClient]], so startup, Gateway launch, profile switches, and API fallback cannot warm a second `hermes dashboard` process on ports 9120-9199. The separate 8642 Gateway remains available for its API Server and automation responsibilities.
 
-Local startup publishes one shared readiness promise with the child process. Concurrent status/start callers await that promise instead of interpreting a live PID as a ready router. Readiness probes the lightweight `/api/health`; it does not open and discard a second WebSocket. The renderer's retained `/api/ws` connection is the authoritative transport check, avoiding the cold-start race where HTTP was alive but the WebSocket route was not yet usable.
+Local startup publishes one shared readiness promise with the child process. Concurrent status/start callers await that promise instead of interpreting a live PID as a ready router. Readiness first probes lightweight `/api/health`, then completes one short-lived `/api/ws` upgrade so the embedded chat handler is imported before readiness is published. The renderer subsequently owns the retained conversation socket.
 
 [[src/renderer/src/screens/Chat/dashboardGatewayClient.ts#DashboardGatewayClient#connect]] resolves on `open`, rejects on `error` or an early `close`, **and** rejects on a connect-timeout (default 10s). A WebSocket stuck in `CONNECTING` — TCP accepted but the upgrade never completing, e.g. when a busy renderer starves the handshake — fires none of those events on its own, so without the timer the connect promise never settles. When it never settles, `ensureClient` in [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] never resolves, its cached `connectingRef` promise poisons every later send, `setIsLoading(false)` never runs, and the user sees a permanent loading spinner. The timeout makes the promise reject so auto mode falls back to the legacy HTTP transport (and explicit-dashboard mode surfaces a real error) instead of hanging. Per-request calls are separately bounded by their own 30s timeout.
+
+## Layered desktop readiness
+
+Desktop readiness separates the minimum chat path from unrelated services, so the first user turn does not become an implicit backend-startup probe.
+
+Layer 1 is HTTP process/router liveness. After `/api/health` succeeds, the managed startup immediately performs a real `/api/ws` upgrade; only that success publishes `dashboard.ready`. The probe forces the embedded chat module to import before the renderer's shorter WebSocket timeout begins.
+
+Layer 2 is conversational readiness. While the user reads the composer, the local renderer opens its retained WebSocket, creates or resumes the runtime session, and applies the selected `{provider, model, base_url}` identity. A concurrent first send shares both connection and session-creation promises, so pre-warming cannot create a duplicate session.
+
+The packaged desktop server skips the full messaging `hermes_cli.gateway` warm-up before binding because desktop chat uses the embedded TUI gateway. Non-desktop launches preserve upstream warm-up behavior, while slash workers, plugins, MCP integrations, provider refresh, and other nonessential facilities remain lazy or background work.
+
+Timing records distinguish `dashboard.http_ready`, `dashboard.chat_ready`, `dashboard.session_prewarm_started`, and `dashboard.session_ready`; failures are diagnostic only, and the normal send path remains the authoritative retry and user-facing error path.
 
 ## Cold-session model selection
 

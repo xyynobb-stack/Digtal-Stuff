@@ -80,7 +80,7 @@ The offline runtime preparation also overlays the bundled browser navigation beh
 
 Cold-start diagnostics measure readiness and first-response latency without changing installation, transport, session, or model behavior.
 
-[[src/main/cold-start-timing.ts#ColdStartTimingTracker]] correlates desktop readiness, Runtime preparation, Dashboard spawn/readiness, send, WebSocket readiness, `prompt.submit`, the first non-empty model delta, the first text `message.delta`, and completion. [[src/main/cold-start-timing.ts#recordColdStartTiming]] writes JSONL records to `%APPDATA%\hermes-desktop\cold-start-timing.log`; records contain identifiers and durations but never prompt or response text.
+[[src/main/cold-start-timing.ts#ColdStartTimingTracker]] correlates desktop readiness, Runtime preparation, Dashboard spawn, HTTP/chat/session readiness, send, WebSocket readiness, `prompt.submit`, the first non-empty model delta, the first text `message.delta`, and completion. [[src/main/cold-start-timing.ts#recordColdStartTiming]] writes JSONL records to `%APPDATA%\hermes-desktop\cold-start-timing.log`; records contain identifiers and durations but never prompt or response text. The readiness stages expose where the layered startup budget is spent without putting prompt or response content in the log.
 
 The renderer records send and stream boundaries through the sandboxed preload bridge in [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]]. Every write is best-effort and exception-isolated, so a missing, locked, or unwritable diagnostic log cannot delay or fail installation and chat.
 

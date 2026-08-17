@@ -74,12 +74,14 @@ const activeRecoveryTurn: ActiveTurn = {
 function Harness({
   api,
   fallbackOnUnavailable = false,
+  initialActiveTurn = activeBadTurn,
   initialConnectionMode = "local",
   onDashboardUnavailable,
   setUsage = vi.fn() as SetUsageMock,
 }: {
   api: HarnessApi;
   fallbackOnUnavailable?: boolean;
+  initialActiveTurn?: ActiveTurn | null;
   initialConnectionMode?: "local" | "remote" | "ssh";
   onDashboardUnavailable?: (reason: string) => void;
   setUsage?: SetUsageMock;
@@ -97,7 +99,9 @@ function Harness({
   const [connectionMode, setConnectionMode] = useState<
     "local" | "remote" | "ssh"
   >(initialConnectionMode);
-  const activeTurnRef = useRef<ActiveTurn | null>({ ...activeBadTurn });
+  const activeTurnRef = useRef<ActiveTurn | null>(
+    initialActiveTurn ? { ...initialActiveTurn } : null,
+  );
   const transport = useDashboardChatTransport({
     activeTurnRef,
     contextFolder: null,
@@ -161,6 +165,55 @@ describe("useDashboardChatTransport recovery", () => {
           running: true,
         })),
       },
+    });
+  });
+
+  // @lat: [[chat-commands#Layered desktop readiness]]
+  it("prewarms one local runtime session and reuses it for the first send", async () => {
+    dashboardMock.request.mockImplementation(async (method) => {
+      if (method === "session.create") {
+        return {
+          session_id: "prewarmed-live",
+          stored_session_id: "prewarmed-stored",
+          info: {
+            model: "bad-model",
+            provider: "bad-provider",
+            route_id: "route:v1:prewarmed",
+          },
+        };
+      }
+      if (method === "model.resolve") {
+        return {
+          model: "bad-model",
+          provider: "bad-provider",
+          route_id: "route:v1:prewarmed",
+        };
+      }
+      return {};
+    });
+    const api: HarnessApi = {};
+    render(<Harness api={api} initialActiveTurn={null} />);
+
+    await waitFor(() => {
+      expect(
+        dashboardMock.request.mock.calls.filter(
+          ([method]) => method === "session.create",
+        ),
+      ).toHaveLength(1);
+    });
+
+    await act(async () => {
+      await api.send?.("hello after prewarm");
+    });
+
+    expect(
+      dashboardMock.request.mock.calls.filter(
+        ([method]) => method === "session.create",
+      ),
+    ).toHaveLength(1);
+    expect(dashboardMock.request).toHaveBeenCalledWith("prompt.submit", {
+      session_id: "prewarmed-live",
+      text: "hello after prewarm",
     });
   });
 

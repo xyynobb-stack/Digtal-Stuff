@@ -5,6 +5,7 @@ import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs"
 import { preparePortableGit } from "./prepare-portable-git.mjs";
 import { shouldCopyAgentRuntimeEntry } from "./offline-runtime-copy-filter.mjs";
 import { verifyDashboardWebDist } from "./verify-dashboard-web-dist.mjs";
+import { patchDashboardColdStartSource } from "./patch-dashboard-cold-start.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const outputRoot = path.join(projectRoot, "build", "offline-runtime");
@@ -44,6 +45,8 @@ const runtimeBuild = {
   generatedAt: new Date().toISOString(),
 };
 
+/** @param {string} src @param {string} dest @returns {void} */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 const copyRepo = (src, dest) =>
   fs.cpSync(src, dest, {
     recursive: true,
@@ -66,6 +69,17 @@ if (fs.existsSync(agentOverlayRoot)) {
 }
 verifyDashboardWebDist(
   path.join(outputRoot, "hermes-agent", "hermes_cli", "web_dist"),
+);
+const dashboardServerPath = path.join(
+  outputRoot,
+  "hermes-agent",
+  "hermes_cli",
+  "web_server.py",
+);
+fs.writeFileSync(
+  dashboardServerPath,
+  patchDashboardColdStartSource(fs.readFileSync(dashboardServerPath, "utf8")),
+  "utf8",
 );
 patchCronOutputDirectories(path.join(outputRoot, "hermes-agent"));
 
@@ -453,7 +467,7 @@ fs.writeFileSync(browserToolPath, browserTool, "utf8");
 fs.cpSync(pythonHome, path.join(outputRoot, "python-runtime"), {
   recursive: true,
   filter: (name) =>
-    !["__pycache__", "Lib\site-packages"].includes(path.basename(name)),
+    !["__pycache__", "Lib\\site-packages"].includes(path.basename(name)),
 });
 
 const envText = fs.existsSync(sourceEnv)

@@ -380,23 +380,36 @@ export function probeDashboardWebSocket(
   });
 }
 
-async function waitForDashboardReady(
+export async function waitForDashboardReady(
   connection: DashboardConnection,
   timeoutMs = 45_000,
+  record: typeof recordColdStartTiming = recordColdStartTiming,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
+  let httpReady = false;
   while (Date.now() < deadline) {
     try {
-      // Startup only needs process/router liveness. `/api/status` performs
-      // config, gateway and platform discovery and is intentionally much more
-      // expensive on a fresh Windows install. The renderer's real `/api/ws`
-      // connection is the transport readiness check.
-      await requestJson(`${connection.baseUrl}/api/health`, connection.token);
+      if (!httpReady) {
+        // Layer 1 is deliberately limited to process/router liveness.
+        // `/api/status` performs unrelated gateway/platform discovery.
+        await requestJson(`${connection.baseUrl}/api/health`, connection.token);
+        httpReady = true;
+        record({ stage: "dashboard.http_ready" });
+      }
+
+      // Layer 2 proves that the embedded chat module has imported and accepted
+      // a real WebSocket upgrade. A health-only success used to let the first
+      // user turn pay this cold import cost and fail its shorter connect timer.
+      const remainingMs = Math.max(1, deadline - Date.now());
+      await probeDashboardWebSocket(connection, Math.min(10_000, remainingMs));
+      record({ stage: "dashboard.chat_ready" });
       return;
     } catch (err) {
       lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) =>
+        setTimeout(resolve, httpReady ? 250 : 500),
+      );
     }
   }
   const message =

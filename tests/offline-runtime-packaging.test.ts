@@ -10,6 +10,7 @@ import { join } from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import { shouldCopyAgentRuntimeEntry } from "../scripts/offline-runtime-copy-filter.mjs";
 import { verifyDashboardWebDist } from "../scripts/verify-dashboard-web-dist.mjs";
+import { patchDashboardColdStartSource } from "../scripts/patch-dashboard-cold-start.mjs";
 
 const tempRoots: string[] = [];
 
@@ -58,6 +59,26 @@ describe("desktop Agent model-route overlay", () => {
     expect(source).toContain('@method("model.resolve")');
     expect(source).toContain('identity["route_id"] = "route:v1:"');
     expect(source).toContain('params.get("route_id")');
+  });
+});
+
+describe("desktop Dashboard cold-start patch", () => {
+  // @lat: [[chat-commands#Layered desktop readiness]]
+  it("keeps the full messaging gateway out of Desktop liveness", () => {
+    const source = `    # Import hermes_cli.gateway eagerly *before* the lifespan yield so the
+    # GIL-heavy .pyc compilation and Defender scan cost is absorbed during
+    # backend initialisation \u2014 before the server socket accepts probes.
+    # On Windows + Python 3.11 the import does not release the GIL, so
+    # run_in_executor still froze the event loop for 15-22 s, causing the
+    # Desktop's 10-second WebSocket ready-probe to time out (GH-73083).
+    _warm_gateway_module()
+`;
+
+    const patched = patchDashboardColdStartSource(source);
+
+    expect(patched).toContain('if os.getenv("HERMES_DESKTOP") != "1":');
+    expect(patched).toContain("        _warm_gateway_module()");
+    expect(patchDashboardColdStartSource(patched)).toBe(patched);
   });
 });
 

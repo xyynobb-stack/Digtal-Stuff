@@ -382,7 +382,7 @@ export function probeDashboardWebSocket(
 
 export async function waitForDashboardReady(
   connection: DashboardConnection,
-  timeoutMs = 45_000,
+  timeoutMs = 120_000,
   record: typeof recordColdStartTiming = recordColdStartTiming,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -781,7 +781,7 @@ export async function startDashboard(
   });
 
   try {
-    await waitForDashboardReady(connection, 45_000);
+    await waitForDashboardReady(connection, 120_000);
   } catch (err) {
     dashboards.delete(key);
     try {

@@ -190,6 +190,7 @@ def _install_desktop_runtime_timing(server) -> None:
     namespace["_desktop_runtime_timing_installed"] = True
 
     emit = namespace["_emit"]
+    phase_context = threading.local()
 
     def emit_timing(sid, stage, *, at_ms=None, detail=""):
         payload = {
@@ -204,13 +205,167 @@ def _install_desktop_runtime_timing(server) -> None:
             # Diagnostics must never change Agent construction or inference.
             pass
 
+    def current_timing_sid():
+        return getattr(phase_context, "sid", None)
+
+    def timed_callable(owner, attribute, phase, *, detail_factory=None):
+        """Wrap one synchronous cold-start boundary with metadata-only events."""
+        original = getattr(owner, attribute, None)
+        if not callable(original) or getattr(original, "_desktop_phase_timed", False):
+            return
+
+        @functools.wraps(original)
+        def wrapped(*args, **kwargs):
+            sid = current_timing_sid()
+            if not sid:
+                return original(*args, **kwargs)
+            detail_suffix = ""
+            if detail_factory is not None:
+                try:
+                    value = str(detail_factory(*args, **kwargs) or "").strip()
+                    if value:
+                        detail_suffix = f"; target={value}"
+                except Exception:
+                    pass
+            started = time.monotonic()
+            emit_timing(
+                sid,
+                "agent.phase_started",
+                detail=f"phase={phase}{detail_suffix}",
+            )
+            try:
+                result = original(*args, **kwargs)
+            except Exception as exc:
+                emit_timing(
+                    sid,
+                    "agent.phase_failed",
+                    detail=(
+                        f"phase={phase}{detail_suffix}; "
+                        f"elapsedMs={int((time.monotonic() - started) * 1000)}; "
+                        f"error={type(exc).__name__}: {exc}"
+                    ),
+                )
+                raise
+            emit_timing(
+                sid,
+                "agent.phase_ready",
+                detail=(
+                    f"phase={phase}{detail_suffix}; "
+                    f"elapsedMs={int((time.monotonic() - started) * 1000)}"
+                ),
+            )
+            return result
+
+        wrapped._desktop_phase_timed = True
+        setattr(owner, attribute, wrapped)
+
+    def install_agent_phase_timing(run_agent, ai_agent):
+        """Install process-wide wrappers; a thread-local sid scopes emissions."""
+        if namespace.get("_desktop_agent_phase_timing_installed"):
+            return
+        namespace["_desktop_agent_phase_timing_installed"] = True
+
+        for attribute, phase in (
+            ("_load_cfg", "config.load"),
+            ("_resolve_startup_runtime", "runtime.selection"),
+            ("_resolve_runtime_with_fallback", "runtime.resolve"),
+            ("_load_provider_routing", "provider.routing"),
+            ("_load_enabled_toolsets", "toolsets.config"),
+            ("_load_reasoning_config", "reasoning.config"),
+            ("_load_service_tier", "service_tier.config"),
+        ):
+            timed_callable(server, attribute, phase)
+
+        timed_callable(ai_agent, "__init__", "agent.instance_init")
+        timed_callable(ai_agent, "_get_transport", "transport.initialize")
+        timed_callable(ai_agent, "_create_openai_client", "model_client.create")
+        timed_callable(run_agent, "get_tool_definitions", "tools.snapshot")
+
+        try:
+            import model_tools
+
+            timed_callable(
+                model_tools,
+                "_compute_tool_definitions",
+                "tools.definitions",
+            )
+        except Exception:
+            pass
+
+        try:
+            import tools.registry as tool_registry
+
+            timed_callable(
+                tool_registry,
+                "_check_fn_cached",
+                "tool.availability_check",
+                detail_factory=lambda check_fn, *args, **kwargs: (
+                    f"{getattr(check_fn, '__module__', '')}."
+                    f"{getattr(check_fn, '__qualname__', getattr(check_fn, '__name__', 'unknown'))}"
+                ).strip("."),
+            )
+        except Exception:
+            pass
+
+        try:
+            import agent.ssl_guard as ssl_guard
+
+            timed_callable(
+                ssl_guard,
+                "verify_ca_bundle_with_fallback",
+                "tls.verify_ca_bundle",
+            )
+        except Exception:
+            pass
+
+        for module_name, phase in (
+            ("hermes_cli.mcp_startup", "mcp.shared_wait"),
+            ("tui_gateway.entry", "mcp.gateway_wait"),
+        ):
+            try:
+                module = __import__(module_name, fromlist=["wait_for_mcp_discovery"])
+                timed_callable(module, "wait_for_mcp_discovery", phase)
+            except Exception:
+                pass
+
     original_make_agent = namespace["_make_agent"]
 
     @functools.wraps(original_make_agent)
     def timed_make_agent(sid, *args, **kwargs):
         started = time.monotonic()
         emit_timing(sid, "agent.construct_started")
+        previous_sid = current_timing_sid()
+        phase_context.sid = sid
         try:
+            import_started = time.monotonic()
+            emit_timing(
+                sid,
+                "agent.phase_started",
+                detail="phase=run_agent.import",
+            )
+            try:
+                import run_agent
+                from run_agent import AIAgent
+            except Exception as exc:
+                emit_timing(
+                    sid,
+                    "agent.phase_failed",
+                    detail=(
+                        "phase=run_agent.import; "
+                        f"elapsedMs={int((time.monotonic() - import_started) * 1000)}; "
+                        f"error={type(exc).__name__}: {exc}"
+                    ),
+                )
+                raise
+            emit_timing(
+                sid,
+                "agent.phase_ready",
+                detail=(
+                    "phase=run_agent.import; "
+                    f"elapsedMs={int((time.monotonic() - import_started) * 1000)}"
+                ),
+            )
+            install_agent_phase_timing(run_agent, AIAgent)
             agent = original_make_agent(sid, *args, **kwargs)
         except Exception as exc:
             emit_timing(
@@ -222,6 +377,14 @@ def _install_desktop_runtime_timing(server) -> None:
                 ),
             )
             raise
+        finally:
+            if previous_sid is None:
+                try:
+                    del phase_context.sid
+                except AttributeError:
+                    pass
+            else:
+                phase_context.sid = previous_sid
 
         request_sequence = {"value": 0}
 

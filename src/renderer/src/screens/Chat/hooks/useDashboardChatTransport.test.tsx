@@ -217,6 +217,58 @@ describe("useDashboardChatTransport recovery", () => {
     });
   });
 
+  it("records one session prewarm when model hydration reruns the effect", async () => {
+    let releaseConnection!: () => void;
+    dashboardMock.connect.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          releaseConnection = () => resolve(undefined);
+        }),
+    );
+    dashboardMock.request.mockImplementation(async (method) => {
+      if (method === "session.create") {
+        return {
+          session_id: "hydrated-live",
+          stored_session_id: "hydrated-stored",
+          info: {
+            model: "hydrated-model",
+            provider: "hydrated-provider",
+            route_id: "route:v1:hydrated",
+          },
+        };
+      }
+      if (method === "model.resolve") {
+        return {
+          model: "hydrated-model",
+          provider: "hydrated-provider",
+          route_id: "route:v1:hydrated",
+        };
+      }
+      return {};
+    });
+    const api: HarnessApi = {};
+    render(<Harness api={api} initialActiveTurn={null} />);
+
+    await waitFor(() => expect(releaseConnection).toBeTypeOf("function"));
+    act(() => {
+      api.setProvider?.("hydrated-provider");
+      api.setModel?.("hydrated-model");
+    });
+    releaseConnection();
+
+    await waitFor(() => {
+      const stages = vi
+        .mocked(window.hermesAPI.recordColdStartTiming)
+        .mock.calls.map(([event]) => event.stage);
+      expect(
+        stages.filter((stage) => stage === "dashboard.session_prewarm_started"),
+      ).toHaveLength(1);
+      expect(
+        stages.filter((stage) => stage === "dashboard.session_ready"),
+      ).toHaveLength(1);
+    });
+  });
+
   it("requests a fresh WebSocket URL immediately before connecting", async () => {
     dashboardMock.request.mockImplementation(async (method) => {
       if (method === "session.create") {

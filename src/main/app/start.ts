@@ -2,9 +2,9 @@ import { app, BrowserWindow, nativeTheme, session, shell } from "electron";
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import icon from "../../../resources/icon.png?asset";
-import { getPublicConnectionConfig } from "../config";
+import { getConnectionConfig, getPublicConnectionConfig } from "../config";
 import { stopHealthPolling } from "../hermes";
-import { stopAllDashboards } from "../dashboard";
+import { startDashboard, stopAllDashboards } from "../dashboard";
 import { cleanupTempMediaFiles } from "../media";
 import { closeDbConnection } from "../db";
 import { stopSshTunnel } from "../ssh-tunnel";
@@ -22,6 +22,7 @@ import { buildMenu } from "./menu";
 import { setupUpdater } from "./updater";
 import { initializeBundledRuntime } from "../installer";
 import { recordColdStartTiming } from "../cold-start-timing";
+import { initializeRuntimeAndWarmLocalDashboard } from "../runtime-dashboard-warmup";
 
 const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "JingYuAI";
 const OPEN_DEVTOOLS_ON_START =
@@ -111,11 +112,15 @@ export function startMainProcess(): void {
     // A packaged offline runtime can contain tens of thousands of files. Start
     // preparing it only after the window exists, and keep the copy asynchronous
     // so first launch cannot crash while the main-process bundle is loading.
-    void initializeBundledRuntime().catch((error) => {
-      console.error(
-        "[installer] Bundled runtime initialization failed:",
-        error,
-      );
+    void initializeRuntimeAndWarmLocalDashboard({
+      initializeRuntime: initializeBundledRuntime,
+      getConnectionMode: () => getConnectionConfig().mode,
+      startLocalDashboard: () => startDashboard(),
+    }).catch((error) => {
+      // Runtime and Dashboard failures are still surfaced by their own timing
+      // stages and by the normal chat retry path. Proactive warm-up must never
+      // prevent the Electron window from remaining usable.
+      console.error("[startup] Runtime/Dashboard pre-warm failed:", error);
     });
     buildMenu({ getMainWindow: () => mainWindow, openExternalUrl });
 

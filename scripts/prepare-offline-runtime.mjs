@@ -5,7 +5,10 @@ import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs"
 import { preparePortableGit } from "./prepare-portable-git.mjs";
 import { shouldCopyAgentRuntimeEntry } from "./offline-runtime-copy-filter.mjs";
 import { verifyDashboardWebDist } from "./verify-dashboard-web-dist.mjs";
-import { patchDashboardColdStartSource } from "./patch-dashboard-cold-start.mjs";
+import {
+  patchDashboardCliColdStartSource,
+  patchDashboardColdStartSource,
+} from "./patch-dashboard-cold-start.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const outputRoot = path.join(projectRoot, "build", "offline-runtime");
@@ -79,6 +82,17 @@ const dashboardServerPath = path.join(
 fs.writeFileSync(
   dashboardServerPath,
   patchDashboardColdStartSource(fs.readFileSync(dashboardServerPath, "utf8")),
+  "utf8",
+);
+const dashboardCliPath = path.join(
+  outputRoot,
+  "hermes-agent",
+  "hermes_cli",
+  "main.py",
+);
+fs.writeFileSync(
+  dashboardCliPath,
+  patchDashboardCliColdStartSource(fs.readFileSync(dashboardCliPath, "utf8")),
   "utf8",
 );
 patchCronOutputDirectories(path.join(outputRoot, "hermes-agent"));

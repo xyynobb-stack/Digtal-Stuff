@@ -1613,10 +1613,15 @@ export function useDashboardChatTransport({
     }
 
     let cancelled = false;
-    recordTiming({ stage: "dashboard.session_prewarm_started" });
     void (async () => {
       const client = await ensureClient();
+      // Initial model/provider hydration can recreate this effect while the
+      // shared Dashboard connection is still starting. Only the latest effect
+      // advances into session pre-warm or records its timing boundary.
+      if (cancelled) return;
+      recordTiming({ stage: "dashboard.session_prewarm_started" });
       const sessionId = await ensureRuntimeSession(client);
+      if (cancelled) return;
       await ensureSelectedModel(client, sessionId);
       if (!cancelled) recordTiming({ stage: "dashboard.session_ready" });
     })().catch((err) => {

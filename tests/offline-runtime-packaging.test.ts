@@ -10,7 +10,10 @@ import { join } from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import { shouldCopyAgentRuntimeEntry } from "../scripts/offline-runtime-copy-filter.mjs";
 import { verifyDashboardWebDist } from "../scripts/verify-dashboard-web-dist.mjs";
-import { patchDashboardColdStartSource } from "../scripts/patch-dashboard-cold-start.mjs";
+import {
+  patchDashboardCliColdStartSource,
+  patchDashboardColdStartSource,
+} from "../scripts/patch-dashboard-cold-start.mjs";
 
 const tempRoots: string[] = [];
 
@@ -79,6 +82,26 @@ describe("desktop Dashboard cold-start patch", () => {
     expect(patched).toContain('if os.getenv("HERMES_DESKTOP") != "1":');
     expect(patched).toContain("        _warm_gateway_module()");
     expect(patchDashboardColdStartSource(patched)).toBe(patched);
+  });
+
+  it("keeps full plugin discovery ahead of non-Desktop binds only", () => {
+    const source = `    try:
+        from hermes_cli.plugins import discover_plugins
+        discover_plugins()
+    except Exception as exc:
+        # Discovery failures must not block dashboard startup outright —
+        # log and proceed; the gate's fail-closed branch will surface
+        # the missing-provider state if it matters.
+        print(f"⚠ Plugin discovery failed: {exc}", file=sys.stderr)
+`;
+
+    const patched = patchDashboardCliColdStartSource(source);
+
+    expect(patched).toContain('if os.getenv("HERMES_DESKTOP") != "1":');
+    expect(patched).toContain(
+      "Desktop HTTP readiness must not wait for full plugin discovery",
+    );
+    expect(patchDashboardCliColdStartSource(patched)).toBe(patched);
   });
 });
 

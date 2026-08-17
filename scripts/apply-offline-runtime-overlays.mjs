@@ -2,7 +2,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { patchDashboardColdStartSource } from "./patch-dashboard-cold-start.mjs";
+import {
+  patchDashboardCliColdStartSource,
+  patchDashboardColdStartSource,
+} from "./patch-dashboard-cold-start.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
@@ -38,7 +41,7 @@ export function patchGatewayServerSource(source) {
 }
 
 /**
- * @returns {{agentRoot: string, gatewayServerPath: string, desktopMethods: string}}
+ * @returns {{agentRoot: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, desktopMethods: string}}
  * Paths for the verified staged overlay.
  */
 export function applyOfflineRuntimeOverlays({
@@ -56,6 +59,7 @@ export function applyOfflineRuntimeOverlays({
     "hermes_cli",
     "web_server.py",
   );
+  const dashboardCliPath = path.join(agentRoot, "hermes_cli", "main.py");
   if (!fs.existsSync(agentRoot)) {
     throw new Error(`Staged Hermes Agent runtime not found: ${agentRoot}`);
   }
@@ -68,6 +72,9 @@ export function applyOfflineRuntimeOverlays({
   if (!fs.existsSync(dashboardServerPath)) {
     throw new Error(`Dashboard server not found: ${dashboardServerPath}`);
   }
+  if (!fs.existsSync(dashboardCliPath)) {
+    throw new Error(`Dashboard CLI not found: ${dashboardCliPath}`);
+  }
 
   fs.cpSync(overlayRoot, agentRoot, { recursive: true, force: true });
   const patched = patchGatewayServerSource(
@@ -77,6 +84,11 @@ export function applyOfflineRuntimeOverlays({
   fs.writeFileSync(
     dashboardServerPath,
     patchDashboardColdStartSource(fs.readFileSync(dashboardServerPath, "utf8")),
+    "utf8",
+  );
+  fs.writeFileSync(
+    dashboardCliPath,
+    patchDashboardCliColdStartSource(fs.readFileSync(dashboardCliPath, "utf8")),
     "utf8",
   );
 
@@ -98,7 +110,13 @@ export function applyOfflineRuntimeOverlays({
     }
   }
 
-  return { agentRoot, gatewayServerPath, dashboardServerPath, desktopMethods };
+  return {
+    agentRoot,
+    gatewayServerPath,
+    dashboardServerPath,
+    dashboardCliPath,
+    desktopMethods,
+  };
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";

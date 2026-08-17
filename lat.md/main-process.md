@@ -56,6 +56,8 @@ Release builds keep a Help-menu Developer Tools toggle as a production diagnosti
 
 Windows offline builds stage Python and the Hermes Agent with the installer so employee machines do not need a separate runtime download.
 
+After the packaged Runtime has been copied, repaired, validated, and activated, the main process immediately starts the local Dashboard readiness chain. Remote and SSH modes skip this local process, and a failed proactive warm-up leaves the normal chat start/retry path available.
+
 The desktop starts its local Agent backend with `hermes serve` from a dedicated empty profile directory. Ordinary chats therefore need no Dashboard SPA assets and cannot inherit the managed source tree's `AGENTS.md`; an explicitly selected project folder is still passed per session.
 
 [[src/main/installer.ts#initializeBundledRuntime]] starts first-launch preparation only after Electron has created the application window. The asynchronous operation is shared by concurrent callers; local installation checks await it, and a rejected attempt is cleared so the explicit retry screen can start a fresh attempt.

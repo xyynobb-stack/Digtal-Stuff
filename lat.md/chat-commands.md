@@ -42,13 +42,13 @@ Local startup publishes one shared readiness promise with the child process. Con
 
 Desktop readiness separates the minimum chat path from unrelated services, so the first user turn does not become an implicit backend-startup probe.
 
-Layer 1 is HTTP process/router liveness. After `/api/health` succeeds, the managed startup immediately performs a real `/api/ws` upgrade; only that success publishes `dashboard.ready`. The probe forces the embedded chat module to import before the renderer's shorter WebSocket timeout begins.
+Layer 1 is HTTP process/router liveness. The main process starts local Dashboard pre-warming immediately after the versioned Runtime promise reaches `runtime.ready`, independently of whether Chat has mounted. After `/api/health` succeeds, managed startup performs a real `/api/ws` upgrade; only that success publishes `dashboard.ready`.
 
 Layer 2 is conversational readiness. While the user reads the composer, the local renderer opens its retained WebSocket, creates or resumes the runtime session, and applies the selected `{provider, model, base_url}` identity. A concurrent first send shares both connection and session-creation promises, so pre-warming cannot create a duplicate session.
 
-The packaged desktop server skips the full messaging `hermes_cli.gateway` warm-up before binding because desktop chat uses the embedded TUI gateway. Non-desktop launches preserve upstream warm-up behavior, while slash workers, plugins, MCP integrations, provider refresh, and other nonessential facilities remain lazy or background work.
+The packaged desktop server skips both the full messaging `hermes_cli.gateway` warm-up and eager all-plugin discovery before binding because loopback desktop chat uses the embedded TUI gateway and needs no public-dashboard auth provider. Agent/tool/plugin paths retain idempotent on-demand discovery; non-Desktop dashboards preserve eager discovery for their fail-closed authentication gate. Slash workers, MCP integrations, provider refresh, and other nonessential facilities remain lazy or background work.
 
-Timing records distinguish `dashboard.http_ready`, `dashboard.chat_ready`, `dashboard.session_prewarm_started`, and `dashboard.session_ready`; failures are diagnostic only, and the normal send path remains the authoritative retry and user-facing error path.
+Timing records distinguish `dashboard.http_ready`, `dashboard.chat_ready`, `dashboard.session_prewarm_started`, and `dashboard.session_ready`; session timing begins only after the shared Dashboard connection succeeds, so transient renderer configuration hydration cannot emit duplicate attempts. Failures are diagnostic only, and the normal send path remains the authoritative retry and user-facing error path.
 
 ## Cold-session model selection
 

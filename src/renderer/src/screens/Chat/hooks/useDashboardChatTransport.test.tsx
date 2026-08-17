@@ -303,6 +303,15 @@ describe("useDashboardChatTransport recovery", () => {
     });
     await act(async () => {
       dashboardMock.onEvent?.({
+        type: "desktop.timing",
+        session_id: "live",
+        payload: {
+          stage: "agent.api_request_started",
+          at_ms: 4_500,
+          detail: "sequence=1; transport=stream",
+        },
+      });
+      dashboardMock.onEvent?.({
         type: "reasoning.delta",
         session_id: "live",
         payload: { text: "thinking" },
@@ -330,6 +339,17 @@ describe("useDashboardChatTransport recovery", () => {
     expect(
       stages.filter((stage) => stage === "chat.prompt_submit_sent"),
     ).toHaveLength(1);
+    expect(
+      stages.filter((stage) => stage === "agent.api_request_started"),
+    ).toHaveLength(1);
+    expect(window.hermesAPI.recordColdStartTiming).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: "agent.api_request_started",
+        atMs: 4_500,
+        turnId: expect.stringMatching(/^turn-/),
+        detail: "sequence=1; transport=stream",
+      }),
+    );
     expect(stages.filter((stage) => stage === "chat.first_delta")).toHaveLength(
       1,
     );

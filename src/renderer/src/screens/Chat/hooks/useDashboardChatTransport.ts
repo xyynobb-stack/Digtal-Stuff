@@ -15,7 +15,10 @@ import type { AgentCommandsCatalogResponse } from "../slash/types";
 import type { ActiveTurn, Attachment, ChatMessage, UsageState } from "../types";
 import { addAttachmentRefsToSessionEnvelope } from "../sessionSkillEnvelope";
 import type { DesktopSessionContinuationItem } from "../../../../../shared/session-continuation";
-import type { ColdStartTimingEvent } from "../../../../../shared/cold-start-timing";
+import {
+  isColdStartTimingStage,
+  type ColdStartTimingEvent,
+} from "../../../../../shared/cold-start-timing";
 
 interface SessionModelIdentity {
   api_mode?: string;
@@ -1087,6 +1090,22 @@ export function useDashboardChatTransport({
       logDashboardEvent(event, "accepted", runtimeSessionId);
 
       const timing = activeTimingRef.current;
+      if (event.type === "desktop.timing") {
+        const payload = asRecord(event.payload);
+        const stage = payload.stage;
+        if (isColdStartTimingStage(stage)) {
+          const backendAtMs = Number(payload.at_ms ?? payload.atMs);
+          recordTiming({
+            stage,
+            ...(Number.isFinite(backendAtMs) ? { atMs: backendAtMs } : {}),
+            ...(timing ? { turnId: timing.turnId } : {}),
+            ...(typeof payload.detail === "string"
+              ? { detail: payload.detail }
+              : {}),
+          });
+        }
+        return;
+      }
       if (
         timing &&
         (event.type === "message.delta" || event.type === "reasoning.delta")

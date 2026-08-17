@@ -86,6 +86,8 @@ Cold-start diagnostics measure readiness and first-response latency without chan
 
 The renderer records send and stream boundaries through the sandboxed preload bridge in [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]]. Every write is best-effort and exception-isolated, so a missing, locked, or unwritable diagnostic log cannot delay or fail installation and chat.
 
+Deferred session creation is explicitly separated from real Agent readiness. [[resources/hermes-agent-overlays/tui_gateway/methods_desktop_cold_start.py#_install_desktop_runtime_timing]] observes the existing Agent build, `AIAgent` construction, and streaming/non-streaming provider calls without waiting or changing their results, then emits metadata-only `desktop.timing` events. The renderer validates those stages before recording them, and the tracker derives `agentBuildToEventMs`, `agentConstructToEventMs`, and per-turn `apiRequestToEventMs`. A cold first turn can therefore be attributed to deferred construction or provider first-byte latency instead of treating `dashboard.session_ready` as proof that the Agent already exists.
+
 ## Packaged preset user content
 
 Windows and macOS offline builds can distribute builder-selected custom Skills and writing templates as immediately usable, editable content in every new installation.

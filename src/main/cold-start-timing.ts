@@ -7,6 +7,7 @@ interface TurnMilestones {
   sendAtMs?: number;
   promptSubmitAtMs?: number;
   firstDeltaAtMs?: number;
+  apiRequestStartedAtMs?: number;
 }
 
 export interface ColdStartTimingRecord extends ColdStartTimingEvent {
@@ -17,6 +18,9 @@ export interface ColdStartTimingRecord extends ColdStartTimingEvent {
   runtimeReadyToEventMs?: number;
   dashboardSpawnToEventMs?: number;
   dashboardReadyToEventMs?: number;
+  agentBuildToEventMs?: number;
+  agentConstructToEventMs?: number;
+  apiRequestToEventMs?: number;
   sendToEventMs?: number;
   promptSubmitToEventMs?: number;
 }
@@ -27,6 +31,8 @@ export class ColdStartTimingTracker {
   private runtimeReadyAtMs: number | undefined;
   private dashboardSpawnStartedAtMs: number | undefined;
   private dashboardReadyAtMs: number | undefined;
+  private agentBuildStartedAtMs: number | undefined;
+  private agentConstructStartedAtMs: number | undefined;
   private readonly turns = new Map<string, TurnMilestones>();
 
   constructor(private readonly appStartedAtMs: number) {}
@@ -53,6 +59,12 @@ export class ColdStartTimingTracker {
       this.dashboardSpawnStartedAtMs = atMs;
     }
     if (event.stage === "dashboard.ready") this.dashboardReadyAtMs = atMs;
+    if (event.stage === "agent.build_started") {
+      this.agentBuildStartedAtMs = atMs;
+    }
+    if (event.stage === "agent.construct_started") {
+      this.agentConstructStartedAtMs = atMs;
+    }
 
     let turn: TurnMilestones | undefined;
     if (turnId) {
@@ -63,6 +75,9 @@ export class ColdStartTimingTracker {
       }
       if (event.stage === "chat.first_delta" && !turn.firstDeltaAtMs) {
         turn.firstDeltaAtMs = atMs;
+      }
+      if (event.stage === "agent.api_request_started") {
+        turn.apiRequestStartedAtMs = atMs;
       }
       this.turns.set(turnId, turn);
     }
@@ -93,6 +108,22 @@ export class ColdStartTimingTracker {
         : {}),
       ...(this.dashboardReadyAtMs !== undefined
         ? { dashboardReadyToEventMs: elapsed(atMs, this.dashboardReadyAtMs) }
+        : {}),
+      ...(this.agentBuildStartedAtMs !== undefined
+        ? { agentBuildToEventMs: elapsed(atMs, this.agentBuildStartedAtMs) }
+        : {}),
+      ...(this.agentConstructStartedAtMs !== undefined
+        ? {
+            agentConstructToEventMs: elapsed(
+              atMs,
+              this.agentConstructStartedAtMs,
+            ),
+          }
+        : {}),
+      ...(turn?.apiRequestStartedAtMs !== undefined
+        ? {
+            apiRequestToEventMs: elapsed(atMs, turn.apiRequestStartedAtMs),
+          }
         : {}),
       ...(turn?.sendAtMs !== undefined
         ? { sendToEventMs: elapsed(atMs, turn.sendAtMs) }

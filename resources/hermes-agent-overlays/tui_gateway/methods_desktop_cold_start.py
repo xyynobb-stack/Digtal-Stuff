@@ -1,7 +1,10 @@
 """JingYuAI desktop cold-start RPCs installed into the packaged gateway."""
 
+import functools
 import hashlib
 import json
+import threading
+import time
 
 from .method_ctx import HandlerRegistry
 
@@ -169,6 +172,154 @@ def _resolve_model_route(ctx, requested, model, base_url):
             "api_mode": resolved_api_mode,
         }
     )
+
+
+# @lat: [[main-process#Cold-start timing diagnostics]]
+def _install_desktop_runtime_timing(server) -> None:
+    """Publish cold Agent/API boundaries without changing the chat path.
+
+    ``session.create`` deliberately returns a lightweight session before its
+    deferred ``AIAgent`` exists. The desktop therefore cannot infer Agent
+    readiness from the RPC response. These wrappers observe the existing build
+    and provider calls and emit metadata-only events over the session's
+    already-open transport. They never wait, retry, or alter a return value.
+    """
+    namespace = vars(server)
+    if namespace.get("_desktop_runtime_timing_installed"):
+        return
+    namespace["_desktop_runtime_timing_installed"] = True
+
+    emit = namespace["_emit"]
+
+    def emit_timing(sid, stage, *, at_ms=None, detail=""):
+        payload = {
+            "stage": stage,
+            "at_ms": int(at_ms if at_ms is not None else time.time() * 1000),
+        }
+        if detail:
+            payload["detail"] = str(detail)[:500]
+        try:
+            emit("desktop.timing", sid, payload)
+        except Exception:
+            # Diagnostics must never change Agent construction or inference.
+            pass
+
+    original_make_agent = namespace["_make_agent"]
+
+    @functools.wraps(original_make_agent)
+    def timed_make_agent(sid, *args, **kwargs):
+        started = time.monotonic()
+        emit_timing(sid, "agent.construct_started")
+        try:
+            agent = original_make_agent(sid, *args, **kwargs)
+        except Exception as exc:
+            emit_timing(
+                sid,
+                "agent.construct_failed",
+                detail=(
+                    f"elapsedMs={int((time.monotonic() - started) * 1000)}; "
+                    f"error={type(exc).__name__}: {exc}"
+                ),
+            )
+            raise
+
+        request_sequence = {"value": 0}
+
+        def wrap_provider_call(attribute, transport):
+            original_call = getattr(agent, attribute, None)
+            if not callable(original_call):
+                return
+
+            @functools.wraps(original_call)
+            def timed_provider_call(*call_args, **call_kwargs):
+                request_sequence["value"] += 1
+                sequence = request_sequence["value"]
+                request_started = time.monotonic()
+                identity = (
+                    f"sequence={sequence}; transport={transport}; "
+                    f"provider={getattr(agent, 'provider', '')}; "
+                    f"model={getattr(agent, 'model', '')}"
+                )
+                emit_timing(sid, "agent.api_request_started", detail=identity)
+                try:
+                    result = original_call(*call_args, **call_kwargs)
+                except Exception as exc:
+                    emit_timing(
+                        sid,
+                        "agent.api_request_failed",
+                        detail=(
+                            f"{identity}; "
+                            f"elapsedMs={int((time.monotonic() - request_started) * 1000)}; "
+                            f"error={type(exc).__name__}: {exc}"
+                        ),
+                    )
+                    raise
+                emit_timing(
+                    sid,
+                    "agent.api_request_finished",
+                    detail=(
+                        f"{identity}; "
+                        f"elapsedMs={int((time.monotonic() - request_started) * 1000)}"
+                    ),
+                )
+                return result
+
+            setattr(agent, attribute, timed_provider_call)
+
+        # Normal desktop chat uses the streaming call. Keep the non-streaming
+        # wrapper for providers that explicitly reject streaming; its transport
+        # label makes a nested fallback visible rather than ambiguous.
+        wrap_provider_call("_interruptible_streaming_api_call", "stream")
+        wrap_provider_call("_interruptible_api_call", "non_stream")
+        emit_timing(
+            sid,
+            "agent.construct_ready",
+            detail=f"elapsedMs={int((time.monotonic() - started) * 1000)}",
+        )
+        return agent
+
+    original_start_agent_build = namespace["_start_agent_build"]
+
+    @functools.wraps(original_start_agent_build)
+    def timed_start_agent_build(sid, session):
+        claim = object()
+        claimed = session.setdefault("_desktop_build_timing_claim", claim) is claim
+        started_at_ms = int(time.time() * 1000)
+        started = time.monotonic()
+        result = original_start_agent_build(sid, session)
+        if not claimed:
+            return result
+        if not session.get("agent_build_started"):
+            session.pop("_desktop_build_timing_claim", None)
+            return result
+
+        emit_timing(sid, "agent.build_started", at_ms=started_at_ms)
+
+        def watch_ready():
+            ready = session.get("agent_ready")
+            if ready is not None:
+                ready.wait()
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            error = str(session.get("agent_error") or "").strip()
+            emit_timing(
+                sid,
+                "agent.build_failed" if error else "agent.build_ready",
+                detail=(
+                    f"elapsedMs={elapsed_ms}; error={error}"
+                    if error
+                    else f"elapsedMs={elapsed_ms}"
+                ),
+            )
+
+        threading.Thread(
+            target=watch_ready,
+            name=f"desktop-agent-timing-{sid}",
+            daemon=True,
+        ).start()
+        return result
+
+    namespace["_make_agent"] = timed_make_agent
+    namespace["_start_agent_build"] = timed_start_agent_build
 
 
 # @lat: [[chat-commands#Cold-session model selection]]
@@ -483,4 +634,5 @@ def register(server) -> None:
     vars(server)["_desktop_original_session_create"] = vars(server)["_methods"][
         "session.create"
     ]
+    _install_desktop_runtime_timing(server)
     _registry.install(server)

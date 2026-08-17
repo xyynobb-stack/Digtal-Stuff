@@ -75,6 +75,16 @@ export default {
   dropToAttach: "Drop files to attach",
   dashboardUnavailableFallback:
     "Dashboard chat isn't available on this connection — using basic chat. Profile switching and session history are limited.",
+  initialization: {
+    title: "Preparing JingYuAI",
+    starting: "Starting the local Agent runtime…",
+    loading: "Loading the model configuration, skills, and tools…",
+    finalizing: "Finishing session initialization…",
+    connecting: "Initialization is complete. Connecting to the model…",
+    ready: "Initialization complete — JingYuAI is ready.",
+    failed: "Initialization failed. Review the details below and try again.",
+    elapsed: "Still working normally · {{seconds}}s elapsed",
+  },
   attachUnsupported: "{{name}}: file type not supported",
   attachImageTooLarge: "{{name}}: image too large (max 50 MB)",
   attachImageUncompressible:

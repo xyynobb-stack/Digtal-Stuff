@@ -29,6 +29,16 @@ export default {
   attach: "上传文件",
   removeAttachment: "移除附件",
   dropToAttach: "拖放文件以添加附件",
+  initialization: {
+    title: "正在准备 JingYuAI",
+    starting: "正在启动本地 Agent 运行环境…",
+    loading: "正在加载模型配置、技能和工具…",
+    finalizing: "正在完成会话初始化…",
+    connecting: "初始化已完成，正在连接模型…",
+    ready: "初始化完成，JingYuAI 已可以使用。",
+    failed: "初始化失败，请查看下方错误信息后重试。",
+    elapsed: "程序仍在正常工作 · 已用时 {{seconds}} 秒",
+  },
   attachUnsupported: "{{name}}：不支持的文件类型",
   attachImageTooLarge: "{{name}}：图片过大（最大 50 MB）",
   attachImageUncompressible:

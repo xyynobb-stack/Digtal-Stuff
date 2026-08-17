@@ -50,6 +50,8 @@ The packaged desktop server skips both the full messaging `hermes_cli.gateway` w
 
 Timing records distinguish `dashboard.http_ready`, `dashboard.chat_ready`, `dashboard.session_prewarm_started`, and `dashboard.session_ready`; session timing begins only after the shared Dashboard connection succeeds, so transient renderer configuration hydration cannot emit duplicate attempts. Failures are diagnostic only, and the normal send path remains the authoritative retry and user-facing error path.
 
+During a real deferred Agent build, the chat surface shows a non-blocking initialization status card driven by backend timing events rather than guessed timers. It identifies Agent startup, model/Skill/tool loading, finalization, and immediate first-model connection; elapsed time reassures the user that work is continuing. Success auto-dismisses, the first model delta clears a connecting card, and initialization failures remain visible with their diagnostic detail.
+
 ## Cold-session model selection
 
 A new dashboard chat must build its first live Agent with the model selected in the composer, even when Python and Skill discovery are still cold on a newly installed computer.

@@ -11,6 +11,7 @@ import { RemoteFolderPicker } from "./RemoteFolderPicker";
 import { SessionSkillPicker } from "./SessionSkillPicker";
 import { SessionTemplatePicker } from "./SessionTemplatePicker";
 import { WebPreviewPanel } from "./WebPreviewPanel";
+import { AgentInitializationBanner } from "./AgentInitializationBanner";
 import { useChatScroll } from "./hooks/useChatScroll";
 import { useChatIPC } from "./hooks/useChatIPC";
 import { useChatActions, parseBackgroundCommand } from "./hooks/useChatActions";
@@ -24,6 +25,7 @@ import { useLocalCommands } from "./hooks/useLocalCommands";
 import {
   dashboardChatEnabledForConnection,
   useDashboardChatTransport,
+  type AgentInitializationStatus,
 } from "./hooks/useDashboardChatTransport";
 import { useI18n } from "../../components/useI18n";
 import { buildChatTranscript } from "./transcriptUtils";
@@ -454,9 +456,7 @@ function Chat({
     );
   }, [hermesSessionId, sessionModelOverride]);
 
-  const {
-    set: setFastTier,
-  } = useFastMode(profile);
+  const { set: setFastTier } = useFastMode(profile);
   const { reasoningEffort, setReasoningEffort } = useReasoningEffort(profile);
 
   // Pre-send readiness — fail-open check that disables Send + shows
@@ -684,6 +684,15 @@ function Chat({
     });
   }, [t]);
 
+  const [agentInitialization, setAgentInitialization] =
+    useState<AgentInitializationStatus | null>(null);
+
+  useEffect(() => {
+    if (agentInitialization?.phase !== "ready") return;
+    const timer = window.setTimeout(() => setAgentInitialization(null), 2_000);
+    return () => window.clearTimeout(timer);
+  }, [agentInitialization]);
+
   const dashboardTransport = useDashboardChatTransport({
     activeTurnRef,
     contextFolder,
@@ -702,6 +711,7 @@ function Chat({
     setToolProgress,
     setUsage,
     onDashboardUnavailable: handleDashboardUnavailable,
+    onAgentInitializationChange: setAgentInitialization,
   });
 
   const [agentCommandCatalog, setAgentCommandCatalog] =
@@ -1086,6 +1096,9 @@ function Chat({
       onDrop={handleDrop}
     >
       <ConfigHealthBanner profile={profile} onOpenDiagnose={onOpenDiagnose} />
+      {agentInitialization && (
+        <AgentInitializationBanner status={agentInitialization} />
+      )}
 
       <div className="chat-body">
         <div className="chat-messages" ref={containerRef}>

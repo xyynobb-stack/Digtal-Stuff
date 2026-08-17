@@ -113,6 +113,21 @@ interface UseDashboardChatTransportArgs {
    *  unavailable on a remote/SSH connection and the renderer is falling back to
    *  the legacy HTTP transport. Lets the UI surface a one-time notice. */
   onDashboardUnavailable?: (reason: string) => void;
+  onAgentInitializationChange?: (
+    status: AgentInitializationStatus | null,
+  ) => void;
+}
+
+export interface AgentInitializationStatus {
+  detail?: string;
+  phase:
+    | "starting"
+    | "loading"
+    | "finalizing"
+    | "connecting"
+    | "ready"
+    | "failed";
+  startedAtMs: number;
 }
 
 interface UseDashboardChatTransportResult {
@@ -958,6 +973,7 @@ export function useDashboardChatTransport({
   setToolProgress,
   setUsage,
   onDashboardUnavailable,
+  onAgentInitializationChange,
 }: UseDashboardChatTransportArgs): UseDashboardChatTransportResult {
   const clientRef = useRef<DashboardGatewayClient | null>(null);
   const connectingRef = useRef<Promise<DashboardGatewayClient> | null>(null);
@@ -1007,6 +1023,7 @@ export function useDashboardChatTransport({
     firstMessageDeltaRecorded: boolean;
     turnId: string;
   } | null>(null);
+  const agentInitializationStartedAtRef = useRef<number | null>(null);
 
   const recordTiming = useCallback((event: ColdStartTimingEvent): void => {
     try {
@@ -1074,7 +1091,9 @@ export function useDashboardChatTransport({
     pendingClarifyRequestIdRef.current = null;
     pendingRecoveredContinuationRef.current = [];
     lastSyncedCwdRef.current = null;
-  }, [connectionMode, profile]);
+    agentInitializationStartedAtRef.current = null;
+    onAgentInitializationChange?.(null);
+  }, [connectionMode, onAgentInitializationChange, profile]);
 
   const handleGatewayEvent = useCallback(
     (event: DashboardStreamEvent): void => {
@@ -1095,14 +1114,58 @@ export function useDashboardChatTransport({
         const stage = payload.stage;
         if (isColdStartTimingStage(stage)) {
           const backendAtMs = Number(payload.at_ms ?? payload.atMs);
+          const eventAtMs = Number.isFinite(backendAtMs)
+            ? backendAtMs
+            : Date.now();
+          const detail =
+            typeof payload.detail === "string" ? payload.detail : undefined;
           recordTiming({
             stage,
-            ...(Number.isFinite(backendAtMs) ? { atMs: backendAtMs } : {}),
+            atMs: eventAtMs,
             ...(timing ? { turnId: timing.turnId } : {}),
-            ...(typeof payload.detail === "string"
-              ? { detail: payload.detail }
-              : {}),
+            ...(detail ? { detail } : {}),
           });
+
+          if (stage === "agent.build_started") {
+            agentInitializationStartedAtRef.current = eventAtMs;
+            onAgentInitializationChange?.({
+              phase: "starting",
+              startedAtMs: eventAtMs,
+            });
+          } else if (stage === "agent.construct_started") {
+            agentInitializationStartedAtRef.current ??= eventAtMs;
+            onAgentInitializationChange?.({
+              phase: "loading",
+              startedAtMs: agentInitializationStartedAtRef.current,
+            });
+          } else if (stage === "agent.construct_ready") {
+            onAgentInitializationChange?.({
+              phase: "finalizing",
+              startedAtMs: agentInitializationStartedAtRef.current ?? eventAtMs,
+            });
+          } else if (stage === "agent.build_ready") {
+            onAgentInitializationChange?.({
+              phase: "ready",
+              startedAtMs: agentInitializationStartedAtRef.current ?? eventAtMs,
+            });
+          } else if (
+            stage === "agent.api_request_started" &&
+            agentInitializationStartedAtRef.current !== null
+          ) {
+            onAgentInitializationChange?.({
+              phase: "connecting",
+              startedAtMs: agentInitializationStartedAtRef.current,
+            });
+          } else if (
+            stage === "agent.build_failed" ||
+            stage === "agent.construct_failed"
+          ) {
+            onAgentInitializationChange?.({
+              phase: "failed",
+              startedAtMs: agentInitializationStartedAtRef.current ?? eventAtMs,
+              ...(detail ? { detail } : {}),
+            });
+          }
         }
         return;
       }
@@ -1121,6 +1184,10 @@ export function useDashboardChatTransport({
               deltaKind:
                 event.type === "reasoning.delta" ? "reasoning" : "message",
             });
+          }
+          if (agentInitializationStartedAtRef.current !== null) {
+            agentInitializationStartedAtRef.current = null;
+            onAgentInitializationChange?.(null);
           }
           if (
             event.type === "message.delta" &&
@@ -1185,6 +1252,10 @@ export function useDashboardChatTransport({
       setMessages(nextMessages);
 
       if (event.type === "message.complete") {
+        if (agentInitializationStartedAtRef.current !== null) {
+          agentInitializationStartedAtRef.current = null;
+          onAgentInitializationChange?.(null);
+        }
         if (timing) {
           if (!failed && !timing.firstDeltaRecorded) {
             timing.firstDeltaRecorded = true;
@@ -1286,6 +1357,7 @@ export function useDashboardChatTransport({
       activeTurnRef,
       connectionMode,
       recordTiming,
+      onAgentInitializationChange,
       setIsLoading,
       setMessages,
       setToolProgress,

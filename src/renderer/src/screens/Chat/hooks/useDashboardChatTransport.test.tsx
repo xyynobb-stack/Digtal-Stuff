@@ -13,6 +13,7 @@ import type { DashboardRpcEvent } from "../dashboardGatewayClient";
 import {
   ensureDashboardRuntimeSession,
   useDashboardChatTransport,
+  type AgentInitializationStatus,
 } from "./useDashboardChatTransport";
 import type { ActiveTurn, ChatMessage, UsageState } from "../types";
 
@@ -77,6 +78,7 @@ function Harness({
   initialActiveTurn = activeBadTurn,
   initialConnectionMode = "local",
   onDashboardUnavailable,
+  onAgentInitializationChange,
   setUsage = vi.fn() as SetUsageMock,
 }: {
   api: HarnessApi;
@@ -84,6 +86,9 @@ function Harness({
   initialActiveTurn?: ActiveTurn | null;
   initialConnectionMode?: "local" | "remote" | "ssh";
   onDashboardUnavailable?: (reason: string) => void;
+  onAgentInitializationChange?: (
+    status: AgentInitializationStatus | null,
+  ) => void;
   setUsage?: SetUsageMock;
 }): null {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -119,6 +124,7 @@ function Harness({
     setToolProgress: vi.fn(),
     setUsage,
     onDashboardUnavailable,
+    onAgentInitializationChange,
   });
 
   useEffect(() => {
@@ -357,6 +363,64 @@ describe("useDashboardChatTransport recovery", () => {
       stages.filter((stage) => stage === "chat.first_message_delta"),
     ).toHaveLength(1);
     expect(stages.filter((stage) => stage === "chat.complete")).toHaveLength(1);
+  });
+
+  it("surfaces real Agent initialization stages and clears on first output", async () => {
+    dashboardMock.request.mockImplementation(async (method) => {
+      if (method === "session.create") {
+        return { session_id: "live", stored_session_id: "stored" };
+      }
+      return {};
+    });
+    const onInitializationChange = vi.fn();
+    const api: HarnessApi = {};
+    render(
+      <Harness
+        api={api}
+        onAgentInitializationChange={onInitializationChange}
+      />,
+    );
+
+    await act(async () => {
+      await api.send?.("initialize and answer");
+    });
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        type: "desktop.timing",
+        session_id: "live",
+        payload: { stage: "agent.build_started", at_ms: 1_000 },
+      });
+      dashboardMock.onEvent?.({
+        type: "desktop.timing",
+        session_id: "live",
+        payload: { stage: "agent.construct_started", at_ms: 1_100 },
+      });
+      dashboardMock.onEvent?.({
+        type: "desktop.timing",
+        session_id: "live",
+        payload: { stage: "agent.build_ready", at_ms: 2_000 },
+      });
+      dashboardMock.onEvent?.({
+        type: "desktop.timing",
+        session_id: "live",
+        payload: { stage: "agent.api_request_started", at_ms: 2_100 },
+      });
+      dashboardMock.onEvent?.({
+        type: "message.delta",
+        session_id: "live",
+        payload: { text: "ready" },
+      });
+    });
+
+    expect(onInitializationChange.mock.calls).toEqual(
+      expect.arrayContaining([
+        [{ phase: "starting", startedAtMs: 1_000 }],
+        [{ phase: "loading", startedAtMs: 1_000 }],
+        [{ phase: "ready", startedAtMs: 1_000 }],
+        [{ phase: "connecting", startedAtMs: 1_000 }],
+        [null],
+      ]),
+    );
   });
 
   it("creates a fresh Agent with the selected model instead of racing /model", async () => {

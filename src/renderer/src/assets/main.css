@@ -6105,6 +6105,69 @@ body:has(.shell-vibrant),
   color: var(--text-secondary);
 }
 
+.agent-initialization-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+  color: var(--text-primary);
+}
+
+.agent-initialization-banner > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.agent-initialization-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12.5px;
+}
+
+.agent-initialization-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.agent-initialization-copy small {
+  color: var(--text-secondary);
+}
+
+.agent-initialization-banner--ready {
+  border-bottom-color: color-mix(in srgb, var(--success) 34%, var(--border));
+  background: color-mix(in srgb, var(--success) 8%, var(--bg-secondary));
+}
+
+.agent-initialization-banner--ready > svg {
+  color: var(--success);
+}
+
+.agent-initialization-banner--failed {
+  border-bottom-color: color-mix(in srgb, var(--error) 40%, var(--border));
+  background: color-mix(in srgb, var(--error) 9%, var(--bg-secondary));
+}
+
+.agent-initialization-banner--failed > svg,
+.agent-initialization-error {
+  color: var(--error) !important;
+}
+
+.agent-initialization-spinner {
+  animation: agent-initialization-spin 1s linear infinite;
+}
+
+@keyframes agent-initialization-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ConfigHealthBanner — appears at the top of Chat when the startup
  * audit found inconsistencies. One-liner summary + link to Diagnose. */
 .config-health-banner {

@@ -63,6 +63,11 @@ describe("desktop Agent model-route overlay", () => {
     expect(source).toContain('@method("model.resolve")');
     expect(source).toContain('identity["route_id"] = "route:v1:"');
     expect(source).toContain('params.get("route_id")');
+    expect(source).toContain('params.get("selection_generation")');
+    expect(source).toContain('return _err(rid, 4093, "stale model selection")');
+    expect(source).toContain(
+      'vars(server)["_append_model_switch_marker"] = _discard_model_switch_marker',
+    );
   });
 });
 

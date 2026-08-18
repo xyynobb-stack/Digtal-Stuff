@@ -450,6 +450,7 @@ describe("useDashboardChatTransport recovery", () => {
         cols: 96,
         model: "bad-model",
         provider: "bad-provider",
+        selection_generation: 1,
       },
     });
     expect(requests.some((request) => request.method === "slash.exec")).toBe(
@@ -587,6 +588,7 @@ describe("useDashboardChatTransport recovery", () => {
           provider: "custom",
           model: "future-model",
           base_url: undefined,
+          selection_generation: 2,
         },
       },
     ]);
@@ -775,11 +777,21 @@ describe("useDashboardChatTransport recovery", () => {
     ).toEqual([
       {
         method: "session.create",
-        params: { cols: 96, model: "bad-model", provider: "bad-provider" },
+        params: {
+          cols: 96,
+          model: "bad-model",
+          provider: "bad-provider",
+          selection_generation: 1,
+        },
       },
       {
         method: "session.create",
-        params: { cols: 96, model: "good-model", provider: "good-provider" },
+        params: {
+          cols: 96,
+          model: "good-model",
+          provider: "good-provider",
+          selection_generation: 2,
+        },
       },
     ]);
     expect(requests).not.toContainEqual({
@@ -856,6 +868,7 @@ describe("useDashboardChatTransport recovery", () => {
         model: "good-model",
         provider: "good-provider",
         base_url: undefined,
+        selection_generation: 2,
       },
     });
     expect(requests).toContainEqual({
@@ -868,6 +881,95 @@ describe("useDashboardChatTransport recovery", () => {
     expect(requests.some((request) => request.method === "model.options")).toBe(
       false,
     );
+  });
+
+  it("lets the latest picker generation win an in-flight route resolution", async () => {
+    // @lat: [[model-selection#Latest picker identity wins#In-flight resolution cannot overwrite a newer pick]]
+    const requests: Array<{ method: string; params: unknown }> = [];
+    let releaseOldRoute = (): void => undefined;
+    const oldRouteBlocked = new Promise<void>((resolve) => {
+      releaseOldRoute = resolve;
+    });
+    let oldRouteStarted = (): void => undefined;
+    const oldRouteObserved = new Promise<void>((resolve) => {
+      oldRouteStarted = resolve;
+    });
+
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.create") {
+        return { session_id: "live", stored_session_id: "stored" };
+      }
+      if (method === "model.resolve") {
+        const requested = params as { model?: string };
+        if (requested.model === "bad-model") {
+          oldRouteStarted();
+          await oldRouteBlocked;
+          return {
+            route_id: "route:v1:old",
+            model: "bad-model",
+            provider: "bad-provider",
+          };
+        }
+        return {
+          route_id: "route:v1:latest",
+          model: "good-model",
+          provider: "good-provider",
+        };
+      }
+      if (method === "model.identity") {
+        return {
+          route_id: "route:v1:old",
+          model: "bad-model",
+          provider: "bad-provider",
+        };
+      }
+      if (method === "session.model.set") {
+        return {
+          route_id: "route:v1:latest",
+          model: "good-model",
+          provider: "good-provider",
+        };
+      }
+      return {};
+    });
+
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    let sendPromise: Promise<boolean | undefined>;
+    await act(async () => {
+      sendPromise = api.send!("use the latest route");
+      await oldRouteObserved;
+      api.setProvider?.("good-provider");
+      api.setModel?.("good-model");
+    });
+    releaseOldRoute();
+    await act(async () => {
+      await sendPromise!;
+    });
+
+    const mutations = requests.filter(
+      (request) =>
+        request.method === "session.model.set" ||
+        request.method === "prompt.submit",
+    );
+    expect(mutations).toEqual([
+      {
+        method: "session.model.set",
+        params: {
+          session_id: "live",
+          route_id: "route:v1:latest",
+          provider: "good-provider",
+          model: "good-model",
+          base_url: undefined,
+          selection_generation: 2,
+        },
+      },
+      {
+        method: "prompt.submit",
+        params: { session_id: "live", text: "use the latest route" },
+      },
+    ]);
   });
 
   it("discards an in-flight dashboard client after the connection mode changes", async () => {

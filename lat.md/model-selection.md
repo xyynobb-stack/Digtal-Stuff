@@ -46,7 +46,15 @@ Every dashboard send resolves its model, provider, and base URL from the latest 
 
 [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] keeps that routing identity in a live ref and reads it when creating, switching, and validating the runtime session. This prevents a previous conversation model from being reused by a stale UI callback while the picker already displays the new model.
 
+Model changes carry a monotonic `selection_generation` and run through one serialized renderer queue. Async resolution from an older generation is discarded, the gateway rejects generations older than the session's accepted value, and the send path crosses the route barrier again immediately before `prompt.submit`; therefore a slow prewarm cannot become the final mutation after a newer picker choice.
+
 New dashboard sessions send the full identity to `session.create`, whose desktop gateway wrapper resolves the final named route before deferred Agent construction. Resumed sessions use `session.model.set`, an in-process session RPC that bypasses slash-worker initialization and never writes the profile's global model setting.
+
+The rebuilt Agent system prompt is the sole model-identity instruction. The desktop overlay removes legacy user-role model-switch markers from live history and no longer persists new markers, because a resumed stale marker can contradict the actual route and make a correctly routed model report the previous model name.
+
+### In-flight resolution cannot overwrite a newer pick
+
+An older delayed `model.resolve` result is discarded after the picker generation changes; only the newest route may call `session.model.set`, and `prompt.submit` follows that accepted mutation.
 
 ## Desktop-only persistence
 

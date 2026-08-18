@@ -57,6 +57,48 @@ def _route_identity(route):
     return identity
 
 
+def _selection_generation(params):
+    """Parse the renderer's monotonic model-selection generation."""
+    try:
+        return max(0, int(params.get("selection_generation") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _remove_model_switch_markers(session):
+    """Keep runtime identity out of ordinary conversation history.
+
+    The Agent's rebuilt system prompt is the authoritative identity. Historical
+    user-role markers can survive a resume and contradict that prompt, making a
+    correctly routed model claim to be the previously selected model.
+    """
+    if not session:
+        return
+    predicate = globals().get("_is_model_switch_marker")
+    if not callable(predicate):
+        return
+
+    def remove():
+        history = session.setdefault("history", [])
+        filtered = [entry for entry in history if not predicate(entry)]
+        if len(filtered) != len(history):
+            history[:] = filtered
+            session["history_version"] = int(session.get("history_version", 0)) + 1
+
+    lock = session.get("history_lock")
+    if lock is not None:
+        with lock:
+            remove()
+    else:
+        remove()
+
+
+def _discard_model_switch_marker(session, *, model, provider):
+    """Replace legacy marker persistence with in-memory history sanitation."""
+    del model, provider
+    _remove_model_switch_markers(session)
+
+
 def _local_snapshot(ctx):
     """Build a provider/model snapshot without auth, network, or metadata I/O."""
     rows = []
@@ -565,6 +607,7 @@ def model_identity(rid, params: dict) -> dict:
     session = _sessions.get(params.get("session_id", ""))
     if not session:
         return _err(rid, 4007, "session not found")
+    _desktop_remove_model_switch_markers(session)
     agent = session.get("agent")
     if agent is not None:
         info = _session_info(agent, session)
@@ -601,6 +644,9 @@ def model_identity(rid, params: dict) -> dict:
             "requested_provider": str(override.get("requested_provider") or ""),
             "api_mode": effective_api_mode,
         }
+    )
+    identity["selection_generation"] = int(
+        session.get("model_selection_generation", 0)
     )
     return _ok(rid, identity)
 
@@ -643,6 +689,8 @@ def desktop_session_create(rid, params: dict) -> dict:
     session = _sessions.get(sid)
     if not session:
         return response
+    requested_generation = _desktop_selection_generation(params)
+    session["model_selection_generation"] = requested_generation
     home_token = None
     try:
         profile_home = session.get("profile_home")
@@ -675,6 +723,7 @@ def desktop_session_create(rid, params: dict) -> dict:
         info.update(
             route
         )
+        info["selection_generation"] = requested_generation
     except Exception as exc:
         _sessions.pop(sid, None)
         return _err(rid, 5030, f"model route resolution failed: {exc}")
@@ -694,6 +743,11 @@ def session_model_set(rid, params: dict) -> dict:
         return _err(rid, 4007, "session not found")
     if session.get("running"):
         return _err(rid, 4091, "cannot switch model while a turn is running")
+
+    requested_generation = _desktop_selection_generation(params)
+    current_generation = int(session.get("model_selection_generation", 0))
+    if requested_generation and requested_generation < current_generation:
+        return _err(rid, 4093, "stale model selection")
 
     requested_provider = str(params.get("provider") or "").strip()
     requested_model = str(params.get("model") or "").strip()
@@ -719,6 +773,9 @@ def session_model_set(rid, params: dict) -> dict:
         route_id = str(route.get("route_id") or "").strip()
         if requested_route_id and requested_route_id != route_id:
             return _err(rid, 4092, "model route changed; resolve it again")
+        current_generation = int(session.get("model_selection_generation", 0))
+        if requested_generation and requested_generation < current_generation:
+            return _err(rid, 4093, "stale model selection")
         raw = (
             f"{requested_model} --provider {route_provider}"
             if route_provider
@@ -776,6 +833,12 @@ def session_model_set(rid, params: dict) -> dict:
         session.setdefault("model_override", {})["route_id"] = effective_identity[
             "route_id"
         ]
+        if requested_generation:
+            session["model_selection_generation"] = requested_generation
+        effective_identity["selection_generation"] = int(
+            session.get("model_selection_generation", 0)
+        )
+        _desktop_remove_model_switch_markers(session)
         return _ok(
             rid,
             effective_identity,
@@ -790,12 +853,22 @@ def session_model_set(rid, params: dict) -> dict:
 def register(server) -> None:
     # HandlerRegistry rebinds handler globals to server.py; publish the helper
     # there first so model.options can call it after registration.
+    # These callbacks remain module-defined after publication, so bind the
+    # runtime predicate into their own globals as well as the server module.
+    globals()["_is_model_switch_marker"] = vars(server).get(
+        "_is_model_switch_marker"
+    )
     vars(server)["_desktop_local_model_options_snapshot"] = _local_snapshot
     vars(server)["_desktop_configured_models"] = _configured_models
     vars(server)["_desktop_route_identity"] = _route_identity
     vars(server)["_desktop_resolve_model_route"] = _resolve_model_route
+    vars(server)["_desktop_selection_generation"] = _selection_generation
+    vars(server)["_desktop_remove_model_switch_markers"] = (
+        _remove_model_switch_markers
+    )
     vars(server)["_desktop_original_session_create"] = vars(server)["_methods"][
         "session.create"
     ]
+    vars(server)["_append_model_switch_marker"] = _discard_model_switch_marker
     _install_desktop_runtime_timing(server)
     _registry.install(server)

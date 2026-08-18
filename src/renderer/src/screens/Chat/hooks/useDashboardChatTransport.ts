@@ -27,6 +27,7 @@ interface SessionModelIdentity {
   provider?: string;
   requested_provider?: string;
   route_id?: string;
+  selection_generation?: number;
 }
 
 interface SessionResponse {
@@ -78,6 +79,7 @@ interface EnsureDashboardRuntimeSessionParams {
   modelBaseUrl?: string;
   profile?: string;
   provider?: string;
+  selectionGeneration?: number;
   storedSessionId?: string | null;
 }
 
@@ -303,6 +305,9 @@ export async function ensureDashboardRuntimeSession(
       ...(createdModelOverride ?? {}),
       ...(createdModelOverride && params.modelBaseUrl
         ? { base_url: params.modelBaseUrl }
+        : {}),
+      ...(params.selectionGeneration
+        ? { selection_generation: params.selectionGeneration }
         : {}),
     },
   );
@@ -994,8 +999,26 @@ export function useDashboardChatTransport({
   // before React replaced it. Keep the routing identity in a live ref so even
   // that older callback switches/creates the runtime with the picker value
   // visible in the latest render.
-  const selectedModelRef = useRef({ model, modelBaseUrl, provider });
-  selectedModelRef.current = { model, modelBaseUrl, provider };
+  const selectionKey = dashboardSelectionKey(provider, model, modelBaseUrl);
+  const selectionKeyRef = useRef(selectionKey);
+  const selectionGenerationRef = useRef(1);
+  if (selectionKeyRef.current !== selectionKey) {
+    selectionKeyRef.current = selectionKey;
+    selectionGenerationRef.current += 1;
+  }
+  const selectedModelRef = useRef({
+    generation: selectionGenerationRef.current,
+    model,
+    modelBaseUrl,
+    provider,
+  });
+  selectedModelRef.current = {
+    generation: selectionGenerationRef.current,
+    model,
+    modelBaseUrl,
+    provider,
+  };
+  const modelSwitchQueueRef = useRef<Promise<void>>(Promise.resolve());
   const reasoningSegmentClosedRef = useRef(false);
   const appliedModelRef = useRef<string | null>(null);
   const resolvedRouteRef = useRef<{
@@ -1508,6 +1531,7 @@ export function useDashboardChatTransport({
             modelBaseUrl: selected.modelBaseUrl,
             profile,
             provider: selected.provider,
+            selectionGeneration: selected.generation,
             storedSessionId: stored,
           });
           runtimeSessionCreationRef.current = pending;
@@ -1545,14 +1569,16 @@ export function useDashboardChatTransport({
           };
         }
         createdWithSelectedModelRef.current =
-          responseIdentity?.model && responseIdentity.provider
+          response.created &&
+          responseIdentity?.model &&
+          responseIdentity.provider
             ? {
                 ...responseIdentity,
                 model: responseIdentity.model,
                 provider: responseIdentity.provider,
                 sessionId: targetSessionId,
               }
-            : response.createdModelOverride
+            : response.created && response.createdModelOverride
               ? {
                   ...response.createdModelOverride,
                   sessionId: targetSessionId,
@@ -1594,97 +1620,126 @@ export function useDashboardChatTransport({
       client: DashboardGatewayClient,
       sessionId: string,
     ): Promise<string> => {
-      const selected = selectedModelRef.current;
-      const selectedModel = selected.model;
-      const selectedProvider = selected.provider;
-      const command = dashboardModelCommand(selectedProvider, selectedModel);
-      if (!command) return sessionId;
-
-      const selectionKey = dashboardSelectionKey(
-        selectedProvider,
-        selectedModel,
-        selected.modelBaseUrl,
-      );
-      let expected =
-        resolvedRouteRef.current?.selectionKey === selectionKey
-          ? resolvedRouteRef.current.identity
-          : null;
-      if (!expected) {
-        try {
-          const resolved = await client.request<SessionModelIdentity>(
-            "model.resolve",
-            {
-              provider: selectedProvider,
-              model: selectedModel,
-              base_url: selected.modelBaseUrl,
-            },
-          );
-          expected =
-            resolved?.route_id || (resolved?.provider && resolved?.model)
-              ? resolved
-              : { provider: selectedProvider, model: selectedModel };
-          resolvedRouteRef.current = { identity: expected, selectionKey };
-        } catch (err) {
-          if (!dashboardRpcMethodUnsupportedError(err)) throw err;
-          expected = { provider: selectedProvider, model: selectedModel };
-        }
-      }
-
-      const appliedKey = `${sessionId}\n${expected.route_id || `${expected.provider || ""}/${expected.model || ""}`}`;
-      if (appliedModelRef.current === appliedKey) return sessionId;
-
-      const createdWithModel = createdWithSelectedModelRef.current;
-      if (
-        createdWithModel?.sessionId === sessionId &&
-        dashboardRouteMatches(expected, createdWithModel)
-      ) {
-        createdWithSelectedModelRef.current = null;
-        appliedModelRef.current = appliedKey;
-        return sessionId;
-      }
-      const switchAndValidate = async (
-        targetSessionId: string,
-      ): Promise<string> => {
-        const readIdentity = async (): Promise<SessionModelIdentity | null> => {
-          try {
-            return await client.request<SessionModelIdentity>(
-              "model.identity",
-              { session_id: targetSessionId },
+      // Model hydration, picker changes and a stale composer callback can all
+      // arrive concurrently. Serialize them and keep retrying until the task
+      // that commits is for the latest picker generation. An older RPC may
+      // finish, but it can never be the last mutation before prompt.submit.
+      for (;;) {
+        const selected = selectedModelRef.current;
+        const generation = selected.generation;
+        const pending = modelSwitchQueueRef.current
+          .catch(() => undefined)
+          .then(async (): Promise<string | null> => {
+            if (selectedModelRef.current.generation !== generation) return null;
+            const selectedModel = selected.model;
+            const selectedProvider = selected.provider;
+            const command = dashboardModelCommand(
+              selectedProvider,
+              selectedModel,
             );
-          } catch (err) {
-            if (dashboardRpcMethodUnsupportedError(err)) return null;
-            throw err;
-          }
-        };
-        const before = await readIdentity();
-        if (before && dashboardRouteMatches(expected, before)) {
-          appliedModelRef.current = appliedKey;
-          return targetSessionId;
-        }
+            if (!command) return sessionId;
 
-        const switched = await client.request<SessionModelIdentity>(
-          "session.model.set",
-          {
-            session_id: targetSessionId,
-            ...(expected.route_id ? { route_id: expected.route_id } : {}),
-            provider: selectedProvider,
-            model: selectedModel,
-            base_url: selected.modelBaseUrl,
-          },
+            const currentSelectionKey = dashboardSelectionKey(
+              selectedProvider,
+              selectedModel,
+              selected.modelBaseUrl,
+            );
+            let expected =
+              resolvedRouteRef.current?.selectionKey === currentSelectionKey
+                ? resolvedRouteRef.current.identity
+                : null;
+            if (!expected) {
+              try {
+                const resolved = await client.request<SessionModelIdentity>(
+                  "model.resolve",
+                  {
+                    provider: selectedProvider,
+                    model: selectedModel,
+                    base_url: selected.modelBaseUrl,
+                  },
+                );
+                if (selectedModelRef.current.generation !== generation) {
+                  return null;
+                }
+                expected =
+                  resolved?.route_id || (resolved?.provider && resolved?.model)
+                    ? resolved
+                    : { provider: selectedProvider, model: selectedModel };
+                resolvedRouteRef.current = {
+                  identity: expected,
+                  selectionKey: currentSelectionKey,
+                };
+              } catch (err) {
+                if (!dashboardRpcMethodUnsupportedError(err)) throw err;
+                expected = { provider: selectedProvider, model: selectedModel };
+              }
+            }
+
+            if (selectedModelRef.current.generation !== generation) return null;
+            const appliedKey = `${sessionId}\n${expected.route_id || `${expected.provider || ""}/${expected.model || ""}`}`;
+            if (appliedModelRef.current === appliedKey) return sessionId;
+
+            const createdWithModel = createdWithSelectedModelRef.current;
+            if (
+              createdWithModel?.sessionId === sessionId &&
+              dashboardRouteMatches(expected, createdWithModel)
+            ) {
+              createdWithSelectedModelRef.current = null;
+              appliedModelRef.current = appliedKey;
+              return sessionId;
+            }
+
+            const readIdentity =
+              async (): Promise<SessionModelIdentity | null> => {
+                try {
+                  return await client.request<SessionModelIdentity>(
+                    "model.identity",
+                    { session_id: sessionId },
+                  );
+                } catch (err) {
+                  if (dashboardRpcMethodUnsupportedError(err)) return null;
+                  throw err;
+                }
+              };
+            const before = await readIdentity();
+            if (selectedModelRef.current.generation !== generation) return null;
+            if (before && dashboardRouteMatches(expected, before)) {
+              appliedModelRef.current = appliedKey;
+              return sessionId;
+            }
+
+            const switched = await client.request<SessionModelIdentity>(
+              "session.model.set",
+              {
+                session_id: sessionId,
+                ...(expected.route_id ? { route_id: expected.route_id } : {}),
+                provider: selectedProvider,
+                model: selectedModel,
+                base_url: selected.modelBaseUrl,
+                selection_generation: generation,
+              },
+            );
+
+            if (selectedModelRef.current.generation !== generation) return null;
+            const live = switched || (await readIdentity());
+            if (live && !dashboardRouteMatches(expected, live)) {
+              appliedModelRef.current = null;
+              throw new DashboardModelRouteMismatchError(
+                `JingYuAI dashboard did not activate model route ${expected.route_id || `${expected.provider || "unknown"}/${expected.model || "unknown"}`}; live route is ${live.route_id || `${live.provider || "unknown"}/${live.model || "unknown"}`}`,
+              );
+            }
+            appliedModelRef.current = appliedKey;
+            return sessionId;
+          });
+        modelSwitchQueueRef.current = pending.then(
+          () => undefined,
+          () => undefined,
         );
-
-        const live = switched || (await readIdentity());
-        if (live && !dashboardRouteMatches(expected, live)) {
-          appliedModelRef.current = null;
-          throw new DashboardModelRouteMismatchError(
-            `JingYuAI dashboard did not activate model route ${expected.route_id || `${expected.provider || "unknown"}/${expected.model || "unknown"}`}; live route is ${live.route_id || `${live.provider || "unknown"}/${live.model || "unknown"}`}`,
-          );
+        const result = await pending;
+        if (result && selectedModelRef.current.generation === generation) {
+          return result;
         }
-        appliedModelRef.current = appliedKey;
-        return targetSessionId;
-      };
-
-      return switchAndValidate(sessionId);
+      }
     },
     [],
   );
@@ -1956,8 +2011,15 @@ export function useDashboardChatTransport({
           dashboardText,
           syncedAttachments.refs,
         );
+        // Attachments may take long enough for the picker to change. Re-enter
+        // the serialized route barrier immediately before submission so the
+        // prompt and the UI selection always use the same effective model.
+        const submissionSessionId = await ensureSelectedModel(
+          client,
+          selectedSessionId,
+        );
         await submitDashboardPromptWithRecovery(client, {
-          sessionId: selectedSessionId,
+          sessionId: submissionSessionId,
           storedSessionId: storedSessionIdRef.current,
           text: submitText,
           profile,

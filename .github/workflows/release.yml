@@ -157,9 +157,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Could not upgrade pip in bundled venv" }
           Push-Location $agentRoot
           try {
-            & $venvPython -m pip install --disable-pip-version-check -e "."
+            & $venvPython -m pip install --disable-pip-version-check -e ".[edge-tts]"
             if ($LASTEXITCODE -ne 0) { throw "Could not install Hermes Agent into bundled venv" }
-            & $venvPython -c "import hermes_cli, run_agent"
+            & $venvPython -c "import hermes_cli, run_agent, edge_tts"
             if ($LASTEXITCODE -ne 0) { throw "Bundled Hermes Agent import check failed" }
             & $venvPython -c "from tui_gateway import server; required = {'model.options', 'model.identity', 'model.resolve', 'session.create', 'session.model.set'}; missing = required - server._methods.keys(); assert not missing, missing"
             if ($LASTEXITCODE -ne 0) { throw "Desktop Agent RPC registration check failed" }

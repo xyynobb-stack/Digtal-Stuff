@@ -40,8 +40,82 @@ export function patchGatewayServerSource(source) {
     );
 }
 
+/** @returns {string} TTS source whose availability probe never installs packages. */
+export function patchTtsRequirementsSource(source) {
+  if (
+    source.includes("def _tts_lazy_feature_available(feature: str) -> bool:")
+  ) {
+    return source;
+  }
+  const normalized = source.replace(/\r\n/g, "\n");
+
+  const functionAnchor = `def check_tts_requirements() -> bool:`;
+  const edgeAnchor = `    if provider == "edge":
+        try:
+            _import_edge_tts()
+            return True
+        except ImportError:
+            return _check_neutts_available()`;
+  const elevenLabsAnchor = `    if provider == "elevenlabs":
+        try:
+            _import_elevenlabs()
+        except ImportError:
+            return False
+        return bool(_resolve_provider_key("ELEVENLABS_API_KEY", "elevenlabs"))`;
+  const mistralAnchor = `    if provider == "mistral":
+        try:
+            _import_mistral_client()
+        except ImportError:
+            return False
+        return bool(_resolve_provider_key("MISTRAL_API_KEY", "mistral"))`;
+  for (const anchor of [
+    functionAnchor,
+    edgeAnchor,
+    elevenLabsAnchor,
+    mistralAnchor,
+  ]) {
+    if (!normalized.includes(anchor)) {
+      throw new Error("TTS requirements patch markers were not found");
+    }
+  }
+
+  const pureAvailabilityHelper = `def _tts_lazy_feature_available(feature: str) -> bool:
+    """Check an optional TTS dependency without installing or importing it."""
+    try:
+        from tools.lazy_deps import is_available
+
+        return bool(is_available(feature))
+    except Exception:
+        return False
+
+
+`;
+
+  return normalized
+    .replace(functionAnchor, `${pureAvailabilityHelper}${functionAnchor}`)
+    .replace(
+      edgeAnchor,
+      `    if provider == "edge":
+        return _tts_lazy_feature_available("tts.edge") or _check_neutts_available()`,
+    )
+    .replace(
+      elevenLabsAnchor,
+      `    if provider == "elevenlabs":
+        return _tts_lazy_feature_available("tts.elevenlabs") and bool(
+            _resolve_provider_key("ELEVENLABS_API_KEY", "elevenlabs")
+        )`,
+    )
+    .replace(
+      mistralAnchor,
+      `    if provider == "mistral":
+        return _tts_lazy_feature_available("tts.mistral") and bool(
+            _resolve_provider_key("MISTRAL_API_KEY", "mistral")
+        )`,
+    );
+}
+
 /**
- * @returns {{agentRoot: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, desktopMethods: string}}
+ * @returns {{agentRoot: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, ttsToolPath: string, desktopMethods: string}}
  * Paths for the verified staged overlay.
  */
 export function applyOfflineRuntimeOverlays({
@@ -60,6 +134,7 @@ export function applyOfflineRuntimeOverlays({
     "web_server.py",
   );
   const dashboardCliPath = path.join(agentRoot, "hermes_cli", "main.py");
+  const ttsToolPath = path.join(agentRoot, "tools", "tts_tool.py");
   if (!fs.existsSync(agentRoot)) {
     throw new Error(`Staged Hermes Agent runtime not found: ${agentRoot}`);
   }
@@ -75,6 +150,9 @@ export function applyOfflineRuntimeOverlays({
   if (!fs.existsSync(dashboardCliPath)) {
     throw new Error(`Dashboard CLI not found: ${dashboardCliPath}`);
   }
+  if (!fs.existsSync(ttsToolPath)) {
+    throw new Error(`TTS tool not found: ${ttsToolPath}`);
+  }
 
   fs.cpSync(overlayRoot, agentRoot, { recursive: true, force: true });
   const patched = patchGatewayServerSource(
@@ -89,6 +167,11 @@ export function applyOfflineRuntimeOverlays({
   fs.writeFileSync(
     dashboardCliPath,
     patchDashboardCliColdStartSource(fs.readFileSync(dashboardCliPath, "utf8")),
+    "utf8",
+  );
+  fs.writeFileSync(
+    ttsToolPath,
+    patchTtsRequirementsSource(fs.readFileSync(ttsToolPath, "utf8")),
     "utf8",
   );
 
@@ -115,6 +198,7 @@ export function applyOfflineRuntimeOverlays({
     gatewayServerPath,
     dashboardServerPath,
     dashboardCliPath,
+    ttsToolPath,
     desktopMethods,
   };
 }

@@ -88,6 +88,14 @@ The renderer records send and stream boundaries through the sandboxed preload br
 
 Deferred session creation is explicitly separated from real Agent readiness. [[resources/hermes-agent-overlays/tui_gateway/methods_desktop_cold_start.py#_install_desktop_runtime_timing]] observes the existing Agent build, `AIAgent` construction, and streaming/non-streaming provider calls without waiting or changing their results, then emits metadata-only `desktop.timing` events. Agent construction also reports nested phase boundaries for the `run_agent` import, MCP waits, configuration and runtime resolution, transport and model-client creation, tool-definition snapshots, individual tool availability probes, and TLS setup. The renderer validates those stages before recording them, and the tracker derives `agentBuildToEventMs`, `agentConstructToEventMs`, and per-turn `apiRequestToEventMs`. A cold first turn can therefore be attributed to a specific synchronous initialization phase or provider first-byte latency instead of treating `dashboard.session_ready` as proof that the Agent already exists.
 
+## Optional tool availability
+
+Optional tool probes must remain bounded and side-effect-free so Agent construction never downloads packages required only by an unused tool.
+
+`scripts/apply-offline-runtime-overlays.mjs` rewrites packaged [[build/offline-runtime/hermes-agent/tools/tts_tool.py#check_tts_requirements]] availability checks to inspect registered lazy dependencies without importing provider SDKs or invoking their lazy installers. Missing optional speech packages remove only the TTS tool; they do not block text chat.
+
+Because Edge is the desktop's default TTS provider, stable and beta Windows workflows install the `edge-tts` Agent extra into the bundled virtual environment and verify that `edge_tts` imports before packaging. This keeps normal voice support offline-ready while retaining fail-fast behavior if a future package is incomplete.
+
 ## Packaged preset user content
 
 Windows and macOS offline builds can distribute builder-selected custom Skills and writing templates as immediately usable, editable content in every new installation.

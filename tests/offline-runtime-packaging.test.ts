@@ -14,6 +14,7 @@ import {
   patchDashboardCliColdStartSource,
   patchDashboardColdStartSource,
 } from "../scripts/patch-dashboard-cold-start.mjs";
+import { patchTtsRequirementsSource } from "../scripts/apply-offline-runtime-overlays.mjs";
 
 const tempRoots: string[] = [];
 
@@ -102,6 +103,50 @@ describe("desktop Dashboard cold-start patch", () => {
       "Desktop HTTP readiness must not wait for full plugin discovery",
     );
     expect(patchDashboardCliColdStartSource(patched)).toBe(patched);
+  });
+});
+
+describe("desktop TTS availability patch", () => {
+  // @lat: [[main-process#Optional tool availability]]
+  it("keeps optional dependency installation out of Agent construction", () => {
+    const source = `def check_tts_requirements() -> bool:
+    if provider == "edge":
+        try:
+            _import_edge_tts()
+            return True
+        except ImportError:
+            return _check_neutts_available()
+    if provider == "elevenlabs":
+        try:
+            _import_elevenlabs()
+        except ImportError:
+            return False
+        return bool(_resolve_provider_key("ELEVENLABS_API_KEY", "elevenlabs"))
+    if provider == "mistral":
+        try:
+            _import_mistral_client()
+        except ImportError:
+            return False
+        return bool(_resolve_provider_key("MISTRAL_API_KEY", "mistral"))
+`;
+
+    const patched = patchTtsRequirementsSource(source);
+
+    expect(patched).toContain("def _tts_lazy_feature_available");
+    expect(patched).toContain('_tts_lazy_feature_available("tts.edge")');
+    expect(patched).not.toContain("            _import_edge_tts()");
+    expect(patchTtsRequirementsSource(patched)).toBe(patched);
+  });
+
+  it("bundles the default Edge provider in both Windows release channels", () => {
+    for (const workflow of ["release.yml", "beta-release.yml"]) {
+      const source = readFileSync(
+        join(process.cwd(), ".github", "workflows", workflow),
+        "utf8",
+      );
+      expect(source).toContain('-e ".[edge-tts]"');
+      expect(source).toContain("import hermes_cli, run_agent, edge_tts");
+    }
   });
 });
 

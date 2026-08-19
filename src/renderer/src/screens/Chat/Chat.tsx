@@ -332,6 +332,8 @@ function Chat({
     SessionModelOverride | undefined
   >(undefined);
   const sessionModelOverrideLoadedRef = useRef<boolean>(!initialSessionId);
+  const modelPickedByUserRef = useRef(false);
+  const resumedModelIdentityAppliedRef = useRef(false);
   const dragCounter = useRef(0);
   const chatInputRef = useRef<ChatInputHandle>(null);
   const queueRef = useRef<QueuedMessage[]>([]);
@@ -425,7 +427,12 @@ function Chat({
       try {
         const override =
           await window.hermesAPI.getSessionModelOverride(initialSessionId);
-        if (!cancelled && override) {
+        if (
+          !cancelled &&
+          override &&
+          !modelPickedByUserRef.current &&
+          !resumedModelIdentityAppliedRef.current
+        ) {
           setSessionModelOverride(override);
           await modelConfig.selectModel(
             override.provider,
@@ -656,6 +663,9 @@ function Chat({
     // Clearing the conversation reverts to the global default model — the
     // session-scoped pick belongs to the conversation being cleared (#688).
     setSessionModelOverride(undefined);
+    modelPickedByUserRef.current = false;
+    resumedModelIdentityAppliedRef.current = false;
+    sessionModelOverrideLoadedRef.current = true;
     void modelConfig.reload();
     activeTurnRef.current = null;
     setUsage(null);
@@ -693,6 +703,30 @@ function Chat({
     return () => window.clearTimeout(timer);
   }, [agentInitialization]);
 
+  const handleResumedModelIdentity = useCallback(
+    (identity: { baseUrl: string; model: string; provider: string }) => {
+      if (modelPickedByUserRef.current || !identity.model) return;
+      resumedModelIdentityAppliedRef.current = true;
+      sessionModelOverrideLoadedRef.current = true;
+      const baseUrl = effectiveOverrideBaseUrl(
+        identity.provider,
+        identity.baseUrl,
+      );
+      setSessionModelOverride({
+        provider: identity.provider,
+        model: identity.model,
+        baseUrl,
+      });
+      void modelConfig.selectModel(
+        identity.provider,
+        identity.model,
+        identity.baseUrl,
+        { persist: false },
+      );
+    },
+    [modelConfig.selectModel],
+  );
+
   const dashboardTransport = useDashboardChatTransport({
     activeTurnRef,
     contextFolder,
@@ -712,6 +746,7 @@ function Chat({
     setUsage,
     onDashboardUnavailable: handleDashboardUnavailable,
     onAgentInitializationChange: setAgentInitialization,
+    onResumedModelIdentity: handleResumedModelIdentity,
   });
 
   const [agentCommandCatalog, setAgentCommandCatalog] =
@@ -908,6 +943,8 @@ function Chat({
   const handleSelectModel = useCallback(
     (provider: string, model: string, baseUrl: string) => {
       const effectiveBaseUrl = effectiveOverrideBaseUrl(provider, baseUrl);
+      modelPickedByUserRef.current = true;
+      sessionModelOverrideLoadedRef.current = true;
       // Publish the click before React commits the matching picker state. An
       // immediate Send must not submit the prewarmed default model first.
       dashboardTransport.setModelSelectionIntent(

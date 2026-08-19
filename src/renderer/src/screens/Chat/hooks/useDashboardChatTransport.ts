@@ -95,7 +95,6 @@ interface EnsureDashboardRuntimeSessionParams {
   modelBaseUrl?: string;
   profile?: string;
   provider?: string;
-  selectionGeneration?: number;
   storedSessionId?: string | null;
 }
 
@@ -135,6 +134,14 @@ interface UseDashboardChatTransportArgs {
   onAgentInitializationChange?: (
     status: AgentInitializationStatus | null,
   ) => void;
+  /** Publishes the authoritative route returned by a resumed Dashboard
+   *  session so the chat-local picker matches the model that actually owns the
+   *  conversation. Explicit picker intent always wins over this callback. */
+  onResumedModelIdentity?: (identity: {
+    baseUrl: string;
+    model: string;
+    provider: string;
+  }) => void;
 }
 
 export interface AgentInitializationStatus {
@@ -324,9 +331,6 @@ export async function ensureDashboardRuntimeSession(
       ...(createdModelOverride ?? {}),
       ...(createdModelOverride && params.modelBaseUrl
         ? { base_url: params.modelBaseUrl }
-        : {}),
-      ...(params.selectionGeneration
-        ? { selection_generation: params.selectionGeneration }
         : {}),
     },
   );
@@ -999,6 +1003,7 @@ export function useDashboardChatTransport({
   setUsage,
   onDashboardUnavailable,
   onAgentInitializationChange,
+  onResumedModelIdentity,
 }: UseDashboardChatTransportArgs): UseDashboardChatTransportResult {
   const clientRef = useRef<DashboardGatewayClient | null>(null);
   const connectingRef = useRef<Promise<DashboardGatewayClient> | null>(null);
@@ -1026,6 +1031,11 @@ export function useDashboardChatTransport({
   );
   const selectionKeyRef = useRef(renderedSelectionKey);
   const selectionGenerationRef = useRef(1);
+  // Renderer generations order async picker work within this mounted Chat.
+  // Dashboard generations are server-owned and observed separately; mixing
+  // the two lifetimes made a remounted renderer look stale to a warm session.
+  const serverSelectionGenerationRef = useRef(0);
+  const hasExplicitModelSelectionRef = useRef(false);
   const pendingSelectionIntentKeyRef = useRef<string | null>(null);
   const selectedModelRef = useRef({
     generation: selectionGenerationRef.current,
@@ -1076,6 +1086,7 @@ export function useDashboardChatTransport({
       nextModel: string,
       nextModelBaseUrl?: string,
     ): void => {
+      hasExplicitModelSelectionRef.current = true;
       const nextKey = dashboardSelectionKey(
         nextProvider,
         nextModel,
@@ -1140,9 +1151,13 @@ export function useDashboardChatTransport({
   const applySessionReadiness = useCallback(
     (readiness: SessionReadinessResponse): void => {
       const generation = Math.max(0, Math.trunc(readiness.generation ?? 0));
-      if (generation > 0 && generation < selectedModelRef.current.generation) {
+      if (generation > 0 && generation < serverSelectionGenerationRef.current) {
         return;
       }
+      serverSelectionGenerationRef.current = Math.max(
+        serverSelectionGenerationRef.current,
+        generation,
+      );
       sessionReadinessRef.current = readiness;
       const backgroundStartedAtMs = Number.isFinite(readiness.started_at_ms)
         ? Number(readiness.started_at_ms)
@@ -1230,6 +1245,9 @@ export function useDashboardChatTransport({
   useEffect(() => {
     if (hermesSessionId === storedSessionIdRef.current) return;
     storedSessionIdRef.current = hermesSessionId;
+    if (!hermesSessionId) {
+      hasExplicitModelSelectionRef.current = false;
+    }
     runtimeSessionIdRef.current = null;
     runtimeSessionCreationRef.current = null;
     reasoningSegmentClosedRef.current = false;
@@ -1241,6 +1259,7 @@ export function useDashboardChatTransport({
     pendingClarifyRequestIdRef.current = null;
     lastSyncedCwdRef.current = null;
     sessionReadinessRef.current = null;
+    serverSelectionGenerationRef.current = 0;
     initializationWaitRef.current = null;
     clearBackgroundNoticeTimer();
     onAgentInitializationChange?.(null);
@@ -1274,6 +1293,7 @@ export function useDashboardChatTransport({
     pendingRecoveredContinuationRef.current = [];
     lastSyncedCwdRef.current = null;
     sessionReadinessRef.current = null;
+    serverSelectionGenerationRef.current = 0;
     initializationWaitRef.current = null;
     clearBackgroundNoticeTimer();
     onAgentInitializationChange?.(null);
@@ -1679,7 +1699,6 @@ export function useDashboardChatTransport({
             modelBaseUrl: selected.modelBaseUrl,
             profile,
             provider: selected.provider,
-            selectionGeneration: selected.generation,
             storedSessionId: stored,
           });
           runtimeSessionCreationRef.current = pending;
@@ -1705,9 +1724,74 @@ export function useDashboardChatTransport({
         runtimeSessionIdRef.current = targetSessionId;
         lastRuntimeSessionWasCreatedRef.current = response.created;
         justCreated = response.created;
-        const responseIdentity = response.modelIdentity;
+        let responseIdentity = response.modelIdentity;
+        // A deferred/live session.resume payload can temporarily expose the
+        // profile default before its Agent is constructed. model.identity is
+        // the cheap, in-process source of truth for the route persisted with
+        // the conversation. Adopt it only when the user has not made an
+        // explicit picker choice in this mounted Chat.
+        if (!response.created && !hasExplicitModelSelectionRef.current) {
+          try {
+            const liveIdentity = await client.request<SessionModelIdentity>(
+              "model.identity",
+              { session_id: targetSessionId },
+            );
+            if (liveIdentity?.model && liveIdentity.provider) {
+              responseIdentity = liveIdentity;
+            }
+          } catch (err) {
+            if (!dashboardRpcMethodUnsupportedError(err)) throw err;
+          }
+        }
         if (response.readiness) {
           applySessionReadiness(response.readiness);
+        }
+        if (responseIdentity?.selection_generation) {
+          serverSelectionGenerationRef.current = Math.max(
+            serverSelectionGenerationRef.current,
+            responseIdentity.selection_generation,
+          );
+        }
+        if (
+          !response.created &&
+          !hasExplicitModelSelectionRef.current &&
+          responseIdentity?.model &&
+          responseIdentity.provider
+        ) {
+          const resumedProvider =
+            responseIdentity.requested_provider || responseIdentity.provider;
+          const resumedBaseUrl = responseIdentity.base_url || "";
+          const resumedSelectionKey = dashboardSelectionKey(
+            resumedProvider,
+            responseIdentity.model,
+            resumedBaseUrl,
+          );
+          if (selectionKeyRef.current !== resumedSelectionKey) {
+            selectionKeyRef.current = resumedSelectionKey;
+            selectionGenerationRef.current += 1;
+          }
+          pendingSelectionIntentKeyRef.current = resumedSelectionKey;
+          selectedModelRef.current = {
+            generation: selectionGenerationRef.current,
+            model: responseIdentity.model,
+            modelBaseUrl: resumedBaseUrl,
+            provider: resumedProvider,
+          };
+          resolvedRouteRef.current = {
+            identity: responseIdentity,
+            selectionKey: resumedSelectionKey,
+          };
+          createdWithSelectedModelRef.current = {
+            ...responseIdentity,
+            model: responseIdentity.model,
+            provider: responseIdentity.provider,
+            sessionId: targetSessionId,
+          };
+          onResumedModelIdentity?.({
+            baseUrl: resumedBaseUrl,
+            model: responseIdentity.model,
+            provider: resumedProvider,
+          });
         }
         if (response.created && responseIdentity?.route_id) {
           resolvedRouteRef.current = {
@@ -1719,22 +1803,22 @@ export function useDashboardChatTransport({
             ),
           };
         }
-        createdWithSelectedModelRef.current =
-          response.created &&
-          responseIdentity?.model &&
-          responseIdentity.provider
-            ? {
-                ...responseIdentity,
-                model: responseIdentity.model,
-                provider: responseIdentity.provider,
-                sessionId: targetSessionId,
-              }
-            : response.created && response.createdModelOverride
+        if (response.created) {
+          createdWithSelectedModelRef.current =
+            responseIdentity?.model && responseIdentity.provider
               ? {
-                  ...response.createdModelOverride,
+                  ...responseIdentity,
+                  model: responseIdentity.model,
+                  provider: responseIdentity.provider,
                   sessionId: targetSessionId,
                 }
-              : null;
+              : response.createdModelOverride
+                ? {
+                    ...response.createdModelOverride,
+                    sessionId: targetSessionId,
+                  }
+                : null;
+        }
         if (justCreated && contextFolder) {
           lastSyncedCwdRef.current = contextFolder;
         }
@@ -1767,6 +1851,7 @@ export function useDashboardChatTransport({
       activeTurnRef,
       applySessionReadiness,
       contextFolder,
+      onResumedModelIdentity,
       profile,
       setHermesSessionId,
     ],
@@ -1859,6 +1944,12 @@ export function useDashboardChatTransport({
                 }
               };
             const before = await readIdentity();
+            if (before?.selection_generation) {
+              serverSelectionGenerationRef.current = Math.max(
+                serverSelectionGenerationRef.current,
+                before.selection_generation,
+              );
+            }
             if (selectedModelRef.current.generation !== generation) return null;
             if (before && dashboardRouteMatches(expected, before)) {
               appliedModelRef.current = appliedKey;
@@ -1873,12 +1964,17 @@ export function useDashboardChatTransport({
                 provider: selectedProvider,
                 model: selectedModel,
                 base_url: selected.modelBaseUrl,
-                selection_generation: generation,
               },
             );
 
             if (selectedModelRef.current.generation !== generation) return null;
             const live = switched || (await readIdentity());
+            if (live?.selection_generation) {
+              serverSelectionGenerationRef.current = Math.max(
+                serverSelectionGenerationRef.current,
+                live.selection_generation,
+              );
+            }
             if (live && !dashboardRouteMatches(expected, live)) {
               appliedModelRef.current = null;
               throw new DashboardModelRouteMismatchError(

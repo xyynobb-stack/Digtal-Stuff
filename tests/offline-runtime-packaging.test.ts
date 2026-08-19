@@ -142,8 +142,11 @@ describe("desktop Agent model-route overlay", () => {
     expect(source).toContain('"session.readiness.changed"');
     expect(source).toContain('identity["route_id"] = "route:v1:"');
     expect(source).toContain('params.get("route_id")');
-    expect(source).toContain('params.get("selection_generation")');
-    expect(source).toContain('return _err(rid, 4093, "stale model selection")');
+    // @lat: [[model-selection#Latest picker identity wins#Server owns selection generation]]
+    expect(source).not.toContain('params.get("selection_generation")');
+    expect(source).toContain(
+      'server_generation = int(session.get("model_selection_generation", 0)) + 1',
+    );
     expect(source).toContain(
       'vars(server)["_append_model_switch_marker"] = _discard_model_switch_marker',
     );

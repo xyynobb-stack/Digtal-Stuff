@@ -48,7 +48,7 @@ Every dashboard send resolves its model, provider, and base URL from the latest 
 
 The picker publishes its full identity synchronously to its own Chat transport before scheduling React state. A pending intent is not overwritten by an unrelated render carrying the previous props; matching props acknowledge it without incrementing the generation twice. Thus immediate Send cannot submit the prewarmed default route and leave the later switch to collide with a running turn.
 
-Model changes carry a monotonic `selection_generation` and run through one serialized renderer queue. Async resolution from an older generation is discarded, the gateway rejects generations older than the session's accepted value, and the send path crosses the route barrier again immediately before `prompt.submit`; therefore a slow prewarm cannot become the final mutation after a newer picker choice.
+Model changes run through one serialized renderer queue. Its local generation orders asynchronous work only inside the mounted Chat, while the gateway owns a separate session generation; a remounted renderer therefore cannot look stale to a warm backend. The send path crosses the route barrier again immediately before `prompt.submit`, so a slow prewarm cannot become the final mutation after a newer picker choice.
 
 New dashboard sessions send the full identity to `session.create`, whose desktop gateway wrapper resolves the final named route before deferred Agent construction. Resumed sessions use `session.model.set`, an in-process session RPC that bypasses slash-worker initialization and never writes the profile's global model setting.
 
@@ -61,6 +61,22 @@ An older delayed `model.resolve` result is discarded after the picker generation
 ### Picker intent precedes React commit
 
 A model picked immediately before Send becomes the route applied to the new runtime session even when the corresponding React model/provider state has not rendered yet.
+
+### Toolbar context changes cannot overwrite picker intent
+
+Skill, writing-template, and folder changes may rerender Chat or restart opportunistic prewarm, but they cannot replace a synchronously published model-picker intent with older rendered props.
+
+### Resumed route beats the temporary default
+
+A resumed conversation reads its authoritative in-process `model.identity` before the first Send and adopts that route when the user has not made a newer explicit choice, instead of briefly switching to the global default.
+
+### Explicit picker beats asynchronous restoration
+
+An explicit model click wins over both the authoritative resume lookup and the desktop-saved override when either asynchronous restoration completes later.
+
+### Server owns selection generation
+
+The gateway increments `model_selection_generation` after each accepted create or switch and returns it as observation metadata; the renderer never supplies that number, because its mount-local counter has a different lifetime.
 
 ## Desktop-only persistence
 

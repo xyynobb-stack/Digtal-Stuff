@@ -57,14 +57,6 @@ def _route_identity(route):
     return identity
 
 
-def _selection_generation(params):
-    """Parse the renderer's monotonic model-selection generation."""
-    try:
-        return max(0, int(params.get("selection_generation") or 0))
-    except (TypeError, ValueError):
-        return 0
-
-
 def _remove_model_switch_markers(session):
     """Keep runtime identity out of ordinary conversation history.
 
@@ -755,8 +747,6 @@ def desktop_session_create(rid, params: dict) -> dict:
     session = _sessions.get(sid)
     if not session:
         return response
-    requested_generation = _desktop_selection_generation(params)
-    session["model_selection_generation"] = requested_generation
     home_token = None
     try:
         profile_home = session.get("profile_home")
@@ -789,7 +779,9 @@ def desktop_session_create(rid, params: dict) -> dict:
         info.update(
             route
         )
-        info["selection_generation"] = requested_generation
+        server_generation = int(session.get("model_selection_generation", 0)) + 1
+        session["model_selection_generation"] = server_generation
+        info["selection_generation"] = server_generation
         result["readiness"] = _desktop_session_readiness_payload(sid, session)
     except Exception as exc:
         _sessions.pop(sid, None)
@@ -810,11 +802,6 @@ def session_model_set(rid, params: dict) -> dict:
         return _err(rid, 4007, "session not found")
     if session.get("running"):
         return _err(rid, 4091, "cannot switch model while a turn is running")
-
-    requested_generation = _desktop_selection_generation(params)
-    current_generation = int(session.get("model_selection_generation", 0))
-    if requested_generation and requested_generation < current_generation:
-        return _err(rid, 4093, "stale model selection")
 
     requested_provider = str(params.get("provider") or "").strip()
     requested_model = str(params.get("model") or "").strip()
@@ -840,9 +827,6 @@ def session_model_set(rid, params: dict) -> dict:
         route_id = str(route.get("route_id") or "").strip()
         if requested_route_id and requested_route_id != route_id:
             return _err(rid, 4092, "model route changed; resolve it again")
-        current_generation = int(session.get("model_selection_generation", 0))
-        if requested_generation and requested_generation < current_generation:
-            return _err(rid, 4093, "stale model selection")
         raw = (
             f"{requested_model} --provider {route_provider}"
             if route_provider
@@ -900,11 +884,9 @@ def session_model_set(rid, params: dict) -> dict:
         session.setdefault("model_override", {})["route_id"] = effective_identity[
             "route_id"
         ]
-        if requested_generation:
-            session["model_selection_generation"] = requested_generation
-        effective_identity["selection_generation"] = int(
-            session.get("model_selection_generation", 0)
-        )
+        server_generation = int(session.get("model_selection_generation", 0)) + 1
+        session["model_selection_generation"] = server_generation
+        effective_identity["selection_generation"] = server_generation
         _desktop_remove_model_switch_markers(session)
         return _ok(
             rid,
@@ -932,7 +914,6 @@ def register(server) -> None:
     vars(server)["_desktop_session_readiness_payload"] = (
         _session_readiness_payload
     )
-    vars(server)["_desktop_selection_generation"] = _selection_generation
     vars(server)["_desktop_remove_model_switch_markers"] = (
         _remove_model_switch_markers
     )

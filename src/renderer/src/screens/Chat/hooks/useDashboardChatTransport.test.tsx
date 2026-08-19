@@ -58,9 +58,11 @@ interface HarnessApi {
   ) => void;
   send?: (text: string) => Promise<boolean>;
   setConnectionMode?: Dispatch<SetStateAction<"local" | "remote" | "ssh">>;
+  setContextFolder?: Dispatch<SetStateAction<string | null>>;
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
   setModel?: Dispatch<SetStateAction<string>>;
   setProvider?: Dispatch<SetStateAction<string>>;
+  triggerToolbarRerender?: () => void;
 }
 
 const activeBadTurn: ActiveTurn = {
@@ -82,18 +84,26 @@ function Harness({
   fallbackOnUnavailable = false,
   initialActiveTurn = activeBadTurn,
   initialConnectionMode = "local",
+  initialHermesSessionId = null,
   onDashboardUnavailable,
   onAgentInitializationChange,
+  onResumedModelIdentity,
   setUsage = vi.fn() as SetUsageMock,
 }: {
   api: HarnessApi;
   fallbackOnUnavailable?: boolean;
   initialActiveTurn?: ActiveTurn | null;
   initialConnectionMode?: "local" | "remote" | "ssh";
+  initialHermesSessionId?: string | null;
   onDashboardUnavailable?: (reason: string) => void;
   onAgentInitializationChange?: (
     status: AgentInitializationStatus | null,
   ) => void;
+  onResumedModelIdentity?: (identity: {
+    baseUrl: string;
+    model: string;
+    provider: string;
+  }) => void;
   setUsage?: SetUsageMock;
 }): null {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -109,16 +119,18 @@ function Harness({
   const [connectionMode, setConnectionMode] = useState<
     "local" | "remote" | "ssh"
   >(initialConnectionMode);
+  const [contextFolder, setContextFolder] = useState<string | null>(null);
+  const [, setToolbarRevision] = useState(0);
   const activeTurnRef = useRef<ActiveTurn | null>(
     initialActiveTurn ? { ...initialActiveTurn } : null,
   );
   const transport = useDashboardChatTransport({
     activeTurnRef,
-    contextFolder: null,
+    contextFolder,
     connectionMode,
     enabled: true,
     fallbackOnUnavailable,
-    hermesSessionId: null,
+    hermesSessionId: initialHermesSessionId,
     messages,
     model,
     profile: undefined,
@@ -130,6 +142,7 @@ function Harness({
     setUsage,
     onDashboardUnavailable,
     onAgentInitializationChange,
+    onResumedModelIdentity,
   });
 
   useEffect(() => {
@@ -142,15 +155,18 @@ function Harness({
       selectModelIntent: transport.setModelSelectionIntent,
       send: transport.sendMessage,
       setConnectionMode,
+      setContextFolder,
       setMessages,
       setModel,
       setProvider,
+      triggerToolbarRerender: () => setToolbarRevision((value) => value + 1),
     });
   }, [
     activeTurnRef,
     api,
     messages,
     setConnectionMode,
+    setContextFolder,
     setMessages,
     transport.sendMessage,
     transport.setModelSelectionIntent,
@@ -479,7 +495,6 @@ describe("useDashboardChatTransport recovery", () => {
         cols: 96,
         model: "bad-model",
         provider: "bad-provider",
-        selection_generation: 1,
       },
     });
     expect(requests.some((request) => request.method === "slash.exec")).toBe(
@@ -617,7 +632,6 @@ describe("useDashboardChatTransport recovery", () => {
           provider: "custom",
           model: "future-model",
           base_url: undefined,
-          selection_generation: 2,
         },
       },
     ]);
@@ -810,7 +824,6 @@ describe("useDashboardChatTransport recovery", () => {
           cols: 96,
           model: "bad-model",
           provider: "bad-provider",
-          selection_generation: 1,
         },
       },
       {
@@ -819,7 +832,6 @@ describe("useDashboardChatTransport recovery", () => {
           cols: 96,
           model: "good-model",
           provider: "good-provider",
-          selection_generation: 2,
         },
       },
     ]);
@@ -897,7 +909,6 @@ describe("useDashboardChatTransport recovery", () => {
         model: "good-model",
         provider: "good-provider",
         base_url: undefined,
-        selection_generation: 2,
       },
     });
     expect(requests).toContainEqual({
@@ -965,8 +976,11 @@ describe("useDashboardChatTransport recovery", () => {
     await act(async () => {
       // Do not update Harness props: this is the interval between the picker
       // callback and React committing the corresponding model/provider state.
+      // A skill/template selection can finish another state update in exactly
+      // this interval; that unrelated render must not restore the old route.
       api.activeTurnRef!.current = { ...activeRecoveryTurn };
       api.selectModelIntent?.("qwen-provider", "qwen3.5-plus");
+      api.triggerToolbarRerender?.();
       await api.send?.("which model are you");
     });
 
@@ -984,7 +998,6 @@ describe("useDashboardChatTransport recovery", () => {
           provider: "qwen-provider",
           model: "qwen3.5-plus",
           base_url: undefined,
-          selection_generation: 2,
         },
       },
       {
@@ -995,6 +1008,248 @@ describe("useDashboardChatTransport recovery", () => {
         },
       },
     ]);
+  });
+
+  it("keeps the picker route when a folder update reruns session prewarm", async () => {
+    // @lat: [[model-selection#Latest picker identity wins#Toolbar context changes cannot overwrite picker intent]]
+    const requests: Array<{ method: string; params: unknown }> = [];
+    let liveModel = "bad-model";
+    let liveProvider = "bad-provider";
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.create") {
+        return {
+          session_id: "live",
+          stored_session_id: "stored",
+          info: {
+            route_id: "route:v1:bad-provider:bad-model",
+            model: liveModel,
+            provider: liveProvider,
+          },
+        };
+      }
+      if (method === "model.resolve") {
+        return {
+          route_id: "route:v1:good-provider:good-model",
+          model: "good-model",
+          provider: "good-provider",
+        };
+      }
+      if (method === "model.identity") {
+        return {
+          route_id: `route:v1:${liveProvider}:${liveModel}`,
+          model: liveModel,
+          provider: liveProvider,
+        };
+      }
+      if (method === "session.model.set") {
+        liveModel = "good-model";
+        liveProvider = "good-provider";
+        return {
+          route_id: "route:v1:good-provider:good-model",
+          model: liveModel,
+          provider: liveProvider,
+        };
+      }
+      return {};
+    });
+
+    const api: HarnessApi = {};
+    render(<Harness api={api} initialActiveTurn={null} />);
+    await waitFor(() => {
+      expect(window.hermesAPI.recordColdStartTiming).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: "dashboard.session_ready" }),
+      );
+    });
+
+    await act(async () => {
+      api.setContextFolder?.("C:\\workspace\\new-context");
+    });
+    await act(async () => {
+      // The preceding folder update has rerun the prewarm path; the subsequent
+      // picker event must still become the route barrier for this Send.
+      api.selectModelIntent?.("good-provider", "good-model");
+      api.activeTurnRef!.current = { ...activeRecoveryTurn };
+      await api.send?.("use the selected folder and model");
+    });
+
+    expect(requests).toContainEqual({
+      method: "session.cwd.set",
+      params: {
+        session_id: "live",
+        cwd: "C:\\workspace\\new-context",
+      },
+    });
+    expect(requests).toContainEqual({
+      method: "session.model.set",
+      params: {
+        session_id: "live",
+        route_id: "route:v1:good-provider:good-model",
+        provider: "good-provider",
+        model: "good-model",
+        base_url: undefined,
+      },
+    });
+    expect(requests.at(-1)).toEqual({
+      method: "prompt.submit",
+      params: {
+        session_id: "live",
+        text: "use the selected folder and model",
+      },
+    });
+  });
+
+  it("uses the authoritative resumed route before an immediate send", async () => {
+    // @lat: [[model-selection#Latest picker identity wins#Resumed route beats the temporary default]]
+    const requests: Array<{ method: string; params: unknown }> = [];
+    const onResumedModelIdentity = vi.fn();
+    const resumedIdentity = {
+      route_id: "route:v1:company-platform:qwen3.5-plus",
+      requested_provider: "custom",
+      provider: "company-platform",
+      model: "qwen3.5-plus",
+      base_url: "https://company.example/v1",
+      selection_generation: 7,
+    };
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.resume") {
+        return {
+          session_id: "live-resumed",
+          resumed: "stored-resumed",
+          info: { model: "bad-model", provider: "bad-provider" },
+        };
+      }
+      if (method === "model.identity") return resumedIdentity;
+      return {};
+    });
+
+    const api: HarnessApi = {};
+    render(
+      <Harness
+        api={api}
+        initialHermesSessionId="stored-resumed"
+        onResumedModelIdentity={onResumedModelIdentity}
+      />,
+    );
+
+    await act(async () => {
+      await api.send?.("keep this conversation model");
+    });
+
+    expect(onResumedModelIdentity).toHaveBeenCalledWith({
+      baseUrl: "https://company.example/v1",
+      model: "qwen3.5-plus",
+      provider: "custom",
+    });
+    expect(requests).toContainEqual({
+      method: "session.resume",
+      params: { session_id: "stored-resumed", cols: 96 },
+    });
+    expect(
+      requests.some((request) => request.method === "session.model.set"),
+    ).toBe(false);
+    expect(requests.at(-1)).toEqual({
+      method: "prompt.submit",
+      params: {
+        session_id: "live-resumed",
+        text: "keep this conversation model",
+      },
+    });
+  });
+
+  it("keeps an explicit picker choice made while resume identity is pending", async () => {
+    // @lat: [[model-selection#Latest picker identity wins#Explicit picker beats asynchronous restoration]]
+    const requests: Array<{ method: string; params: unknown }> = [];
+    const onResumedModelIdentity = vi.fn();
+    let releaseResumeIdentity = (): void => undefined;
+    const resumeIdentityBlocked = new Promise<void>((resolve) => {
+      releaseResumeIdentity = resolve;
+    });
+    let resumeIdentityStarted = (): void => undefined;
+    const resumeIdentityObserved = new Promise<void>((resolve) => {
+      resumeIdentityStarted = resolve;
+    });
+    let identityCalls = 0;
+    let liveModel = "old-model";
+    let liveProvider = "old-provider";
+
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.resume") {
+        return { session_id: "live-resumed", resumed: "stored-resumed" };
+      }
+      if (method === "model.identity") {
+        const identityCall = ++identityCalls;
+        if (identityCall === 1) {
+          resumeIdentityStarted();
+          await resumeIdentityBlocked;
+        }
+        return {
+          route_id: `route:v1:${liveProvider}:${liveModel}`,
+          model: liveModel,
+          provider: liveProvider,
+        };
+      }
+      if (method === "model.resolve") {
+        return {
+          route_id: "route:v1:good-provider:good-model",
+          model: "good-model",
+          provider: "good-provider",
+        };
+      }
+      if (method === "session.model.set") {
+        liveModel = "good-model";
+        liveProvider = "good-provider";
+        return {
+          route_id: "route:v1:good-provider:good-model",
+          model: "good-model",
+          provider: "good-provider",
+          selection_generation: 8,
+        };
+      }
+      return {};
+    });
+
+    const api: HarnessApi = {};
+    render(
+      <Harness
+        api={api}
+        initialHermesSessionId="stored-resumed"
+        onResumedModelIdentity={onResumedModelIdentity}
+      />,
+    );
+
+    let sendPromise: Promise<boolean | undefined>;
+    await act(async () => {
+      sendPromise =
+        api.send?.("use my new picker choice") ?? Promise.resolve(undefined);
+      await resumeIdentityObserved;
+      api.selectModelIntent?.("good-provider", "good-model");
+    });
+    releaseResumeIdentity();
+    await act(async () => {
+      await sendPromise;
+    });
+
+    expect(onResumedModelIdentity).not.toHaveBeenCalled();
+    expect(requests).toContainEqual({
+      method: "session.model.set",
+      params: {
+        session_id: "live-resumed",
+        route_id: "route:v1:good-provider:good-model",
+        provider: "good-provider",
+        model: "good-model",
+        base_url: undefined,
+      },
+    });
+    expect(requests.at(-1)).toEqual({
+      method: "prompt.submit",
+      params: {
+        session_id: "live-resumed",
+        text: "use my new picker choice",
+      },
+    });
   });
 
   it("lets the latest picker generation win an in-flight route resolution", async () => {
@@ -1076,7 +1331,6 @@ describe("useDashboardChatTransport recovery", () => {
           provider: "good-provider",
           model: "good-model",
           base_url: undefined,
-          selection_generation: 2,
         },
       },
       {

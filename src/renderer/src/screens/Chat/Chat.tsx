@@ -1096,9 +1096,6 @@ function Chat({
       onDrop={handleDrop}
     >
       <ConfigHealthBanner profile={profile} onOpenDiagnose={onOpenDiagnose} />
-      {agentInitialization && (
-        <AgentInitializationBanner status={agentInitialization} />
-      )}
 
       <div className="chat-body">
         <div className="chat-messages" ref={containerRef}>
@@ -1132,6 +1129,9 @@ function Chat({
       </div>
 
       <div className="chat-input-area">
+        {agentInitialization && (
+          <AgentInitializationBanner status={agentInitialization} />
+        )}
         <QueuedMessages
           messages={queuedMessages}
           onRemove={handleRemoveQueued}

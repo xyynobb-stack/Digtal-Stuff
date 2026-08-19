@@ -44,6 +44,10 @@ release/
 # PortableGit distribution is generated build input, not repository source.
 /build/offline-runtime/git/
 
+# Generated single-file payload consumed by Electron Builder. The expanded
+# Runtime remains the reviewed build input; release jobs recreate this archive.
+/build/offline-runtime-package/
+
 # Tauri
 **/src-tauri/target/
 **/src-tauri/gen/

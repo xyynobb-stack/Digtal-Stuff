@@ -187,6 +187,7 @@ export function applyOfflineRuntimeOverlays({
     '@method("model.resolve")',
     '@method("session.create")',
     '@method("session.model.set")',
+    '@method("session.readiness")',
   ]) {
     if (!methodsSource.includes(requiredMethod)) {
       throw new Error(`Desktop Agent overlay is missing ${requiredMethod}`);

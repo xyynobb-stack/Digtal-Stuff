@@ -195,13 +195,14 @@ async def _lifespan(app: "FastAPI"):
     # event loop during lifespan startup — see _get_event_state's docstring.
     app.state.chat_argv_lock = asyncio.Lock()
 
-    # Import hermes_cli.gateway eagerly *before* the lifespan yield so the
-    # GIL-heavy .pyc compilation and Defender scan cost is absorbed during
-    # backend initialisation — before the server socket accepts probes.
-    # On Windows + Python 3.11 the import does not release the GIL, so
-    # run_in_executor still froze the event loop for 15-22 s, causing the
-    # Desktop's 10-second WebSocket ready-probe to time out (GH-73083).
-    _warm_gateway_module()
+    # Desktop liveness must not wait for the full messaging gateway. The
+    # desktop uses the embedded tui_gateway /api/ws runtime, not the messaging
+    # platform adapters imported by hermes_cli.gateway. On cold Windows hosts
+    # that unrelated import performs .pyc compilation and Defender scans for
+    # 15-30 seconds before Uvicorn can bind. Non-desktop dashboard launches
+    # retain the upstream eager warm-up behaviour.
+    if os.getenv("HERMES_DESKTOP") != "1":
+        _warm_gateway_module()
 
     # Desktop-spawned backends (HERMES_DESKTOP=1) fire cron jobs themselves,
     # since the app has no gateway running the scheduler. Server `hermes

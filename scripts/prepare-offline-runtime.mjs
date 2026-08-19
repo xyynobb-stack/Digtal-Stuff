@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
 import { preparePortableGit } from "./prepare-portable-git.mjs";
+import { prepareSqliteRuntime } from "./prepare-sqlite-runtime.mjs";
 import { shouldCopyAgentRuntimeEntry } from "./offline-runtime-copy-filter.mjs";
 import { verifyDashboardWebDist } from "./verify-dashboard-web-dist.mjs";
 import {
@@ -482,6 +483,9 @@ fs.cpSync(pythonHome, path.join(outputRoot, "python-runtime"), {
   recursive: true,
   filter: (name) =>
     !["__pycache__", "Lib\\site-packages"].includes(path.basename(name)),
+});
+await prepareSqliteRuntime({
+  runtimeRoot: path.join(outputRoot, "python-runtime"),
 });
 
 const envText = fs.existsSync(sourceEnv)

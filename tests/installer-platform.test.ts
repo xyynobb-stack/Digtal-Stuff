@@ -9,9 +9,12 @@ import {
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
+import { createHash } from "crypto";
+import { c as createTar } from "tar";
 import {
   bundledPythonRuntimeLayout,
   bundledPortableGitLayout,
+  extractBundledRuntimeArchive,
   getEnhancedPath,
   hermesCliArgs,
   managedRuntimePidFiles,
@@ -33,6 +36,39 @@ afterEach(() => {
 });
 
 describe("installer platform wiring", () => {
+  it("streams and verifies the packaged Runtime into staging", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-runtime-extract-test-"));
+    tempRoots.push(root);
+    const source = join(root, "source");
+    const payload = join(root, "payload");
+    const staging = join(root, "staging");
+    mkdirSync(join(payload, "hermes-agent"), { recursive: true });
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(payload, "hermes-agent", "run_agent.py"), "# ready\n");
+    const archive = join(source, "runtime.tar");
+    await createTar(
+      { cwd: payload, file: archive, portable: true, noMtime: true },
+      ["hermes-agent"],
+    );
+    const bytes = readFileSync(archive);
+    writeFileSync(
+      join(source, "runtime-archive.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        archive: "runtime.tar",
+        bytes: bytes.length,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      }),
+      "utf8",
+    );
+
+    await extractBundledRuntimeArchive(source, staging);
+
+    expect(
+      readFileSync(join(staging, "hermes-agent", "run_agent.py"), "utf8"),
+    ).toBe("# ready\n");
+  });
+
   it("uses the native bundled Python layout for each offline target", () => {
     const windows = bundledPythonRuntimeLayout("C:\\runtime", "win32");
     expect(windows.home).toBe("C:\\runtime");
@@ -71,9 +107,10 @@ describe("installer platform wiring", () => {
     expect(resolveBundledRuntimeRepo(resources, userData, false)).toBe("");
     expect(resolveBundledRuntimeRepo(resources, userData, true)).toBe("");
 
-    mkdirSync(join(resources, "hermes-runtime", "hermes-agent"), {
+    mkdirSync(join(resources, "hermes-runtime"), {
       recursive: true,
     });
+    writeFileSync(join(resources, "hermes-runtime", "runtime.tar"), "archive");
     writeFileSync(
       join(resources, "hermes-runtime", "desktop-runtime-build.json"),
       marker,

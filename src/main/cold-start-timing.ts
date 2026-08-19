@@ -8,6 +8,12 @@ interface TurnMilestones {
   promptSubmitAtMs?: number;
   firstDeltaAtMs?: number;
   apiRequestStartedAtMs?: number;
+  initializationWaitStartedAtMs?: number;
+}
+
+interface SessionMilestones {
+  agentBuildStartedAtMs?: number;
+  agentConstructStartedAtMs?: number;
 }
 
 export interface ColdStartTimingRecord extends ColdStartTimingEvent {
@@ -23,6 +29,8 @@ export interface ColdStartTimingRecord extends ColdStartTimingEvent {
   apiRequestToEventMs?: number;
   sendToEventMs?: number;
   promptSubmitToEventMs?: number;
+  sessionPreparationMs?: number;
+  userBlockedByInitializationMs?: number;
 }
 
 /** Derive cross-process durations without touching installation or chat state. */
@@ -31,8 +39,7 @@ export class ColdStartTimingTracker {
   private runtimeReadyAtMs: number | undefined;
   private dashboardSpawnStartedAtMs: number | undefined;
   private dashboardReadyAtMs: number | undefined;
-  private agentBuildStartedAtMs: number | undefined;
-  private agentConstructStartedAtMs: number | undefined;
+  private readonly sessions = new Map<string, SessionMilestones>();
   private readonly turns = new Map<string, TurnMilestones>();
 
   constructor(private readonly appStartedAtMs: number) {}
@@ -43,13 +50,16 @@ export class ColdStartTimingTracker {
         ? event.atMs
         : Date.now();
     const turnId = sanitizeTurnId(event.turnId);
+    const sessionId = sanitizeTurnId(event.sessionId);
     const normalized: ColdStartTimingEvent = {
       ...event,
       atMs,
       ...(turnId ? { turnId } : {}),
+      ...(sessionId ? { sessionId } : {}),
       ...(event.detail ? { detail: event.detail.slice(0, 500) } : {}),
     };
     if (!turnId) delete normalized.turnId;
+    if (!sessionId) delete normalized.sessionId;
 
     if (event.stage === "runtime.prepare_started") {
       this.runtimePrepareStartedAtMs = atMs;
@@ -59,12 +69,19 @@ export class ColdStartTimingTracker {
       this.dashboardSpawnStartedAtMs = atMs;
     }
     if (event.stage === "dashboard.ready") this.dashboardReadyAtMs = atMs;
-    if (event.stage === "agent.build_started") {
-      this.agentBuildStartedAtMs = atMs;
+    const sessionKey = sessionId
+      ? `${sessionId}:${Math.max(0, Math.trunc(event.generation ?? 0))}`
+      : "";
+    const session = sessionKey
+      ? (this.sessions.get(sessionKey) ?? {})
+      : undefined;
+    if (session && event.stage === "agent.build_started") {
+      session.agentBuildStartedAtMs = atMs;
     }
-    if (event.stage === "agent.construct_started") {
-      this.agentConstructStartedAtMs = atMs;
+    if (session && event.stage === "agent.construct_started") {
+      session.agentConstructStartedAtMs = atMs;
     }
+    if (sessionKey && session) this.sessions.set(sessionKey, session);
 
     let turn: TurnMilestones | undefined;
     if (turnId) {
@@ -78,6 +95,9 @@ export class ColdStartTimingTracker {
       }
       if (event.stage === "agent.api_request_started") {
         turn.apiRequestStartedAtMs = atMs;
+      }
+      if (event.stage === "chat.initialization_wait_started") {
+        turn.initializationWaitStartedAtMs = atMs;
       }
       this.turns.set(turnId, turn);
     }
@@ -109,15 +129,21 @@ export class ColdStartTimingTracker {
       ...(this.dashboardReadyAtMs !== undefined
         ? { dashboardReadyToEventMs: elapsed(atMs, this.dashboardReadyAtMs) }
         : {}),
-      ...(this.agentBuildStartedAtMs !== undefined
-        ? { agentBuildToEventMs: elapsed(atMs, this.agentBuildStartedAtMs) }
+      ...(session?.agentBuildStartedAtMs !== undefined
+        ? { agentBuildToEventMs: elapsed(atMs, session.agentBuildStartedAtMs) }
         : {}),
-      ...(this.agentConstructStartedAtMs !== undefined
+      ...(session?.agentConstructStartedAtMs !== undefined
         ? {
             agentConstructToEventMs: elapsed(
               atMs,
-              this.agentConstructStartedAtMs,
+              session.agentConstructStartedAtMs,
             ),
+          }
+        : {}),
+      ...(event.stage === "agent.build_ready" &&
+      session?.agentBuildStartedAtMs !== undefined
+        ? {
+            sessionPreparationMs: elapsed(atMs, session.agentBuildStartedAtMs),
           }
         : {}),
       ...(turn?.apiRequestStartedAtMs !== undefined
@@ -131,6 +157,15 @@ export class ColdStartTimingTracker {
       ...(turn?.promptSubmitAtMs !== undefined
         ? { promptSubmitToEventMs: elapsed(atMs, turn.promptSubmitAtMs) }
         : {}),
+      ...(event.stage === "chat.initialization_wait_finished" &&
+      turn?.initializationWaitStartedAtMs !== undefined
+        ? {
+            userBlockedByInitializationMs: elapsed(
+              atMs,
+              turn.initializationWaitStartedAtMs,
+            ),
+          }
+        : {}),
     };
 
     if (
@@ -138,6 +173,13 @@ export class ColdStartTimingTracker {
       (event.stage === "chat.complete" || event.stage === "chat.failed")
     ) {
       this.turns.delete(turnId);
+    }
+    if (
+      sessionKey &&
+      (event.stage === "agent.build_ready" ||
+        event.stage === "agent.build_failed")
+    ) {
+      this.sessions.delete(sessionKey);
     }
     return record;
   }

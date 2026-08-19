@@ -14,17 +14,18 @@ export function AgentInitializationBanner({
   const { t } = useI18n();
   const [now, setNow] = useState(Date.now());
   const terminal = status.phase === "ready" || status.phase === "failed";
+  const blockingStartedAtMs = status.blockingStartedAtMs;
 
   useEffect(() => {
-    if (terminal) return;
+    if (terminal || blockingStartedAtMs === undefined) return;
     setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, [terminal, status.startedAtMs]);
+  }, [blockingStartedAtMs, terminal]);
 
   const elapsedSeconds = Math.max(
     0,
-    Math.floor((now - status.startedAtMs) / 1_000),
+    Math.floor((now - (blockingStartedAtMs ?? now)) / 1_000),
   );
   const messageKey = `chat.initialization.${status.phase}`;
   const Icon =
@@ -49,9 +50,11 @@ export function AgentInitializationBanner({
       <div className="agent-initialization-copy">
         <strong>{t("chat.initialization.title")}</strong>
         <span>{t(messageKey)}</span>
-        {!terminal && (
+        {!terminal && blockingStartedAtMs !== undefined && (
           <small>
-            {t("chat.initialization.elapsed", { seconds: elapsedSeconds })}
+            {t("chat.initialization.waitingElapsed", {
+              seconds: elapsedSeconds,
+            })}
           </small>
         )}
         {status.phase === "failed" && status.detail && (

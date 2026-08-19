@@ -3159,6 +3159,16 @@ def text_to_speech_tool(
 # ===========================================================================
 # Requirements check
 # ===========================================================================
+def _tts_lazy_feature_available(feature: str) -> bool:
+    """Check an optional TTS dependency without installing or importing it."""
+    try:
+        from tools.lazy_deps import is_available
+
+        return bool(is_available(feature))
+    except Exception:
+        return False
+
+
 def check_tts_requirements() -> bool:
     """Return whether the explicitly resolved TTS provider can run.
 
@@ -3173,17 +3183,11 @@ def check_tts_requirements() -> bool:
         return True
 
     if provider == "edge":
-        try:
-            _import_edge_tts()
-            return True
-        except ImportError:
-            return _check_neutts_available()
+        return _tts_lazy_feature_available("tts.edge") or _check_neutts_available()
     if provider == "elevenlabs":
-        try:
-            _import_elevenlabs()
-        except ImportError:
-            return False
-        return bool(_resolve_provider_key("ELEVENLABS_API_KEY", "elevenlabs"))
+        return _tts_lazy_feature_available("tts.elevenlabs") and bool(
+            _resolve_provider_key("ELEVENLABS_API_KEY", "elevenlabs")
+        )
     if provider == "openai":
         try:
             _import_openai_client()
@@ -3215,11 +3219,9 @@ def check_tts_requirements() -> bool:
             or _resolve_provider_key("GOOGLE_API_KEY", "gemini")
         )
     if provider == "mistral":
-        try:
-            _import_mistral_client()
-        except ImportError:
-            return False
-        return bool(_resolve_provider_key("MISTRAL_API_KEY", "mistral"))
+        return _tts_lazy_feature_available("tts.mistral") and bool(
+            _resolve_provider_key("MISTRAL_API_KEY", "mistral")
+        )
     if provider == "neutts":
         return _check_neutts_available()
     if provider == "kittentts":

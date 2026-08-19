@@ -365,11 +365,23 @@ describe("useDashboardChatTransport recovery", () => {
     expect(stages.filter((stage) => stage === "chat.complete")).toHaveLength(1);
   });
 
-  it("surfaces real Agent initialization stages and clears on first output", async () => {
+  it("uses authoritative session readiness instead of diagnostic timing for UX", async () => {
+    const building = {
+      session_id: "live",
+      generation: 1,
+      phase: "building_agent",
+      agent_ready: false,
+      started_at_ms: 1_000,
+    };
     dashboardMock.request.mockImplementation(async (method) => {
       if (method === "session.create") {
-        return { session_id: "live", stored_session_id: "stored" };
+        return {
+          session_id: "live",
+          stored_session_id: "stored",
+          readiness: building,
+        };
       }
+      if (method === "session.readiness") return building;
       return {};
     });
     const onInitializationChange = vi.fn();
@@ -391,14 +403,14 @@ describe("useDashboardChatTransport recovery", () => {
         payload: { stage: "agent.build_started", at_ms: 1_000 },
       });
       dashboardMock.onEvent?.({
-        type: "desktop.timing",
+        type: "session.readiness.changed",
         session_id: "live",
-        payload: { stage: "agent.construct_started", at_ms: 1_100 },
-      });
-      dashboardMock.onEvent?.({
-        type: "desktop.timing",
-        session_id: "live",
-        payload: { stage: "agent.build_ready", at_ms: 2_000 },
+        payload: {
+          ...building,
+          phase: "ready",
+          agent_ready: true,
+          updated_at_ms: 2_000,
+        },
       });
       dashboardMock.onEvent?.({
         type: "desktop.timing",
@@ -414,10 +426,20 @@ describe("useDashboardChatTransport recovery", () => {
 
     expect(onInitializationChange.mock.calls).toEqual(
       expect.arrayContaining([
-        [{ phase: "starting", startedAtMs: 1_000 }],
-        [{ phase: "loading", startedAtMs: 1_000 }],
-        [{ phase: "ready", startedAtMs: 1_000 }],
-        [{ phase: "connecting", startedAtMs: 1_000 }],
+        [
+          expect.objectContaining({
+            phase: "waiting",
+            backgroundStartedAtMs: 1_000,
+            blockingStartedAtMs: expect.any(Number),
+          }),
+        ],
+        [
+          expect.objectContaining({
+            phase: "ready",
+            backgroundStartedAtMs: 1_000,
+            blockingStartedAtMs: expect.any(Number),
+          }),
+        ],
         [null],
       ]),
     );

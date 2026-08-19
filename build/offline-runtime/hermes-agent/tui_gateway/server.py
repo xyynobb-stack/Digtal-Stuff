@@ -13837,6 +13837,7 @@ def _browser_disconnect(rid) -> dict:
 # over already exists; register() rebinds them onto this namespace.
 from . import (  # noqa: E402
     methods_complete as _methods_complete,
+    methods_desktop_cold_start as _methods_desktop_cold_start,
     methods_config as _methods_config,
     methods_prompt as _methods_prompt,
     methods_session as _methods_session,
@@ -13849,6 +13850,7 @@ for _m in (
     _methods_config,
     _methods_complete,
     _methods_tools,
+    _methods_desktop_cold_start,
 ):
     _m.register(sys.modules[__name__])
 del _m

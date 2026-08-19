@@ -37,6 +37,22 @@ interface SessionResponse {
   resumed?: string;
   session_id: string;
   stored_session_id?: string | null;
+  readiness?: SessionReadinessResponse;
+}
+
+interface SessionReadinessResponse {
+  agent_ready?: boolean;
+  error?: string | null;
+  generation?: number;
+  phase?:
+    | "creating_session"
+    | "building_agent"
+    | "ready"
+    | "failed"
+    | "missing";
+  session_id?: string;
+  started_at_ms?: number;
+  updated_at_ms?: number;
 }
 
 interface ModelOptionsResponse extends SessionModelIdentity {
@@ -90,6 +106,7 @@ interface EnsureDashboardRuntimeSessionResult {
   };
   created: boolean;
   modelIdentity?: SessionModelIdentity;
+  readiness?: SessionReadinessResponse;
   runtimeSessionId: string;
   storedSessionId: string;
 }
@@ -122,14 +139,9 @@ interface UseDashboardChatTransportArgs {
 
 export interface AgentInitializationStatus {
   detail?: string;
-  phase:
-    | "starting"
-    | "loading"
-    | "finalizing"
-    | "connecting"
-    | "ready"
-    | "failed";
-  startedAtMs: number;
+  phase: "background" | "waiting" | "ready" | "failed";
+  backgroundStartedAtMs: number;
+  blockingStartedAtMs?: number;
 }
 
 interface UseDashboardChatTransportResult {
@@ -278,6 +290,7 @@ export async function ensureDashboardRuntimeSession(
       return {
         created: false,
         modelIdentity: resumed.info,
+        readiness: resumed.readiness,
         runtimeSessionId: resumed.session_id,
         storedSessionId: resumed.stored_session_id || resumed.resumed || stored,
       };
@@ -316,6 +329,7 @@ export async function ensureDashboardRuntimeSession(
     createdModelOverride,
     created: true,
     modelIdentity: created.info,
+    readiness: created.readiness,
     runtimeSessionId: created.session_id,
     storedSessionId: created.stored_session_id || created.session_id,
   };
@@ -1046,7 +1060,12 @@ export function useDashboardChatTransport({
     firstMessageDeltaRecorded: boolean;
     turnId: string;
   } | null>(null);
-  const agentInitializationStartedAtRef = useRef<number | null>(null);
+  const sessionReadinessRef = useRef<SessionReadinessResponse | null>(null);
+  const initializationWaitRef = useRef<{
+    startedAtMs: number;
+    turnId: string;
+  } | null>(null);
+  const backgroundNoticeTimerRef = useRef<number | null>(null);
 
   const recordTiming = useCallback((event: ColdStartTimingEvent): void => {
     try {
@@ -1058,6 +1077,86 @@ export function useDashboardChatTransport({
       // A diagnostic bridge failure must never affect the active chat turn.
     }
   }, []);
+
+  const clearBackgroundNoticeTimer = useCallback((): void => {
+    if (backgroundNoticeTimerRef.current !== null) {
+      window.clearTimeout(backgroundNoticeTimerRef.current);
+      backgroundNoticeTimerRef.current = null;
+    }
+  }, []);
+
+  const applySessionReadiness = useCallback(
+    (readiness: SessionReadinessResponse): void => {
+      const generation = Math.max(0, Math.trunc(readiness.generation ?? 0));
+      if (generation > 0 && generation < selectedModelRef.current.generation) {
+        return;
+      }
+      sessionReadinessRef.current = readiness;
+      const backgroundStartedAtMs = Number.isFinite(readiness.started_at_ms)
+        ? Number(readiness.started_at_ms)
+        : Date.now();
+      const wait = initializationWaitRef.current;
+
+      if (readiness.phase === "ready" || readiness.agent_ready) {
+        clearBackgroundNoticeTimer();
+        if (wait) {
+          recordTiming({
+            stage: "chat.initialization_wait_finished",
+            turnId: wait.turnId,
+            sessionId: readiness.session_id,
+            generation,
+          });
+          initializationWaitRef.current = null;
+          onAgentInitializationChange?.({
+            phase: "ready",
+            backgroundStartedAtMs,
+            blockingStartedAtMs: wait.startedAtMs,
+          });
+        } else {
+          onAgentInitializationChange?.(null);
+        }
+        return;
+      }
+
+      if (readiness.phase === "failed" || readiness.error) {
+        clearBackgroundNoticeTimer();
+        onAgentInitializationChange?.({
+          phase: "failed",
+          backgroundStartedAtMs,
+          ...(wait ? { blockingStartedAtMs: wait.startedAtMs } : {}),
+          ...(readiness.error ? { detail: readiness.error } : {}),
+        });
+        return;
+      }
+
+      if (wait) {
+        clearBackgroundNoticeTimer();
+        onAgentInitializationChange?.({
+          phase: "waiting",
+          backgroundStartedAtMs,
+          blockingStartedAtMs: wait.startedAtMs,
+        });
+        return;
+      }
+
+      if (backgroundNoticeTimerRef.current === null) {
+        backgroundNoticeTimerRef.current = window.setTimeout(() => {
+          backgroundNoticeTimerRef.current = null;
+          if (
+            sessionReadinessRef.current === readiness &&
+            !sessionReadinessRef.current.agent_ready &&
+            !initializationWaitRef.current
+          ) {
+            onAgentInitializationChange?.({
+              phase: "background",
+              backgroundStartedAtMs,
+            });
+          }
+        }, 1_200);
+      }
+    },
+    [clearBackgroundNoticeTimer, onAgentInitializationChange, recordTiming],
+  );
 
   useEffect(() => {
     // `messagesRef` is the synchronous source of truth for `handleGatewayEvent`:
@@ -1089,7 +1188,15 @@ export function useDashboardChatTransport({
     lastRuntimeSessionWasCreatedRef.current = false;
     pendingClarifyRequestIdRef.current = null;
     lastSyncedCwdRef.current = null;
-  }, [hermesSessionId]);
+    sessionReadinessRef.current = null;
+    initializationWaitRef.current = null;
+    clearBackgroundNoticeTimer();
+    onAgentInitializationChange?.(null);
+  }, [
+    clearBackgroundNoticeTimer,
+    hermesSessionId,
+    onAgentInitializationChange,
+  ]);
 
   useEffect(() => {
     appliedModelRef.current = null;
@@ -1114,9 +1221,16 @@ export function useDashboardChatTransport({
     pendingClarifyRequestIdRef.current = null;
     pendingRecoveredContinuationRef.current = [];
     lastSyncedCwdRef.current = null;
-    agentInitializationStartedAtRef.current = null;
+    sessionReadinessRef.current = null;
+    initializationWaitRef.current = null;
+    clearBackgroundNoticeTimer();
     onAgentInitializationChange?.(null);
-  }, [connectionMode, onAgentInitializationChange, profile]);
+  }, [
+    clearBackgroundNoticeTimer,
+    connectionMode,
+    onAgentInitializationChange,
+    profile,
+  ]);
 
   const handleGatewayEvent = useCallback(
     (event: DashboardStreamEvent): void => {
@@ -1132,6 +1246,10 @@ export function useDashboardChatTransport({
       logDashboardEvent(event, "accepted", runtimeSessionId);
 
       const timing = activeTimingRef.current;
+      if (event.type === "session.readiness.changed") {
+        applySessionReadiness(event.payload as SessionReadinessResponse);
+        return;
+      }
       if (event.type === "desktop.timing") {
         const payload = asRecord(event.payload);
         const stage = payload.stage;
@@ -1146,49 +1264,19 @@ export function useDashboardChatTransport({
             stage,
             atMs: eventAtMs,
             ...(timing ? { turnId: timing.turnId } : {}),
+            ...(event.session_id ? { sessionId: event.session_id } : {}),
+            generation: Math.max(
+              0,
+              Math.trunc(
+                Number(
+                  payload.generation ??
+                    sessionReadinessRef.current?.generation ??
+                    0,
+                ),
+              ),
+            ),
             ...(detail ? { detail } : {}),
           });
-
-          if (stage === "agent.build_started") {
-            agentInitializationStartedAtRef.current = eventAtMs;
-            onAgentInitializationChange?.({
-              phase: "starting",
-              startedAtMs: eventAtMs,
-            });
-          } else if (stage === "agent.construct_started") {
-            agentInitializationStartedAtRef.current ??= eventAtMs;
-            onAgentInitializationChange?.({
-              phase: "loading",
-              startedAtMs: agentInitializationStartedAtRef.current,
-            });
-          } else if (stage === "agent.construct_ready") {
-            onAgentInitializationChange?.({
-              phase: "finalizing",
-              startedAtMs: agentInitializationStartedAtRef.current ?? eventAtMs,
-            });
-          } else if (stage === "agent.build_ready") {
-            onAgentInitializationChange?.({
-              phase: "ready",
-              startedAtMs: agentInitializationStartedAtRef.current ?? eventAtMs,
-            });
-          } else if (
-            stage === "agent.api_request_started" &&
-            agentInitializationStartedAtRef.current !== null
-          ) {
-            onAgentInitializationChange?.({
-              phase: "connecting",
-              startedAtMs: agentInitializationStartedAtRef.current,
-            });
-          } else if (
-            stage === "agent.build_failed" ||
-            stage === "agent.construct_failed"
-          ) {
-            onAgentInitializationChange?.({
-              phase: "failed",
-              startedAtMs: agentInitializationStartedAtRef.current ?? eventAtMs,
-              ...(detail ? { detail } : {}),
-            });
-          }
         }
         return;
       }
@@ -1208,8 +1296,15 @@ export function useDashboardChatTransport({
                 event.type === "reasoning.delta" ? "reasoning" : "message",
             });
           }
-          if (agentInitializationStartedAtRef.current !== null) {
-            agentInitializationStartedAtRef.current = null;
+          if (initializationWaitRef.current !== null) {
+            const wait = initializationWaitRef.current;
+            initializationWaitRef.current = null;
+            recordTiming({
+              stage: "chat.initialization_wait_finished",
+              turnId: wait.turnId,
+              sessionId: runtimeSessionIdRef.current ?? undefined,
+              generation: sessionReadinessRef.current?.generation,
+            });
             onAgentInitializationChange?.(null);
           }
           if (
@@ -1275,8 +1370,8 @@ export function useDashboardChatTransport({
       setMessages(nextMessages);
 
       if (event.type === "message.complete") {
-        if (agentInitializationStartedAtRef.current !== null) {
-          agentInitializationStartedAtRef.current = null;
+        if (initializationWaitRef.current !== null) {
+          initializationWaitRef.current = null;
           onAgentInitializationChange?.(null);
         }
         if (timing) {
@@ -1378,6 +1473,7 @@ export function useDashboardChatTransport({
     },
     [
       activeTurnRef,
+      applySessionReadiness,
       connectionMode,
       recordTiming,
       onAgentInitializationChange,
@@ -1558,6 +1654,9 @@ export function useDashboardChatTransport({
         lastRuntimeSessionWasCreatedRef.current = response.created;
         justCreated = response.created;
         const responseIdentity = response.modelIdentity;
+        if (response.readiness) {
+          applySessionReadiness(response.readiness);
+        }
         if (response.created && responseIdentity?.route_id) {
           resolvedRouteRef.current = {
             identity: responseIdentity,
@@ -1612,7 +1711,13 @@ export function useDashboardChatTransport({
 
       return targetSessionId;
     },
-    [activeTurnRef, contextFolder, profile, setHermesSessionId],
+    [
+      activeTurnRef,
+      applySessionReadiness,
+      contextFolder,
+      profile,
+      setHermesSessionId,
+    ],
   );
 
   const ensureSelectedModel = useCallback(
@@ -1768,7 +1873,12 @@ export function useDashboardChatTransport({
       recordTiming({ stage: "dashboard.session_prewarm_started" });
       const sessionId = await ensureRuntimeSession(client);
       if (cancelled) return;
-      await ensureSelectedModel(client, sessionId);
+      const selectedSessionId = await ensureSelectedModel(client, sessionId);
+      const readiness = await client.request<SessionReadinessResponse>(
+        "session.readiness",
+        { session_id: selectedSessionId },
+      );
+      applySessionReadiness(readiness);
       if (!cancelled) recordTiming({ stage: "dashboard.session_ready" });
     })().catch((err) => {
       if (cancelled) return;
@@ -1785,6 +1895,7 @@ export function useDashboardChatTransport({
     };
   }, [
     activeTurnRef,
+    applySessionReadiness,
     connectionMode,
     contextFolder,
     enabled,
@@ -1850,6 +1961,19 @@ export function useDashboardChatTransport({
         turnId: timingTurnId,
       };
       recordTiming({ stage: "chat.send", turnId: timingTurnId });
+      if (!sessionReadinessRef.current?.agent_ready) {
+        const wait = { startedAtMs: Date.now(), turnId: timingTurnId };
+        initializationWaitRef.current = wait;
+        recordTiming({
+          stage: "chat.initialization_wait_started",
+          turnId: timingTurnId,
+          sessionId: runtimeSessionIdRef.current ?? undefined,
+          generation: sessionReadinessRef.current?.generation,
+        });
+        if (sessionReadinessRef.current) {
+          applySessionReadiness(sessionReadinessRef.current);
+        }
+      }
       const finishTimingFailed = (detail: string): void => {
         recordTiming({
           stage: "chat.failed",
@@ -1857,6 +1981,8 @@ export function useDashboardChatTransport({
           detail,
         });
         activeTimingRef.current = null;
+        initializationWaitRef.current = null;
+        onAgentInitializationChange?.(null);
       };
       const dashboardText = dashboardPromptTextForAttachments(
         text,
@@ -1992,6 +2118,11 @@ export function useDashboardChatTransport({
           client,
           runtimeSessionId,
         );
+        const readiness = await client.request<SessionReadinessResponse>(
+          "session.readiness",
+          { session_id: selectedSessionId },
+        );
+        applySessionReadiness(readiness);
         await recordContinuationItems(mergePendingRecoveredContinuation([]));
         const syncedAttachments = await syncDashboardAttachments(
           client,
@@ -2027,6 +2158,8 @@ export function useDashboardChatTransport({
             recordTiming({
               stage: "chat.prompt_submit_sent",
               turnId: timingTurnId,
+              sessionId: submissionSessionId,
+              generation: sessionReadinessRef.current?.generation,
             }),
           onRecoveredSessionId: (recoveredSessionId) => {
             runtimeSessionIdRef.current = recoveredSessionId;
@@ -2044,6 +2177,7 @@ export function useDashboardChatTransport({
     },
     [
       activeTurnRef,
+      applySessionReadiness,
       connectionMode,
       enabled,
       fallbackOnUnavailable,
@@ -2054,6 +2188,7 @@ export function useDashboardChatTransport({
       setIsLoading,
       setMessages,
       setToolProgress,
+      onAgentInitializationChange,
       profile,
       recordTiming,
     ],

@@ -6109,8 +6109,10 @@ body:has(.shell-vibrant),
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
   color: var(--text-primary);
 }
@@ -6140,7 +6142,7 @@ body:has(.shell-vibrant),
 }
 
 .agent-initialization-banner--ready {
-  border-bottom-color: color-mix(in srgb, var(--success) 34%, var(--border));
+  border-color: color-mix(in srgb, var(--success) 34%, var(--border));
   background: color-mix(in srgb, var(--success) 8%, var(--bg-secondary));
 }
 
@@ -6149,7 +6151,7 @@ body:has(.shell-vibrant),
 }
 
 .agent-initialization-banner--failed {
-  border-bottom-color: color-mix(in srgb, var(--error) 40%, var(--border));
+  border-color: color-mix(in srgb, var(--error) 40%, var(--border));
   background: color-mix(in srgb, var(--error) 9%, var(--bg-secondary));
 }
 

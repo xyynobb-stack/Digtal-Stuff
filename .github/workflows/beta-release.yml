@@ -92,6 +92,9 @@ jobs:
       - name: Download PortableGit runtime
         run: npm run prepare:portable-git
 
+      - name: Upgrade bundled SQLite runtime
+        run: npm run prepare:sqlite-runtime
+
       - name: Build bundled Dashboard frontend
         shell: pwsh
         run: |
@@ -130,6 +133,8 @@ jobs:
             "build/offline-runtime/hermes-agent/hermes_cli/web_dist/index.html",
             "build/offline-runtime/hermes-agent/hermes_cli/web_dist/assets",
             "build/offline-runtime/python-runtime/python.exe",
+            "build/offline-runtime/python-runtime/DLLs/sqlite3.dll",
+            "build/offline-runtime/python-runtime/desktop-sqlite-runtime.json",
             "build/offline-runtime/git/bin/bash.exe",
             "build/offline-runtime/git/cmd/git.exe",
             "build/offline-runtime/preset-content"
@@ -153,6 +158,8 @@ jobs:
           $content = "EMPLOYEE_LOOKUP_ADMIN_TOKEN=$($env:EMPLOYEE_LOOKUP_ADMIN_TOKEN)`n"
           [IO.File]::WriteAllText($envFile, $content, [Text.UTF8Encoding]::new($false))
           Write-Host "Verified bundled runtime: $([math]::Round($runtimeBytes / 1MB, 1)) MB"
+          & "build/offline-runtime/python-runtime/python.exe" -c "import sqlite3; assert sqlite3.sqlite_version == '3.53.4', sqlite3.sqlite_version"
+          if ($LASTEXITCODE -ne 0) { throw "Bundled SQLite version check failed" }
 
       - name: Build bundled Windows virtual environment
         shell: pwsh
@@ -172,13 +179,16 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not install Hermes Agent into bundled venv" }
             & $venvPython -c "import hermes_cli, run_agent, edge_tts"
             if ($LASTEXITCODE -ne 0) { throw "Bundled Hermes Agent import check failed" }
-            & $venvPython -c "from tui_gateway import server; required = {'model.options', 'model.identity', 'model.resolve', 'session.create', 'session.model.set'}; missing = required - server._methods.keys(); assert not missing, missing"
+            & $venvPython -c "from tui_gateway import server; required = {'model.options', 'model.identity', 'model.resolve', 'session.create', 'session.model.set', 'session.readiness'}; missing = required - server._methods.keys(); assert not missing, missing"
             if ($LASTEXITCODE -ne 0) { throw "Desktop Agent RPC registration check failed" }
             & $venvPython -c "from tui_gateway import server; route = server._desktop_route_identity({'provider':'ci-provider','model':'ci-model','base_url':'https://ci.invalid/v1'}); assert route['route_id'].startswith('route:v1:')"
             if ($LASTEXITCODE -ne 0) { throw "Desktop Agent route identity check failed" }
           } finally {
             Pop-Location
           }
+
+      - name: Package bundled Runtime archive
+        run: npm run package:offline-runtime
 
       - name: Build app
         env:
@@ -196,31 +206,17 @@ jobs:
         run: |
           $runtime = (Resolve-Path "dist/win-unpacked/resources/hermes-runtime").Path
           $required = @(
-            "$runtime/hermes-agent/run_agent.py",
-            "$runtime/hermes-agent/hermes_cli/web_dist/index.html",
-            "$runtime/hermes-agent/hermes_cli/web_dist/assets",
-            "$runtime/hermes-agent/venv/Scripts/python.exe",
-            "$runtime/hermes-agent/venv/Scripts/hermes.exe",
-            "$runtime/python-runtime/python.exe",
-            "$runtime/git/bin/bash.exe",
-            "$runtime/git/cmd/git.exe",
-            "$runtime/employee-lookup.env"
+            "$runtime/runtime.tar",
+            "$runtime/runtime-archive.json",
+            "$runtime/desktop-runtime-build.json"
           )
           foreach ($path in $required) {
             if (-not (Test-Path -LiteralPath $path)) {
               throw "Packaged Windows runtime is incomplete: missing $path"
             }
           }
-          node scripts/verify-dashboard-web-dist.mjs `
-            "$runtime/hermes-agent/hermes_cli/web_dist"
-          if ($LASTEXITCODE -ne 0) { throw "Packaged Dashboard frontend verification failed" }
-          Push-Location "$runtime/hermes-agent"
-          try {
-            & "$runtime/hermes-agent/venv/Scripts/python.exe" -c "import hermes_cli, run_agent"
-            if ($LASTEXITCODE -ne 0) { throw "Packaged Hermes Agent import check failed" }
-          } finally {
-            Pop-Location
-          }
+          node scripts/package-offline-runtime.mjs --verify $runtime
+          if ($LASTEXITCODE -ne 0) { throw "Packaged Runtime archive verification failed" }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

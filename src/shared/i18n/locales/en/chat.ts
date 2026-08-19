@@ -76,14 +76,15 @@ export default {
   dashboardUnavailableFallback:
     "Dashboard chat isn't available on this connection — using basic chat. Profile switching and session history are limited.",
   initialization: {
-    title: "Preparing JingYuAI",
-    starting: "Starting the local Agent runtime…",
-    loading: "Loading the model configuration, skills, and tools…",
-    finalizing: "Finishing session initialization…",
-    connecting: "Initialization is complete. Connecting to the model…",
-    ready: "Initialization complete — JingYuAI is ready.",
-    failed: "Initialization failed. Review the details below and try again.",
-    elapsed: "Still working normally · {{seconds}}s elapsed",
+    title: "Session preparation",
+    background:
+      "Preparing the model, skills, and tools in the background. You can type now.",
+    waiting:
+      "Preparing this session. Your message will be sent automatically when ready.",
+    ready: "This session is ready. Sending your message now.",
+    failed:
+      "This session could not be prepared. Review the details below and try again.",
+    waitingElapsed: "You have waited {{seconds}}s",
   },
   attachUnsupported: "{{name}}: file type not supported",
   attachImageTooLarge: "{{name}}: image too large (max 50 MB)",

@@ -11,10 +11,13 @@ vi.mock("../../components/useI18n", () => ({
 
 describe("AgentInitializationBanner", () => {
   // @lat: [[chat-commands#Layered desktop readiness]]
-  it("shows non-blocking progress while Agent construction is running", () => {
+  it("does not count background preparation as user wait time", () => {
     render(
       <AgentInitializationBanner
-        status={{ phase: "loading", startedAtMs: Date.now() - 4_000 }}
+        status={{
+          phase: "background",
+          backgroundStartedAtMs: Date.now() - 4_000,
+        }}
       />,
     );
 
@@ -22,8 +25,27 @@ describe("AgentInitializationBanner", () => {
       "role",
       "status",
     );
-    expect(screen.getByText("chat.initialization.loading")).toBeTruthy();
-    expect(screen.getByText(/chat\.initialization\.elapsed:/)).toBeTruthy();
+    expect(screen.getByText("chat.initialization.background")).toBeTruthy();
+    expect(
+      screen.queryByText(/chat\.initialization\.waitingElapsed:/),
+    ).toBeNull();
+  });
+
+  it("starts elapsed time only when a sent message is waiting", () => {
+    render(
+      <AgentInitializationBanner
+        status={{
+          phase: "waiting",
+          backgroundStartedAtMs: Date.now() - 30_000,
+          blockingStartedAtMs: Date.now() - 4_000,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("chat.initialization.waiting")).toBeTruthy();
+    expect(
+      screen.getByText(/chat\.initialization\.waitingElapsed:/),
+    ).toBeTruthy();
   });
 
   it("keeps initialization errors visible as an alert", () => {
@@ -31,7 +53,7 @@ describe("AgentInitializationBanner", () => {
       <AgentInitializationBanner
         status={{
           phase: "failed",
-          startedAtMs: Date.now() - 1_000,
+          backgroundStartedAtMs: Date.now() - 1_000,
           detail: "MCP startup failed",
         }}
       />,

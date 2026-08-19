@@ -10429,14 +10429,20 @@ def cmd_dashboard(args):
     # save ~500ms startup; we have to trigger it explicitly here because
     # the dashboard's server-side runtime depends on plugin-registered
     # providers (image_gen, web, dashboard_auth, …).
-    try:
-        from hermes_cli.plugins import discover_plugins
-        discover_plugins()
-    except Exception as exc:
-        # Discovery failures must not block dashboard startup outright —
-        # log and proceed; the gate's fail-closed branch will surface
-        # the missing-provider state if it matters.
-        print(f"⚠ Plugin discovery failed: {exc}", file=sys.stderr)
+    # Desktop HTTP readiness must not wait for full plugin discovery. The
+    # loopback Desktop does not need dashboard-auth providers before binding,
+    # and Agent/tool/plugin endpoints perform the same idempotent discovery on
+    # demand. Public/non-Desktop dashboards retain eager discovery because
+    # their fail-closed auth gate requires providers before start_server().
+    if os.getenv("HERMES_DESKTOP") != "1":
+        try:
+            from hermes_cli.plugins import discover_plugins
+            discover_plugins()
+        except Exception as exc:
+            # Discovery failures must not block dashboard startup outright —
+            # log and proceed; the gate's fail-closed branch will surface
+            # the missing-provider state if it matters.
+            print(f"⚠ Plugin discovery failed: {exc}", file=sys.stderr)
 
     # Desktop chat uses the dashboard's in-process /api/ws gateway, which builds
     # agents via tui_gateway.server._make_agent.  That path only snapshots the

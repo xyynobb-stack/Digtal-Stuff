@@ -1,5 +1,6 @@
 import { spawn, execFile, execFileSync } from "child_process";
 import {
+  createReadStream,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -11,9 +12,12 @@ import {
   unlinkSync,
 } from "fs";
 import { cp } from "fs/promises";
-import { join, delimiter, posix, resolve, sep, win32 } from "path";
+import { join, delimiter, dirname, posix, resolve, sep, win32 } from "path";
 import { homedir, tmpdir } from "os";
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
+import { Transform } from "stream";
+import { pipeline } from "stream/promises";
+import { x as extractTar } from "tar";
 import { app, type BrowserWindow } from "electron";
 import {
   getConnectionConfig,
@@ -34,6 +38,85 @@ import {
 import { recordColdStartTiming } from "./cold-start-timing";
 
 const IS_WINDOWS = process.platform === "win32";
+const RUNTIME_ARCHIVE_NAME = "runtime.tar";
+const RUNTIME_ARCHIVE_MANIFEST_NAME = "runtime-archive.json";
+
+interface RuntimeArchiveManifest {
+  archive: string;
+  bytes: number;
+  schemaVersion: number;
+  sha256: string;
+}
+
+function readRuntimeArchiveManifest(
+  sourceRoot: string,
+): RuntimeArchiveManifest {
+  const manifestPath = join(sourceRoot, RUNTIME_ARCHIVE_MANIFEST_NAME);
+  const raw = JSON.parse(
+    readFileSync(manifestPath, "utf8"),
+  ) as Partial<RuntimeArchiveManifest>;
+  if (
+    raw.schemaVersion !== 1 ||
+    raw.archive !== RUNTIME_ARCHIVE_NAME ||
+    !Number.isSafeInteger(raw.bytes) ||
+    Number(raw.bytes) <= 0 ||
+    typeof raw.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/i.test(raw.sha256)
+  ) {
+    throw new Error("packaged Runtime archive manifest is invalid");
+  }
+  return raw as RuntimeArchiveManifest;
+}
+
+function safeRuntimeArchiveEntry(entryPath: string): boolean {
+  const normalized = entryPath.replace(/\\/g, "/");
+  if (normalized.startsWith("/") || /^[a-zA-Z]:/.test(normalized)) return false;
+  return !normalized.split("/").includes("..");
+}
+
+/** Stream one verified archive directly into the immutable staging tree. */
+export async function extractBundledRuntimeArchive(
+  sourceRoot: string,
+  stagingRoot: string,
+): Promise<void> {
+  const manifest = readRuntimeArchiveManifest(sourceRoot);
+  const archivePath = join(sourceRoot, manifest.archive);
+  const archiveStat = statSync(archivePath);
+  if (!archiveStat.isFile() || archiveStat.size !== manifest.bytes) {
+    throw new Error(
+      "packaged Runtime archive size does not match its manifest",
+    );
+  }
+  mkdirSync(stagingRoot, { recursive: true });
+  const hash = createHash("sha256");
+  const hashStream = new Transform({
+    transform(chunk: Buffer, _encoding, callback): void {
+      hash.update(chunk);
+      callback(null, chunk);
+    },
+  });
+  await pipeline(
+    createReadStream(archivePath),
+    hashStream,
+    extractTar({
+      cwd: stagingRoot,
+      preservePaths: false,
+      strict: true,
+      filter: (entryPath) => {
+        if (!safeRuntimeArchiveEntry(entryPath)) {
+          throw new Error(`unsafe Runtime archive entry: ${entryPath}`);
+        }
+        return true;
+      },
+    }),
+  );
+  const actualHash = hash.digest("hex");
+  if (actualHash.toLowerCase() !== manifest.sha256.toLowerCase()) {
+    throw new Error(
+      "packaged Runtime archive checksum does not match its manifest",
+    );
+  }
+}
 
 /**
  * Paths inside the relocatable Python runtime bundled with an offline build.
@@ -110,8 +193,8 @@ if (HERMES_DESKTOP_USER_DATA_DIR) {
   }
 }
 
-// Packaged builds can carry a complete Hermes/Python runtime in
-// resources/hermes-runtime. Copy it asynchronously to a writable per-user
+// Packaged builds carry a complete Hermes/Python runtime as one archive under
+// resources/hermes-runtime. Expand it asynchronously into a writable per-user
 // location after the first window is created so a large offline runtime never
 // blocks (or crashes) Electron while the main-process bundle is being loaded.
 //
@@ -127,7 +210,8 @@ export function resolveBundledRuntimeRepo(
   if (!packaged || !resourcesRoot || !userDataRoot) return "";
   const sourceRoot = join(resourcesRoot, "hermes-runtime");
   const sourceRepo = join(sourceRoot, "hermes-agent");
-  if (existsSync(sourceRepo)) {
+  const sourceArchive = join(sourceRoot, RUNTIME_ARCHIVE_NAME);
+  if (existsSync(sourceRepo) || existsSync(sourceArchive)) {
     const markerPath = join(sourceRoot, "desktop-runtime-build.json");
     const marker = existsSync(markerPath)
       ? readFileSync(markerPath, "utf8")
@@ -480,9 +564,12 @@ async function prepareBundledRuntime(): Promise<void> {
   const managedRoot = join(app.getPath("userData"), "hermes-runtime");
   const sourceRepo = join(sourceRoot, "hermes-agent");
   const sourcePython = join(sourceRoot, "python-runtime");
+  const sourceArchive = join(sourceRoot, RUNTIME_ARCHIVE_NAME);
   const sourceBuildMarker = join(sourceRoot, "desktop-runtime-build.json");
   try {
-    if (existsSync(sourceRepo)) {
+    if (existsSync(sourceArchive) || existsSync(sourceRepo)) {
+      const archivedRuntime = existsSync(sourceArchive);
+      if (archivedRuntime) readRuntimeArchiveManifest(sourceRoot);
       const packagedBuildMarker = existsSync(sourceBuildMarker)
         ? readFileSync(sourceBuildMarker, "utf8")
         : "";
@@ -504,7 +591,7 @@ async function prepareBundledRuntime(): Promise<void> {
         targetPython,
         targetBuildMarker,
         expectedBuildIdentity,
-        existsSync(sourcePython),
+        archivedRuntime || existsSync(sourcePython),
       );
       if (!currentError) {
         try {
@@ -534,12 +621,19 @@ async function prepareBundledRuntime(): Promise<void> {
           "desktop-runtime-build.json",
         );
         try {
-          await cp(sourceRepo, stagingRepo, { recursive: true, force: false });
-          if (existsSync(sourcePython)) {
-            await cp(sourcePython, stagingPython, {
+          if (archivedRuntime) {
+            await extractBundledRuntimeArchive(sourceRoot, stagingRoot);
+          } else {
+            await cp(sourceRepo, stagingRepo, {
               recursive: true,
               force: false,
             });
+            if (existsSync(sourcePython)) {
+              await cp(sourcePython, stagingPython, {
+                recursive: true,
+                force: false,
+              });
+            }
           }
           writeFileSync(stagingBuildMarker, expectedBuildIdentity, "utf8");
           const stagedError = validateRuntimeTree(
@@ -547,7 +641,7 @@ async function prepareBundledRuntime(): Promise<void> {
             stagingPython,
             stagingBuildMarker,
             expectedBuildIdentity,
-            existsSync(sourcePython),
+            archivedRuntime || existsSync(sourcePython),
             false,
           );
           if (stagedError) throw new Error(stagedError);
@@ -571,7 +665,7 @@ async function prepareBundledRuntime(): Promise<void> {
             targetPython,
             targetBuildMarker,
             expectedBuildIdentity,
-            existsSync(sourcePython),
+            archivedRuntime || existsSync(sourcePython),
           );
           if (finalError) throw new Error(finalError);
           probeRelocatedRuntime(targetRepo);
@@ -606,6 +700,9 @@ const BUNDLED_RUNTIME_REPO = resolveBundledRuntimeRepo(
   Boolean(app?.isPackaged),
   app?.isPackaged ? app.getVersion() : "",
 );
+const BUNDLED_RUNTIME_ROOT = BUNDLED_RUNTIME_REPO
+  ? dirname(BUNDLED_RUNTIME_REPO)
+  : "";
 let bundledRuntimePreparation: Promise<void> | null = null;
 
 /**
@@ -621,6 +718,7 @@ export function initializeBundledRuntime(): Promise<void> {
       await installBundledPresetContent();
       installBundledLookupToken();
       installBundledSoulRules();
+      configureBundledPortableGit();
       recordColdStartTiming({ stage: "runtime.ready" });
     });
     const guarded = attempt.catch((error) => {
@@ -638,12 +736,25 @@ export function initializeBundledRuntime(): Promise<void> {
   return bundledRuntimePreparation;
 }
 
-const BUNDLED_PORTABLE_GIT = bundledPortableGitLayout(
-  app?.isPackaged ? process.resourcesPath : "",
-);
-if (BUNDLED_PORTABLE_GIT && existsSync(BUNDLED_PORTABLE_GIT.bash)) {
-  process.env.HERMES_GIT_BASH_PATH = BUNDLED_PORTABLE_GIT.bash;
+const BUNDLED_PORTABLE_GIT =
+  IS_WINDOWS && BUNDLED_RUNTIME_ROOT
+    ? {
+        root: join(BUNDLED_RUNTIME_ROOT, "git"),
+        bash: join(BUNDLED_RUNTIME_ROOT, "git", "bin", "bash.exe"),
+        pathEntries: [
+          join(BUNDLED_RUNTIME_ROOT, "git", "bin"),
+          join(BUNDLED_RUNTIME_ROOT, "git", "cmd"),
+          join(BUNDLED_RUNTIME_ROOT, "git", "usr", "bin"),
+        ],
+      }
+    : bundledPortableGitLayout(app?.isPackaged ? process.resourcesPath : "");
+
+function configureBundledPortableGit(): void {
+  if (BUNDLED_PORTABLE_GIT && existsSync(BUNDLED_PORTABLE_GIT.bash)) {
+    process.env.HERMES_GIT_BASH_PATH = BUNDLED_PORTABLE_GIT.bash;
+  }
 }
+configureBundledPortableGit();
 
 // Resolve the Hermes data directory. Precedence:
 //   1. HERMES_HOME env var if set (install.ps1 sets it User-scope on
@@ -746,7 +857,7 @@ async function installBundledPresetContent(): Promise<void> {
   if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
   try {
     await installPackagedPresetContent(
-      join(process.resourcesPath, "hermes-runtime", "preset-content"),
+      join(BUNDLED_RUNTIME_ROOT, "preset-content"),
       HERMES_HOME,
     );
   } catch {
@@ -756,11 +867,7 @@ async function installBundledPresetContent(): Promise<void> {
 
 function installBundledLookupToken(): void {
   if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
-  const bundledEnv = join(
-    process.resourcesPath,
-    "hermes-runtime",
-    "employee-lookup.env",
-  );
+  const bundledEnv = join(BUNDLED_RUNTIME_ROOT, "employee-lookup.env");
   const targetEnv = join(HERMES_HOME, ".env");
   try {
     if (!existsSync(bundledEnv)) return;
@@ -789,11 +896,7 @@ const COMPANY_SOUL_RULES_MARKER = "<!-- AGENT_WINDOWS_PYTHON_RULES -->";
  */
 function installBundledSoulRules(): void {
   if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
-  const bundledRules = join(
-    process.resourcesPath,
-    "hermes-runtime",
-    "employee-default-soul.md",
-  );
+  const bundledRules = join(BUNDLED_RUNTIME_ROOT, "employee-default-soul.md");
   const targetSoul = join(HERMES_HOME, "SOUL.md");
   try {
     if (!existsSync(bundledRules)) return;

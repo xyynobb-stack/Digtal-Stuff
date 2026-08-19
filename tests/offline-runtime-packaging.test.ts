@@ -15,6 +15,17 @@ import {
   patchDashboardColdStartSource,
 } from "../scripts/patch-dashboard-cold-start.mjs";
 import { patchTtsRequirementsSource } from "../scripts/apply-offline-runtime-overlays.mjs";
+import {
+  SQLITE_RUNTIME_SHA3_256,
+  SQLITE_RUNTIME_VERSION,
+  sha3_256,
+  sqliteRuntimeAssetName,
+  sqliteRuntimeDownloadUrl,
+} from "../scripts/prepare-sqlite-runtime.mjs";
+import {
+  packageOfflineRuntime,
+  verifyOfflineRuntimePackage,
+} from "../scripts/package-offline-runtime.mjs";
 
 const tempRoots: string[] = [];
 
@@ -22,6 +33,72 @@ afterEach(() => {
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+describe("single Runtime archive", () => {
+  // @lat: [[main-process#Offline Windows runtime#Single Runtime archive]]
+  it("packages and verifies the complete runtime as one opaque payload", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-runtime-archive-"));
+    tempRoots.push(root);
+    const runtimeRoot = join(root, "runtime");
+    const packageRoot = join(root, "package");
+    const required = [
+      "hermes-agent/run_agent.py",
+      "hermes-agent/hermes_cli/web_dist/index.html",
+      "hermes-agent/venv/Scripts/python.exe",
+      "hermes-agent/venv/Scripts/hermes.exe",
+      "python-runtime/python.exe",
+      "python-runtime/DLLs/sqlite3.dll",
+      "python-runtime/desktop-sqlite-runtime.json",
+      "git/bin/bash.exe",
+      "git/cmd/git.exe",
+      "employee-lookup.env",
+      "desktop-runtime-build.json",
+    ];
+    for (const relative of required) {
+      const target = join(runtimeRoot, relative);
+      mkdirSync(join(target, ".."), { recursive: true });
+      writeFileSync(target, `${relative}\n`, "utf8");
+    }
+
+    const packaged = await packageOfflineRuntime({ runtimeRoot, packageRoot });
+    const verified = await verifyOfflineRuntimePackage(packageRoot);
+
+    expect(packaged.manifest.bytes).toBeGreaterThan(0);
+    expect(verified.entries.has("hermes-agent/run_agent.py")).toBe(true);
+    expect(
+      readFileSync(join(packageRoot, "runtime-archive.json"), "utf8"),
+    ).toContain(packaged.manifest.sha256);
+  });
+});
+
+describe("bundled SQLite runtime", () => {
+  // @lat: [[main-process#Offline Windows runtime#Pinned SQLite runtime]]
+  it("pins the official x64 archive and release workflow verification", () => {
+    expect(SQLITE_RUNTIME_VERSION).toBe("3.53.4");
+    expect(SQLITE_RUNTIME_SHA3_256).toBe(
+      "deddee963c810d1eeac3ce5e15c7c41da21a1c54d7a39cf54fbf577d2f50de3a",
+    );
+    expect(sqliteRuntimeAssetName("x64")).toBe(
+      "sqlite-dll-win-x64-3530400.zip",
+    );
+    expect(sqliteRuntimeDownloadUrl("x64")).toBe(
+      "https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip",
+    );
+    expect(sha3_256("abc")).toBe(
+      "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532",
+    );
+
+    for (const workflow of ["release.yml", "beta-release.yml"]) {
+      const source = readFileSync(
+        join(process.cwd(), ".github", "workflows", workflow),
+        "utf8",
+      );
+      expect(source).toContain("npm run prepare:sqlite-runtime");
+      expect(source).toContain("sqlite3.sqlite_version == '3.53.4'");
+      expect(source).toContain("desktop-sqlite-runtime.json");
+    }
+  });
 });
 
 describe("offline Agent runtime copy filter", () => {
@@ -61,6 +138,8 @@ describe("desktop Agent model-route overlay", () => {
     );
 
     expect(source).toContain('@method("model.resolve")');
+    expect(source).toContain('@method("session.readiness")');
+    expect(source).toContain('"session.readiness.changed"');
     expect(source).toContain('identity["route_id"] = "route:v1:"');
     expect(source).toContain('params.get("route_id")');
     expect(source).toContain('params.get("selection_generation")');

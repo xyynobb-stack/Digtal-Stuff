@@ -24,6 +24,8 @@ export const COLD_START_TIMING_STAGES = [
   "agent.api_request_finished",
   "agent.api_request_failed",
   "chat.send",
+  "chat.initialization_wait_started",
+  "chat.initialization_wait_finished",
   "chat.websocket_ready",
   "chat.prompt_submit_sent",
   "chat.first_delta",
@@ -47,6 +49,8 @@ export interface ColdStartTimingEvent {
   stage: ColdStartTimingStage;
   atMs?: number;
   turnId?: string;
+  sessionId?: string;
+  generation?: number;
   deltaKind?: "message" | "reasoning";
   detail?: string;
 }

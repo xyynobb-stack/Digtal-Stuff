@@ -147,6 +147,12 @@ export interface AgentInitializationStatus {
 interface UseDashboardChatTransportResult {
   abort: () => void;
   enabled: boolean;
+  /** Publish a picker choice before React commits the matching Chat state. */
+  setModelSelectionIntent: (
+    provider: string,
+    model: string,
+    modelBaseUrl?: string,
+  ) => void;
   sendMessage: (text: string, attachments?: Attachment[]) => Promise<boolean>;
   /**
    * Run a slash command through the gateway's `slash.exec` pipeline instead of
@@ -1013,25 +1019,41 @@ export function useDashboardChatTransport({
   // before React replaced it. Keep the routing identity in a live ref so even
   // that older callback switches/creates the runtime with the picker value
   // visible in the latest render.
-  const selectionKey = dashboardSelectionKey(provider, model, modelBaseUrl);
-  const selectionKeyRef = useRef(selectionKey);
+  const renderedSelectionKey = dashboardSelectionKey(
+    provider,
+    model,
+    modelBaseUrl,
+  );
+  const selectionKeyRef = useRef(renderedSelectionKey);
   const selectionGenerationRef = useRef(1);
-  if (selectionKeyRef.current !== selectionKey) {
-    selectionKeyRef.current = selectionKey;
-    selectionGenerationRef.current += 1;
-  }
+  const pendingSelectionIntentKeyRef = useRef<string | null>(null);
   const selectedModelRef = useRef({
     generation: selectionGenerationRef.current,
     model,
     modelBaseUrl,
     provider,
   });
-  selectedModelRef.current = {
-    generation: selectionGenerationRef.current,
-    model,
-    modelBaseUrl,
-    provider,
-  };
+  // A picker event publishes its intent before React renders the new props.
+  // Do not let an unrelated render replay the previous props over that intent;
+  // adopt props again once they catch up to the pending key.
+  if (
+    pendingSelectionIntentKeyRef.current === null ||
+    pendingSelectionIntentKeyRef.current === renderedSelectionKey
+  ) {
+    if (selectionKeyRef.current !== renderedSelectionKey) {
+      selectionKeyRef.current = renderedSelectionKey;
+      selectionGenerationRef.current += 1;
+    }
+    selectedModelRef.current = {
+      generation: selectionGenerationRef.current,
+      model,
+      modelBaseUrl,
+      provider,
+    };
+    if (pendingSelectionIntentKeyRef.current === renderedSelectionKey) {
+      pendingSelectionIntentKeyRef.current = null;
+    }
+  }
   const modelSwitchQueueRef = useRef<Promise<void>>(Promise.resolve());
   const reasoningSegmentClosedRef = useRef(false);
   const appliedModelRef = useRef<string | null>(null);
@@ -1048,6 +1070,36 @@ export function useDashboardChatTransport({
     route_id?: string;
     sessionId: string;
   } | null>(null);
+  const setModelSelectionIntent = useCallback(
+    (
+      nextProvider: string,
+      nextModel: string,
+      nextModelBaseUrl?: string,
+    ): void => {
+      const nextKey = dashboardSelectionKey(
+        nextProvider,
+        nextModel,
+        nextModelBaseUrl,
+      );
+      if (selectionKeyRef.current !== nextKey) {
+        selectionKeyRef.current = nextKey;
+        selectionGenerationRef.current += 1;
+      }
+      pendingSelectionIntentKeyRef.current = nextKey;
+      selectedModelRef.current = {
+        generation: selectionGenerationRef.current,
+        model: nextModel,
+        modelBaseUrl: nextModelBaseUrl,
+        provider: nextProvider,
+      };
+      // Invalidate caches in the same event as the picker choice. Waiting for
+      // the props effect leaves an immediate Send free to reuse the old route.
+      appliedModelRef.current = null;
+      resolvedRouteRef.current = null;
+      createdWithSelectedModelRef.current = null;
+    },
+    [],
+  );
   const recreateRuntimeSessionRef = useRef(false);
   const lastRuntimeSessionWasCreatedRef = useRef(false);
   const pendingClarifyRequestIdRef = useRef<string | null>(null);
@@ -2281,6 +2333,7 @@ export function useDashboardChatTransport({
   return {
     abort,
     enabled,
+    setModelSelectionIntent,
     sendMessage,
     execSlash,
     getCommandCatalog,

@@ -51,6 +51,11 @@ vi.mock("../dashboardGatewayClient", () => ({
 interface HarnessApi {
   activeTurnRef?: MutableRefObject<ActiveTurn | null>;
   messages?: ChatMessage[];
+  selectModelIntent?: (
+    provider: string,
+    model: string,
+    modelBaseUrl?: string,
+  ) => void;
   send?: (text: string) => Promise<boolean>;
   setConnectionMode?: Dispatch<SetStateAction<"local" | "remote" | "ssh">>;
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
@@ -134,6 +139,7 @@ function Harness({
     Object.assign(api, {
       activeTurnRef,
       messages,
+      selectModelIntent: transport.setModelSelectionIntent,
       send: transport.sendMessage,
       setConnectionMode,
       setMessages,
@@ -147,6 +153,7 @@ function Harness({
     setConnectionMode,
     setMessages,
     transport.sendMessage,
+    transport.setModelSelectionIntent,
   ]);
 
   return null;
@@ -903,6 +910,91 @@ describe("useDashboardChatTransport recovery", () => {
     expect(requests.some((request) => request.method === "model.options")).toBe(
       false,
     );
+  });
+
+  it("uses a picker intent that React has not rendered before an immediate send", async () => {
+    // @lat: [[model-selection#Latest picker identity wins#Picker intent precedes React commit]]
+    const requests: Array<{ method: string; params: unknown }> = [];
+    let liveModel = "bad-model";
+    let liveProvider = "bad-provider";
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.create") {
+        return {
+          session_id: "new-live",
+          stored_session_id: "new-stored",
+          info: {
+            route_id: "route:v1:bad-provider:bad-model",
+            model: liveModel,
+            provider: liveProvider,
+          },
+        };
+      }
+      if (method === "model.resolve") {
+        const selected = params as { model?: string; provider?: string };
+        return {
+          route_id: `route:v1:${selected.provider}:${selected.model}`,
+          model: selected.model,
+          provider: selected.provider,
+        };
+      }
+      if (method === "model.identity") {
+        return { model: liveModel, provider: liveProvider };
+      }
+      if (method === "session.model.set") {
+        liveModel = String((params as { model?: string }).model || "");
+        liveProvider = String((params as { provider?: string }).provider || "");
+        return {
+          route_id: `route:v1:${liveProvider}:${liveModel}`,
+          model: liveModel,
+          provider: liveProvider,
+        };
+      }
+      return {};
+    });
+
+    const api: HarnessApi = {};
+    render(<Harness api={api} initialActiveTurn={null} />);
+
+    await waitFor(() => {
+      expect(window.hermesAPI.recordColdStartTiming).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: "dashboard.session_ready" }),
+      );
+    });
+
+    await act(async () => {
+      // Do not update Harness props: this is the interval between the picker
+      // callback and React committing the corresponding model/provider state.
+      api.activeTurnRef!.current = { ...activeRecoveryTurn };
+      api.selectModelIntent?.("qwen-provider", "qwen3.5-plus");
+      await api.send?.("which model are you");
+    });
+
+    const mutations = requests.filter(
+      (request) =>
+        request.method === "session.model.set" ||
+        request.method === "prompt.submit",
+    );
+    expect(mutations).toEqual([
+      {
+        method: "session.model.set",
+        params: {
+          session_id: "new-live",
+          route_id: "route:v1:qwen-provider:qwen3.5-plus",
+          provider: "qwen-provider",
+          model: "qwen3.5-plus",
+          base_url: undefined,
+          selection_generation: 2,
+        },
+      },
+      {
+        method: "prompt.submit",
+        params: {
+          session_id: "new-live",
+          text: "which model are you",
+        },
+      },
+    ]);
   });
 
   it("lets the latest picker generation win an in-flight route resolution", async () => {

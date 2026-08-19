@@ -42,9 +42,11 @@ Route validation failure is a control-plane error, not evidence that the runtime
 
 ## Latest picker identity wins
 
-Every dashboard send resolves its model, provider, and base URL from the latest rendered picker state, even if the composer invokes a send callback captured before the user changed models.
+Every dashboard send resolves its model, provider, and base URL from the latest picker intent, even if React has not committed that selection yet or the composer invokes a send callback captured before the user changed models.
 
 [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] keeps that routing identity in a live ref and reads it when creating, switching, and validating the runtime session. This prevents a previous conversation model from being reused by a stale UI callback while the picker already displays the new model.
+
+The picker publishes its full identity synchronously to its own Chat transport before scheduling React state. A pending intent is not overwritten by an unrelated render carrying the previous props; matching props acknowledge it without incrementing the generation twice. Thus immediate Send cannot submit the prewarmed default route and leave the later switch to collide with a running turn.
 
 Model changes carry a monotonic `selection_generation` and run through one serialized renderer queue. Async resolution from an older generation is discarded, the gateway rejects generations older than the session's accepted value, and the send path crosses the route barrier again immediately before `prompt.submit`; therefore a slow prewarm cannot become the final mutation after a newer picker choice.
 
@@ -55,6 +57,10 @@ The rebuilt Agent system prompt is the sole model-identity instruction. The desk
 ### In-flight resolution cannot overwrite a newer pick
 
 An older delayed `model.resolve` result is discarded after the picker generation changes; only the newest route may call `session.model.set`, and `prompt.submit` follows that accepted mutation.
+
+### Picker intent precedes React commit
+
+A model picked immediately before Send becomes the route applied to the new runtime session even when the corresponding React model/provider state has not rendered yet.
 
 ## Desktop-only persistence
 

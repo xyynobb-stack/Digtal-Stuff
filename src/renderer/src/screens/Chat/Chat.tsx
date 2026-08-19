@@ -907,6 +907,14 @@ function Chat({
   // don't re-render on every streaming chunk (each chunk re-renders <Chat>).
   const handleSelectModel = useCallback(
     (provider: string, model: string, baseUrl: string) => {
+      const effectiveBaseUrl = effectiveOverrideBaseUrl(provider, baseUrl);
+      // Publish the click before React commits the matching picker state. An
+      // immediate Send must not submit the prewarmed default model first.
+      dashboardTransport.setModelSelectionIntent(
+        provider,
+        model,
+        effectiveBaseUrl,
+      );
       void modelConfig.selectModel(provider, model, baseUrl, {
         persist: false,
       });
@@ -918,12 +926,12 @@ function Chat({
           ? {
               provider,
               model,
-              baseUrl: effectiveOverrideBaseUrl(provider, baseUrl),
+              baseUrl: effectiveBaseUrl,
             }
           : undefined,
       );
     },
-    [modelConfig.selectModel],
+    [dashboardTransport.setModelSelectionIntent, modelConfig.selectModel],
   );
 
   const handleSelectRecentFolder = useCallback((path: string) => {

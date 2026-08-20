@@ -12,6 +12,7 @@ import type { Mock } from "vitest";
 import type { DashboardRpcEvent } from "../dashboardGatewayClient";
 import {
   ensureDashboardRuntimeSession,
+  shouldAcceptSessionReadinessSnapshot,
   useDashboardChatTransport,
   type AgentInitializationStatus,
 } from "./useDashboardChatTransport";
@@ -174,6 +175,143 @@ function Harness({
 
   return null;
 }
+
+describe("session readiness snapshot ordering", () => {
+  // @lat: [[chat-commands#Layered desktop readiness#Session-scoped monotonic snapshots]]
+  it.each([
+    {
+      name: "rejects an older timestamp in the same generation",
+      previous: {
+        session_id: "live",
+        generation: 3,
+        phase: "building_agent" as const,
+        updated_at_ms: 2_000,
+      },
+      incoming: {
+        session_id: "live",
+        generation: 3,
+        phase: "building_agent" as const,
+        updated_at_ms: 1_000,
+      },
+      accepted: false,
+    },
+    {
+      name: "rejects a lower generation in the same session",
+      previous: {
+        session_id: "live",
+        generation: 4,
+        phase: "building_agent" as const,
+      },
+      incoming: {
+        session_id: "live",
+        generation: 3,
+        phase: "ready" as const,
+        agent_ready: true,
+      },
+      accepted: false,
+    },
+    {
+      name: "rejects a same-generation terminal regression without timestamps",
+      previous: {
+        session_id: "live",
+        generation: 4,
+        phase: "ready" as const,
+        agent_ready: true,
+      },
+      incoming: {
+        session_id: "live",
+        generation: 4,
+        phase: "building_agent" as const,
+        agent_ready: false,
+      },
+      accepted: false,
+    },
+    {
+      name: "rejects a nonterminal phase regression",
+      previous: {
+        session_id: "live",
+        generation: 4,
+        phase: "building_agent" as const,
+      },
+      incoming: {
+        session_id: "live",
+        generation: 4,
+        phase: "creating_session" as const,
+      },
+      accepted: false,
+    },
+    {
+      name: "accepts a newer generation rebuilding the same session",
+      previous: {
+        session_id: "live",
+        generation: 4,
+        phase: "ready" as const,
+        agent_ready: true,
+      },
+      incoming: {
+        session_id: "live",
+        generation: 5,
+        phase: "building_agent" as const,
+        agent_ready: false,
+      },
+      accepted: true,
+    },
+    {
+      name: "accepts a replacement session whose generation restarted",
+      previous: {
+        session_id: "retired",
+        generation: 9,
+        phase: "ready" as const,
+        agent_ready: true,
+      },
+      incoming: {
+        session_id: "replacement",
+        generation: 1,
+        phase: "building_agent" as const,
+        agent_ready: false,
+      },
+      accepted: true,
+    },
+    {
+      name: "accepts a forward terminal transition from an older Dashboard without timestamps",
+      previous: {
+        session_id: "live",
+        generation: 0,
+        phase: "building_agent" as const,
+      },
+      incoming: {
+        session_id: "live",
+        generation: 0,
+        phase: "ready" as const,
+        agent_ready: true,
+      },
+      accepted: true,
+    },
+  ])("$name", ({ previous, incoming, accepted }) => {
+    expect(shouldAcceptSessionReadinessSnapshot(previous, incoming, 0)).toBe(
+      accepted,
+    );
+  });
+
+  it("honors the model identity generation floor in the same session", () => {
+    expect(
+      shouldAcceptSessionReadinessSnapshot(
+        {
+          session_id: "live",
+          generation: 4,
+          phase: "building_agent",
+        },
+        {
+          session_id: "live",
+          generation: 5,
+          phase: "ready",
+          agent_ready: true,
+        },
+        6,
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("useDashboardChatTransport recovery", () => {
   beforeEach(() => {
@@ -465,6 +603,248 @@ describe("useDashboardChatTransport recovery", () => {
         ],
         [null],
       ]),
+    );
+  });
+
+  it("does not regress when an older readiness RPC resolves after the ready event", async () => {
+    vi.useFakeTimers();
+    try {
+      const building = {
+        session_id: "live",
+        generation: 2,
+        phase: "building_agent" as const,
+        agent_ready: false,
+        started_at_ms: 1_000,
+        updated_at_ms: 1_100,
+      };
+      let observeReadinessRequest = (): void => undefined;
+      const readinessRequested = new Promise<void>((resolve) => {
+        observeReadinessRequest = resolve;
+      });
+      let releaseReadiness = (): void => undefined;
+      const delayedBuilding = new Promise<typeof building>((resolve) => {
+        releaseReadiness = () => resolve(building);
+      });
+      dashboardMock.request.mockImplementation(async (method) => {
+        if (method === "session.create") {
+          return {
+            session_id: "live",
+            stored_session_id: "stored",
+            readiness: building,
+          };
+        }
+        if (method === "session.readiness") {
+          observeReadinessRequest();
+          return delayedBuilding;
+        }
+        return {};
+      });
+      const onInitializationChange = vi.fn();
+      const api: HarnessApi = {};
+      render(
+        <Harness
+          api={api}
+          onAgentInitializationChange={onInitializationChange}
+        />,
+      );
+
+      let sendPromise: Promise<boolean | undefined>;
+      await act(async () => {
+        sendPromise =
+          api.send?.("race readiness") ?? Promise.resolve(undefined);
+        await readinessRequested;
+      });
+      await act(async () => {
+        dashboardMock.onEvent?.({
+          type: "session.readiness.changed",
+          session_id: "live",
+          payload: {
+            ...building,
+            phase: "ready",
+            agent_ready: true,
+            updated_at_ms: 2_000,
+          },
+        });
+        releaseReadiness();
+        await sendPromise;
+      });
+      act(() => {
+        vi.advanceTimersByTime(1_500);
+      });
+
+      const phases = onInitializationChange.mock.calls.map(
+        ([status]) => status?.phase ?? null,
+      );
+      const readyIndex = phases.lastIndexOf("ready");
+      expect(readyIndex).toBeGreaterThanOrEqual(0);
+      expect(phases.slice(readyIndex + 1)).not.toContain("background");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses real model output as a terminal ready proof against delayed building snapshots", async () => {
+    vi.useFakeTimers();
+    try {
+      const building = {
+        session_id: "live",
+        generation: 3,
+        phase: "building_agent" as const,
+        agent_ready: false,
+        started_at_ms: 3_000,
+        updated_at_ms: 3_100,
+      };
+      dashboardMock.request.mockImplementation(async (method) => {
+        if (method === "session.create") {
+          return {
+            session_id: "live",
+            stored_session_id: "stored",
+            readiness: building,
+          };
+        }
+        if (method === "session.readiness") return building;
+        return {};
+      });
+      const onInitializationChange = vi.fn();
+      const api: HarnessApi = {};
+      render(
+        <Harness
+          api={api}
+          onAgentInitializationChange={onInitializationChange}
+        />,
+      );
+
+      await act(async () => {
+        await api.send?.("output proves readiness");
+        dashboardMock.onEvent?.({
+          type: "message.delta",
+          session_id: "live",
+          payload: { text: "answer" },
+        });
+        dashboardMock.onEvent?.({
+          type: "session.readiness.changed",
+          session_id: "live",
+          payload: {
+            ...building,
+            updated_at_ms: 9_000,
+          },
+        });
+      });
+      act(() => {
+        vi.advanceTimersByTime(1_500);
+      });
+
+      const statuses = onInitializationChange.mock.calls.map(
+        ([status]) => status,
+      );
+      const dismissedIndex = statuses.lastIndexOf(null);
+      expect(dismissedIndex).toBeGreaterThanOrEqual(0);
+      expect(
+        statuses
+          .slice(dismissedIndex + 1)
+          .some((status) => status?.phase === "background"),
+      ).toBe(false);
+      expect(
+        vi
+          .mocked(window.hermesAPI.recordColdStartTiming)
+          .mock.calls.filter(
+            ([event]) => event.stage === "chat.initialization_wait_finished",
+          ),
+      ).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("accepts a replacement runtime that restarts the server generation", async () => {
+    let createCount = 0;
+    const requests: Array<{ method: string; params: unknown }> = [];
+    dashboardMock.request.mockImplementation(async (method, params) => {
+      requests.push({ method, params });
+      if (method === "session.create") {
+        createCount += 1;
+        if (createCount === 1) {
+          return {
+            session_id: "retired-live",
+            stored_session_id: "stored",
+            readiness: {
+              session_id: "retired-live",
+              generation: 9,
+              phase: "ready",
+              agent_ready: true,
+              started_at_ms: 1_000,
+              updated_at_ms: 2_000,
+            },
+          };
+        }
+        return {
+          session_id: "replacement-live",
+          stored_session_id: "stored",
+          readiness: {
+            session_id: "replacement-live",
+            generation: 1,
+            phase: "building_agent",
+            agent_ready: false,
+            started_at_ms: 4_000,
+            updated_at_ms: 4_100,
+          },
+        };
+      }
+      if (method === "session.readiness") {
+        const sessionId = (params as { session_id?: string })?.session_id;
+        return sessionId === "replacement-live"
+          ? {
+              session_id: "replacement-live",
+              generation: 1,
+              phase: "building_agent",
+              agent_ready: false,
+              started_at_ms: 4_000,
+              updated_at_ms: 4_200,
+            }
+          : {
+              session_id: "retired-live",
+              generation: 9,
+              phase: "ready",
+              agent_ready: true,
+              started_at_ms: 1_000,
+              updated_at_ms: 2_100,
+            };
+      }
+      return {};
+    });
+    const onInitializationChange = vi.fn();
+    const api: HarnessApi = {};
+    render(
+      <Harness
+        api={api}
+        onAgentInitializationChange={onInitializationChange}
+      />,
+    );
+
+    await act(async () => {
+      await api.send?.("first turn");
+      dashboardMock.onEvent?.({
+        type: "message.complete",
+        session_id: "retired-live",
+        payload: { status: "failed", error: "provider failed" },
+      });
+      api.activeTurnRef!.current = { ...activeRecoveryTurn };
+      await api.send?.("retry on replacement");
+    });
+
+    expect(createCount).toBe(2);
+    expect(requests).toContainEqual({
+      method: "prompt.submit",
+      params: {
+        session_id: "replacement-live",
+        text: "retry on replacement",
+      },
+    });
+    expect(onInitializationChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: "waiting",
+        backgroundStartedAtMs: 4_000,
+      }),
     );
   });
 

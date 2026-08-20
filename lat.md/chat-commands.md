@@ -52,6 +52,14 @@ Timing records distinguish `dashboard.http_ready`, `dashboard.chat_ready`, `dash
 
 The gateway publishes authoritative `session.readiness.changed` events and a resumable `session.readiness` RPC for each session/model generation. Diagnostic `desktop.timing` events never drive UX state. Background preparation stays unobtrusive and appears near the composer only after 1.2 seconds; opening a new conversation no longer flashes a global startup banner. If a user sends before readiness, the same compact card changes to a blocking wait state and its elapsed counter starts at that `chat.send`, not at application or Agent startup. Ready auto-dismisses, while failures remain visible with their detail.
 
+### Session-scoped monotonic snapshots
+
+Readiness snapshots are ordered only inside one live Dashboard session, preventing delayed RPC replies or notifications from reopening a preparation card after the Agent is ready.
+
+For the same `session_id`, server generation is the primary order, `updated_at_ms` orders snapshots within a generation when both sides provide it, and a terminal `ready`/`failed` phase cannot regress to `creating_session` or `building_agent`. A different session starts a fresh ordering domain, so runtime recovery may legitimately return to generation one. Missing timestamps or session ids remain compatible with older Dashboards instead of being coerced into artificial zero-valued ordering.
+
+A non-empty main-turn model/reasoning delta or successful completion is direct proof that the current Agent exists. The renderer latches that session/generation as ready, clears the preparation timer, and rejects a later same-generation building snapshot. Runtime replacement clears the old cursor while preserving a user turn's blocking-wait start time.
+
 ## Cold-session model selection
 
 A new dashboard chat must build its first live Agent with the model selected in the composer, even when Python and Skill discovery are still cold on a newly installed computer.

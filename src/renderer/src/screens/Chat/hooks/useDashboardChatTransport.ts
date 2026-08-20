@@ -40,7 +40,7 @@ interface SessionResponse {
   readiness?: SessionReadinessResponse;
 }
 
-interface SessionReadinessResponse {
+export interface SessionReadinessResponse {
   agent_ready?: boolean;
   error?: string | null;
   generation?: number;
@@ -53,6 +53,112 @@ interface SessionReadinessResponse {
   session_id?: string;
   started_at_ms?: number;
   updated_at_ms?: number;
+}
+
+function sessionReadinessGeneration(
+  readiness: SessionReadinessResponse | null,
+): number {
+  const generation = Number(readiness?.generation);
+  return Number.isFinite(generation) ? Math.max(0, Math.trunc(generation)) : 0;
+}
+
+function sessionReadinessTimestamp(
+  readiness: SessionReadinessResponse | null,
+): number | null {
+  const updatedAtMs = readiness?.updated_at_ms;
+  return typeof updatedAtMs === "number" && Number.isFinite(updatedAtMs)
+    ? updatedAtMs
+    : null;
+}
+
+function sessionReadinessId(
+  readiness: SessionReadinessResponse | null,
+): string | null {
+  const sessionId = readiness?.session_id?.trim();
+  return sessionId || null;
+}
+
+function sessionReadinessIsTerminal(
+  readiness: SessionReadinessResponse,
+): boolean {
+  return (
+    readiness.phase === "ready" ||
+    readiness.phase === "failed" ||
+    readiness.agent_ready === true ||
+    Boolean(readiness.error)
+  );
+}
+
+function sessionReadinessProgress(
+  readiness: SessionReadinessResponse,
+): number | null {
+  if (readiness.phase === "creating_session") return 0;
+  if (readiness.phase === "building_agent") return 1;
+  return null;
+}
+
+/**
+ * Readiness is monotonic only inside one live Dashboard session. JSON-RPC
+ * replies and readiness notifications travel independently, so an older
+ * building snapshot may arrive after ready. A replacement runtime session is
+ * a new ordering domain and may legitimately restart its generation at one.
+ */
+// @lat: [[chat-commands#Layered desktop readiness#Session-scoped monotonic snapshots]]
+export function shouldAcceptSessionReadinessSnapshot(
+  previous: SessionReadinessResponse | null,
+  incoming: SessionReadinessResponse,
+  minimumGeneration = 0,
+): boolean {
+  if (!previous) return true;
+
+  const previousSessionId = sessionReadinessId(previous);
+  const incomingSessionId = sessionReadinessId(incoming);
+  if (
+    previousSessionId &&
+    incomingSessionId &&
+    previousSessionId !== incomingSessionId
+  ) {
+    return true;
+  }
+
+  const previousGeneration = sessionReadinessGeneration(previous);
+  const incomingGeneration = sessionReadinessGeneration(incoming);
+  if (
+    incomingGeneration > 0 &&
+    incomingGeneration < Math.max(previousGeneration, minimumGeneration)
+  ) {
+    return false;
+  }
+  if (incomingGeneration > previousGeneration) return true;
+
+  const previousTimestamp = sessionReadinessTimestamp(previous);
+  const incomingTimestamp = sessionReadinessTimestamp(incoming);
+  if (
+    previousTimestamp !== null &&
+    incomingTimestamp !== null &&
+    incomingTimestamp < previousTimestamp
+  ) {
+    return false;
+  }
+
+  if (
+    sessionReadinessIsTerminal(previous) &&
+    !sessionReadinessIsTerminal(incoming)
+  ) {
+    return false;
+  }
+
+  const previousProgress = sessionReadinessProgress(previous);
+  const incomingProgress = sessionReadinessProgress(incoming);
+  if (
+    previousProgress !== null &&
+    incomingProgress !== null &&
+    incomingProgress < previousProgress
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 interface ModelOptionsResponse extends SessionModelIdentity {
@@ -1148,12 +1254,52 @@ export function useDashboardChatTransport({
     }
   }, []);
 
+  const resetSessionReadiness = useCallback(
+    (preserveBlockingWait = false): void => {
+      sessionReadinessRef.current = null;
+      serverSelectionGenerationRef.current = 0;
+      clearBackgroundNoticeTimer();
+      if (!preserveBlockingWait) {
+        initializationWaitRef.current = null;
+      }
+      if (!preserveBlockingWait || initializationWaitRef.current === null) {
+        onAgentInitializationChange?.(null);
+      }
+    },
+    [clearBackgroundNoticeTimer, onAgentInitializationChange],
+  );
+
   const applySessionReadiness = useCallback(
     (readiness: SessionReadinessResponse): void => {
-      const generation = Math.max(0, Math.trunc(readiness.generation ?? 0));
-      if (generation > 0 && generation < serverSelectionGenerationRef.current) {
+      const previous = sessionReadinessRef.current;
+      const previousSessionId = sessionReadinessId(previous);
+      const incomingSessionId = sessionReadinessId(readiness);
+      const sessionChanged = Boolean(
+        previousSessionId &&
+        incomingSessionId &&
+        previousSessionId !== incomingSessionId,
+      );
+      const generationFloor = sessionChanged
+        ? 0
+        : serverSelectionGenerationRef.current;
+      if (
+        !shouldAcceptSessionReadinessSnapshot(
+          previous,
+          readiness,
+          generationFloor,
+        )
+      ) {
         return;
       }
+
+      if (sessionChanged) {
+        // Dashboard generations belong to one live session. A replacement
+        // session can restart at generation one and must not inherit either
+        // the old floor or its delayed background-notice timer.
+        clearBackgroundNoticeTimer();
+        serverSelectionGenerationRef.current = 0;
+      }
+      const generation = sessionReadinessGeneration(readiness);
       serverSelectionGenerationRef.current = Math.max(
         serverSelectionGenerationRef.current,
         generation,
@@ -1225,6 +1371,50 @@ export function useDashboardChatTransport({
     [clearBackgroundNoticeTimer, onAgentInitializationChange, recordTiming],
   );
 
+  const confirmSessionAgentReadyFromOutput = useCallback((): void => {
+    const current = sessionReadinessRef.current;
+    const wasReady = Boolean(
+      current?.agent_ready || current?.phase === "ready",
+    );
+    const generation = Math.max(
+      serverSelectionGenerationRef.current,
+      sessionReadinessGeneration(current),
+    );
+    const sessionId =
+      runtimeSessionIdRef.current ?? sessionReadinessId(current) ?? undefined;
+    sessionReadinessRef.current = {
+      ...(current ?? {}),
+      ...(sessionId ? { session_id: sessionId } : {}),
+      ...(generation > 0 ? { generation } : {}),
+      agent_ready: true,
+      error: null,
+      phase: "ready",
+    };
+    serverSelectionGenerationRef.current = Math.max(
+      serverSelectionGenerationRef.current,
+      generation,
+    );
+    clearBackgroundNoticeTimer();
+
+    const wait = initializationWaitRef.current;
+    if (wait) {
+      recordTiming({
+        stage: "chat.initialization_wait_finished",
+        turnId: wait.turnId,
+        sessionId,
+        generation,
+      });
+      initializationWaitRef.current = null;
+    }
+    // A non-empty model/reasoning delta (or a successful completion) is direct
+    // proof that this session's Agent was constructed. Dismiss the preparation
+    // card immediately and latch ready so a delayed building snapshot cannot
+    // reopen it.
+    if (wait || !wasReady) {
+      onAgentInitializationChange?.(null);
+    }
+  }, [clearBackgroundNoticeTimer, onAgentInitializationChange, recordTiming]);
+
   useEffect(() => {
     // `messagesRef` is the synchronous source of truth for `handleGatewayEvent`:
     // it reads the ref, applies a stream delta, writes the ref back, then calls
@@ -1258,16 +1448,8 @@ export function useDashboardChatTransport({
     lastRuntimeSessionWasCreatedRef.current = false;
     pendingClarifyRequestIdRef.current = null;
     lastSyncedCwdRef.current = null;
-    sessionReadinessRef.current = null;
-    serverSelectionGenerationRef.current = 0;
-    initializationWaitRef.current = null;
-    clearBackgroundNoticeTimer();
-    onAgentInitializationChange?.(null);
-  }, [
-    clearBackgroundNoticeTimer,
-    hermesSessionId,
-    onAgentInitializationChange,
-  ]);
+    resetSessionReadiness();
+  }, [hermesSessionId, resetSessionReadiness]);
 
   useEffect(() => {
     appliedModelRef.current = null;
@@ -1292,17 +1474,8 @@ export function useDashboardChatTransport({
     pendingClarifyRequestIdRef.current = null;
     pendingRecoveredContinuationRef.current = [];
     lastSyncedCwdRef.current = null;
-    sessionReadinessRef.current = null;
-    serverSelectionGenerationRef.current = 0;
-    initializationWaitRef.current = null;
-    clearBackgroundNoticeTimer();
-    onAgentInitializationChange?.(null);
-  }, [
-    clearBackgroundNoticeTimer,
-    connectionMode,
-    onAgentInitializationChange,
-    profile,
-  ]);
+    resetSessionReadiness();
+  }, [connectionMode, profile, resetSessionReadiness]);
 
   const handleGatewayEvent = useCallback(
     (event: DashboardStreamEvent): void => {
@@ -1319,7 +1492,13 @@ export function useDashboardChatTransport({
 
       const timing = activeTimingRef.current;
       if (event.type === "session.readiness.changed") {
-        applySessionReadiness(event.payload as SessionReadinessResponse);
+        const payload = asRecord(event.payload) as SessionReadinessResponse;
+        applySessionReadiness({
+          ...payload,
+          ...(event.session_id && !payload.session_id
+            ? { session_id: event.session_id }
+            : {}),
+        });
         return;
       }
       if (event.type === "desktop.timing") {
@@ -1352,14 +1531,11 @@ export function useDashboardChatTransport({
         }
         return;
       }
-      if (
-        timing &&
-        (event.type === "message.delta" || event.type === "reasoning.delta")
-      ) {
+      if (event.type === "message.delta" || event.type === "reasoning.delta") {
         const payload = asRecord(event.payload);
         const delta = String(payload.text ?? payload.delta ?? "");
         if (delta.length > 0) {
-          if (!timing.firstDeltaRecorded) {
+          if (timing && !timing.firstDeltaRecorded) {
             timing.firstDeltaRecorded = true;
             recordTiming({
               stage: "chat.first_delta",
@@ -1368,18 +1544,9 @@ export function useDashboardChatTransport({
                 event.type === "reasoning.delta" ? "reasoning" : "message",
             });
           }
-          if (initializationWaitRef.current !== null) {
-            const wait = initializationWaitRef.current;
-            initializationWaitRef.current = null;
-            recordTiming({
-              stage: "chat.initialization_wait_finished",
-              turnId: wait.turnId,
-              sessionId: runtimeSessionIdRef.current ?? undefined,
-              generation: sessionReadinessRef.current?.generation,
-            });
-            onAgentInitializationChange?.(null);
-          }
+          confirmSessionAgentReadyFromOutput();
           if (
+            timing &&
             event.type === "message.delta" &&
             !timing.firstMessageDeltaRecorded
           ) {
@@ -1442,9 +1609,29 @@ export function useDashboardChatTransport({
       setMessages(nextMessages);
 
       if (event.type === "message.complete") {
-        if (initializationWaitRef.current !== null) {
+        if (failed) {
+          const current = sessionReadinessRef.current;
+          const generation = Math.max(
+            serverSelectionGenerationRef.current,
+            sessionReadinessGeneration(current),
+          );
+          const sessionId =
+            runtimeSessionIdRef.current ??
+            sessionReadinessId(current) ??
+            undefined;
+          sessionReadinessRef.current = {
+            ...(current ?? {}),
+            ...(sessionId ? { session_id: sessionId } : {}),
+            ...(generation > 0 ? { generation } : {}),
+            agent_ready: false,
+            error: completionErrorMessage(event.payload),
+            phase: "failed",
+          };
           initializationWaitRef.current = null;
+          clearBackgroundNoticeTimer();
           onAgentInitializationChange?.(null);
+        } else {
+          confirmSessionAgentReadyFromOutput();
         }
         if (timing) {
           if (!failed && !timing.firstDeltaRecorded) {
@@ -1546,6 +1733,8 @@ export function useDashboardChatTransport({
     [
       activeTurnRef,
       applySessionReadiness,
+      clearBackgroundNoticeTimer,
+      confirmSessionAgentReadyFromOutput,
       connectionMode,
       recordTiming,
       onAgentInitializationChange,
@@ -2130,6 +2319,7 @@ export function useDashboardChatTransport({
         });
         activeTimingRef.current = null;
         initializationWaitRef.current = null;
+        clearBackgroundNoticeTimer();
         onAgentInitializationChange?.(null);
       };
       const dashboardText = dashboardPromptTextForAttachments(
@@ -2244,6 +2434,10 @@ export function useDashboardChatTransport({
               .request("session.close", { session_id: staleRuntimeSessionId })
               .catch(() => undefined);
           }
+          // The replacement session has its own server generation sequence.
+          // Preserve this Send's blocking timer, but discard the retired
+          // session's snapshot/floor before accepting the new session.
+          resetSessionReadiness(true);
           runtimeSessionIdRef.current = null;
           runtimeSessionCreationRef.current = null;
           reasoningSegmentClosedRef.current = false;
@@ -2310,6 +2504,9 @@ export function useDashboardChatTransport({
               generation: sessionReadinessRef.current?.generation,
             }),
           onRecoveredSessionId: (recoveredSessionId) => {
+            if (runtimeSessionIdRef.current !== recoveredSessionId) {
+              resetSessionReadiness(true);
+            }
             runtimeSessionIdRef.current = recoveredSessionId;
           },
         });
@@ -2326,6 +2523,7 @@ export function useDashboardChatTransport({
     [
       activeTurnRef,
       applySessionReadiness,
+      clearBackgroundNoticeTimer,
       connectionMode,
       enabled,
       fallbackOnUnavailable,
@@ -2339,6 +2537,7 @@ export function useDashboardChatTransport({
       onAgentInitializationChange,
       profile,
       recordTiming,
+      resetSessionReadiness,
     ],
   );
 

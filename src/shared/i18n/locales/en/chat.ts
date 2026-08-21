@@ -93,6 +93,10 @@ export default {
   attachTextTooLarge: "{{name}}: file too large (max 256 KB)",
   attachTooMany: "Too many attachments (max 10 per message)",
   attachReadFailed: "{{name}}: could not be read",
+  attachmentPreparing: "Preparing attachment…",
+  legacyFallbackNotice:
+    "The Dashboard attachment channel was unavailable. This turn is using compatibility mode (Legacy).",
+  legacyDirectNotice: "This turn is using compatibility mode (Legacy).",
   attachRemoteModeBinary:
     "{{name}}: PDF/binary attachments require local mode — images and text files still work.",
   validation: {

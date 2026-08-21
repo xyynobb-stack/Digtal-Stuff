@@ -7,6 +7,7 @@ import {
   isImageMime,
   isTextFile,
 } from "../../../../shared/attachments";
+import type { ColdStartTimingEvent } from "../../../../shared/cold-start-timing";
 
 export interface AttachmentError {
   code:
@@ -25,6 +26,8 @@ export interface ProcessFilesOptions {
   // Session id used to scope staged-paste attachments.  May be empty
   // before the agent has assigned one — staging falls back to "default".
   sessionId?: string;
+  // Stable renderer run/session id used to isolate app-owned staged copies.
+  stagingScopeId?: string;
   // True when the chat is running against a non-local gateway (SSH or
   // remote-URL mode).  Path-ref attachments require the file path to
   // exist on the same host as the agent, so binaries are blocked.
@@ -33,6 +36,17 @@ export interface ProcessFilesOptions {
 
 function newId(): string {
   return `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function recordAttachmentTiming(event: ColdStartTimingEvent): void {
+  try {
+    window.hermesAPI.recordColdStartTiming?.({
+      ...event,
+      atMs: event.atMs ?? Date.now(),
+    });
+  } catch {
+    // Attachment diagnostics must never affect ingestion or chat behavior.
+  }
 }
 
 function readAsDataUrl(file: File): Promise<string> {
@@ -331,10 +345,10 @@ export interface ProcessFilesResult {
  *     a data URL.
  *   - Text/code file (by MIME prefix or extension allowlist) → inline
  *     `text-file` attachment with UTF-8 contents.
- *   - Everything else → `path-ref` attachment carrying the file's
- *     absolute path.  Picker / drag-drop expose the path via
- *     `webUtils.getPathForFile`; clipboard-pasted blobs have no origin
- *     path and are staged to disk via the main process.
+ *   - Everything else → `path-ref` attachment carrying an app-owned staged
+ *     path. Picker / drag-drop expose the source via `webUtils.getPathForFile`
+ *     and the main process copies it; clipboard-pasted blobs have no origin
+ *     path and are staged from their bytes.
  */
 export async function processFiles(
   files: File[] | FileList,
@@ -344,6 +358,13 @@ export async function processFiles(
   const list = Array.from(files);
   const attachments: Attachment[] = [];
   const errors: AttachmentError[] = [];
+  const batchId = `attachment-batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  recordAttachmentTiming({
+    stage: "attachment.ingest_started",
+    sessionId: options.sessionId,
+    detail: `batch=${batchId}; files=${list.length}; existing=${existingCount}; remote=${Boolean(options.remoteMode)}`,
+  });
 
   const slotsRemaining = Math.max(
     0,
@@ -352,8 +373,19 @@ export async function processFiles(
 
   for (let i = 0; i < list.length; i++) {
     const file = list[i];
+    const fileDetail = `batch=${batchId}; index=${i}; name=${JSON.stringify(file.name || "untitled")}; mime=${JSON.stringify(file.type || "")}; size=${file.size}`;
+    recordAttachmentTiming({
+      stage: "attachment.file_started",
+      sessionId: options.sessionId,
+      detail: fileDetail,
+    });
     if (i >= slotsRemaining) {
       errors.push({ code: "too-many", filename: file.name });
+      recordAttachmentTiming({
+        stage: "attachment.file_failed",
+        sessionId: options.sessionId,
+        detail: `${fileDetail}; error=too-many`,
+      });
       continue;
     }
 
@@ -366,6 +398,11 @@ export async function processFiles(
       // to the compression step below.
       if (file.size > MAX_IMAGE_INPUT_BYTES) {
         errors.push({ code: "image-too-large", filename: name });
+        recordAttachmentTiming({
+          stage: "attachment.file_failed",
+          sessionId: options.sessionId,
+          detail: `${fileDetail}; error=image-too-large`,
+        });
         continue;
       }
 
@@ -391,6 +428,11 @@ export async function processFiles(
             filename: name,
             detail: msg,
           });
+          recordAttachmentTiming({
+            stage: "attachment.file_failed",
+            sessionId: options.sessionId,
+            detail: `${fileDetail}; error=${msg}`,
+          });
           continue;
         }
       }
@@ -409,11 +451,22 @@ export async function processFiles(
           // the "from N MB" hint only when the user lost some quality.
           ...(compressedFile !== file ? { originalSize } : {}),
         });
+        recordAttachmentTiming({
+          stage: "attachment.file_ready",
+          sessionId: options.sessionId,
+          detail: `${fileDetail}; kind=image; attachmentId=${attachments[attachments.length - 1].id}; encodedBytes=${dataUrl.length}`,
+        });
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         errors.push({
           code: "read-failed",
           filename: name,
-          detail: err instanceof Error ? err.message : String(err),
+          detail: message,
+        });
+        recordAttachmentTiming({
+          stage: "attachment.file_failed",
+          sessionId: options.sessionId,
+          detail: `${fileDetail}; error=${JSON.stringify(message)}`,
         });
       }
       continue;
@@ -422,6 +475,11 @@ export async function processFiles(
     if (isTextFile(mime, name)) {
       if (file.size > MAX_TEXT_BYTES) {
         errors.push({ code: "text-too-large", filename: name });
+        recordAttachmentTiming({
+          stage: "attachment.file_failed",
+          sessionId: options.sessionId,
+          detail: `${fileDetail}; error=text-too-large`,
+        });
         continue;
       }
       try {
@@ -434,11 +492,22 @@ export async function processFiles(
           size: file.size,
           text,
         });
+        recordAttachmentTiming({
+          stage: "attachment.file_ready",
+          sessionId: options.sessionId,
+          detail: `${fileDetail}; kind=text-file; attachmentId=${attachments[attachments.length - 1].id}; textChars=${text.length}`,
+        });
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         errors.push({
           code: "read-failed",
           filename: name,
-          detail: err instanceof Error ? err.message : String(err),
+          detail: message,
+        });
+        recordAttachmentTiming({
+          stage: "attachment.file_failed",
+          sessionId: options.sessionId,
+          detail: `${fileDetail}; error=${JSON.stringify(message)}`,
         });
       }
       continue;
@@ -449,30 +518,65 @@ export async function processFiles(
     // valid on the agent's host.
     if (options.remoteMode) {
       errors.push({ code: "remote-mode-binary", filename: name });
+      recordAttachmentTiming({
+        stage: "attachment.file_failed",
+        sessionId: options.sessionId,
+        detail: `${fileDetail}; error=remote-mode-binary`,
+      });
       continue;
     }
 
-    let path = "";
+    let originPath = "";
     try {
-      path = window.hermesAPI.getPathForFile(file) || "";
+      originPath = window.hermesAPI.getPathForFile(file) || "";
     } catch {
-      path = "";
+      originPath = "";
     }
 
-    if (!path) {
+    let path = "";
+    const stagingScope = options.stagingScopeId || options.sessionId || "";
+    if (originPath) {
+      try {
+        path = await window.hermesAPI.stageAttachmentFromPath(
+          stagingScope,
+          originPath,
+          name,
+          file.size,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push({
+          code: "read-failed",
+          filename: name,
+          detail: message,
+        });
+        recordAttachmentTiming({
+          stage: "attachment.file_failed",
+          sessionId: options.sessionId,
+          detail: `${fileDetail}; source=origin-copy; error=${JSON.stringify(message)}`,
+        });
+        continue;
+      }
+    } else {
       // No origin path (clipboard paste) — stage the bytes to disk.
       try {
         const base64 = await readAsBase64(file);
         path = await window.hermesAPI.stageAttachment(
-          options.sessionId || "",
+          stagingScope,
           name,
           base64,
         );
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         errors.push({
           code: "read-failed",
           filename: name,
-          detail: err instanceof Error ? err.message : String(err),
+          detail: message,
+        });
+        recordAttachmentTiming({
+          stage: "attachment.file_failed",
+          sessionId: options.sessionId,
+          detail: `${fileDetail}; source=staged; error=${JSON.stringify(message)}`,
         });
         continue;
       }
@@ -480,6 +584,11 @@ export async function processFiles(
 
     if (!path) {
       errors.push({ code: "read-failed", filename: name });
+      recordAttachmentTiming({
+        stage: "attachment.file_failed",
+        sessionId: options.sessionId,
+        detail: `${fileDetail}; error=empty-path`,
+      });
       continue;
     }
 
@@ -491,7 +600,18 @@ export async function processFiles(
       size: file.size,
       path,
     });
+    recordAttachmentTiming({
+      stage: "attachment.file_ready",
+      sessionId: options.sessionId,
+      detail: `${fileDetail}; kind=path-ref; attachmentId=${attachments[attachments.length - 1].id}; source=${originPath ? "origin-copy" : "pasted-bytes"}; pathLength=${path.length}`,
+    });
   }
+
+  recordAttachmentTiming({
+    stage: "attachment.ingest_finished",
+    sessionId: options.sessionId,
+    detail: `batch=${batchId}; accepted=${attachments.length}; errors=${errors.length}; acceptedIds=${attachments.map((attachment) => attachment.id).join(",")}; errorCodes=${errors.map((error) => error.code).join(",")}`,
+  });
 
   return { attachments, errors };
 }

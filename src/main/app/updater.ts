@@ -9,6 +9,8 @@ interface UpdaterDeps {
 }
 
 let autoUpdaterInstance: AppUpdater | null = null;
+type UpdateOperation = "startup" | "manual-check" | "download";
+let updateOperation: UpdateOperation | null = null;
 
 function updatePreferencesPath(): string {
   return join(app.getPath("userData"), "update-preferences.json");
@@ -73,6 +75,11 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
       releaseNotes: info.releaseNotes,
     });
   });
+  autoUpdater.on("update-not-available", (info) => {
+    getMainWindow()?.webContents.send("update-not-available", {
+      version: info.version,
+    });
+  });
   autoUpdater.on("download-progress", (progress) => {
     getMainWindow()?.webContents.send("update-download-progress", {
       percent: Math.round(progress.percent),
@@ -82,25 +89,32 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
     getMainWindow()?.webContents.send("update-downloaded");
   });
   autoUpdater.on("error", (err) => {
-    getMainWindow()?.webContents.send("update-error", err.message);
+    getMainWindow()?.webContents.send("update-error", {
+      message: err.message,
+      operation: updateOperation,
+    });
   });
 
   ipcMain.handle("check-for-updates", async () => {
+    updateOperation = "manual-check";
     try {
       const result = await autoUpdater.checkForUpdates();
-      return result?.updateInfo?.version || null;
-    } catch {
-      return null;
+      return result?.isUpdateAvailable
+        ? result.updateInfo?.version || null
+        : null;
+    } finally {
+      updateOperation = null;
     }
   });
   ipcMain.handle("download-update", async () => {
+    updateOperation = "download";
     try {
       await autoUpdater.downloadUpdate();
       return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      getMainWindow()?.webContents.send("update-error", message);
+    } catch {
       return false;
+    } finally {
+      updateOperation = null;
     }
   });
   ipcMain.handle("install-update", () => {
@@ -111,6 +125,12 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
   });
 
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => {});
+    updateOperation = "startup";
+    autoUpdater
+      .checkForUpdates()
+      .catch(() => {})
+      .finally(() => {
+        updateOperation = null;
+      });
   }, 5000);
 }

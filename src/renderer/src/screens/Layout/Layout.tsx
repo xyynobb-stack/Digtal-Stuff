@@ -349,6 +349,12 @@ function Layout({
       setUpdateVersion(info.version);
       setUpdateError(null);
     });
+    const cleanupNotAvailable = window.hermesAPI.onUpdateNotAvailable(() => {
+      setUpdateState(null);
+      setUpdateVersion(null);
+      setUpdatePercent(null);
+      setUpdateError(null);
+    });
     const cleanupProgress = window.hermesAPI.onUpdateDownloadProgress(
       (info) => {
         setUpdateState("downloading");
@@ -361,12 +367,18 @@ function Layout({
       setUpdatePercent(null);
       setUpdateError(null);
     });
-    const cleanupError = window.hermesAPI.onUpdateError((message) => {
-      setUpdateState("error");
-      setUpdateError(message);
-    });
+    const cleanupError = window.hermesAPI.onUpdateError(
+      (message, operation) => {
+        // A background startup check is best-effort. Network/feed errors must not
+        // become a permanent red footer on an otherwise up-to-date install.
+        if (operation === "startup") return;
+        setUpdateState("error");
+        setUpdateError(message);
+      },
+    );
     return () => {
       cleanupAvailable();
+      cleanupNotAvailable();
       cleanupProgress();
       cleanupDownloaded();
       cleanupError();
@@ -742,35 +754,53 @@ function Layout({
             {/* Show an upgrade affordance at startup when GitHub has a newer
               release; it becomes a restart action once downloaded. */}
             {updateState && (
-              <button
-                className={`sidebar-update-btn ${
-                  updateState === "error" ? "error" : ""
-                }`}
-                onClick={handleUpdate}
-                disabled={updateState === "downloading"}
-                title={updateButtonTitle}
-                aria-label={updateButtonTitle}
-              >
-                <Download size={13} />
-                {updateState === "available" && (
-                  <span>
-                    {updateVersion
-                      ? t("common.updateAvailable", { version: updateVersion })
-                      : t("common.updateAvailable", { version: "" })}
-                  </span>
-                )}
-                {updateState === "downloading" && (
-                  <span>
-                    {t("common.downloading", { percent: updatePercent ?? 0 })}
-                  </span>
-                )}
-                {updateState === "ready" && (
-                  <span>{t("common.restartToUpdate")}</span>
-                )}
+              <div className="sidebar-update-row">
+                <button
+                  className={`sidebar-update-btn ${
+                    updateState === "error" ? "error" : ""
+                  }`}
+                  onClick={handleUpdate}
+                  disabled={updateState === "downloading"}
+                  title={updateButtonTitle}
+                  aria-label={updateButtonTitle}
+                >
+                  <Download size={13} />
+                  {updateState === "available" && (
+                    <span>
+                      {updateVersion
+                        ? t("common.updateAvailable", {
+                            version: updateVersion,
+                          })
+                        : t("common.updateAvailable", { version: "" })}
+                    </span>
+                  )}
+                  {updateState === "downloading" && (
+                    <span>
+                      {t("common.downloading", { percent: updatePercent ?? 0 })}
+                    </span>
+                  )}
+                  {updateState === "ready" && (
+                    <span>{t("common.restartToUpdate")}</span>
+                  )}
+                  {updateState === "error" && (
+                    <span>{t("common.updateFailed")}</span>
+                  )}
+                </button>
                 {updateState === "error" && (
-                  <span>{t("common.updateFailed")}</span>
+                  <button
+                    type="button"
+                    className="sidebar-update-dismiss"
+                    onClick={() => {
+                      setUpdateState(null);
+                      setUpdateError(null);
+                    }}
+                    title={t("common.close")}
+                    aria-label={t("common.close")}
+                  >
+                    ×
+                  </button>
                 )}
-              </button>
+              </div>
             )}
             <ProfileSwitcher
               activeProfile={activeProfile}

@@ -367,6 +367,7 @@ describe("dashboard attachment sync", () => {
 
   it("passes local path-ref attachments through file.attach", async () => {
     const calls: Array<{ method: string; params: unknown }> = [];
+    const diagnosticStages: string[] = [];
     const client = {
       async request(method: string, params?: unknown): Promise<unknown> {
         calls.push({ method, params });
@@ -375,16 +376,21 @@ describe("dashboard attachment sync", () => {
     };
 
     await expect(
-      syncDashboardAttachmentsForSubmit(client, "live-1", [
-        {
-          id: "doc-1",
-          kind: "path-ref",
-          name: "report.pdf",
-          mime: "application/pdf",
-          size: 42,
-          path: "C:/tmp/report.pdf",
-        },
-      ]),
+      syncDashboardAttachmentsForSubmit(
+        client,
+        "live-1",
+        [
+          {
+            id: "doc-1",
+            kind: "path-ref",
+            name: "report.pdf",
+            mime: "application/pdf",
+            size: 42,
+            path: "C:/tmp/report.pdf",
+          },
+        ],
+        (event) => diagnosticStages.push(event.stage),
+      ),
     ).resolves.toEqual({ handled: true, refs: ["@file:report.pdf"] });
 
     expect(calls).toEqual([
@@ -397,9 +403,16 @@ describe("dashboard attachment sync", () => {
         },
       },
     ]);
+    expect(diagnosticStages).toEqual([
+      "attachment.dashboard_sync_started",
+      "attachment.dashboard_item_started",
+      "attachment.dashboard_item_ready",
+      "attachment.dashboard_sync_finished",
+    ]);
   });
 
   it("returns unhandled when the dashboard lacks file.attach before anything attached", async () => {
+    const diagnostics: Array<{ stage: string; detail?: string }> = [];
     const client = {
       async request(): Promise<unknown> {
         throw new Error("unknown method file.attach");
@@ -407,17 +420,29 @@ describe("dashboard attachment sync", () => {
     };
 
     await expect(
-      syncDashboardAttachmentsForSubmit(client, "live-1", [
-        {
-          id: "doc-1",
-          kind: "text-file",
-          name: "notes.txt",
-          mime: "text/plain",
-          size: 5,
-          text: "hello",
-        },
-      ]),
+      syncDashboardAttachmentsForSubmit(
+        client,
+        "live-1",
+        [
+          {
+            id: "doc-1",
+            kind: "text-file",
+            name: "notes.txt",
+            mime: "text/plain",
+            size: 5,
+            text: "hello",
+          },
+        ],
+        (event) => diagnostics.push(event),
+      ),
     ).resolves.toEqual({ handled: false, refs: [] });
+    expect(diagnostics.map((event) => event.stage)).toEqual([
+      "attachment.dashboard_sync_started",
+      "attachment.dashboard_item_started",
+      "attachment.dashboard_item_failed",
+      "attachment.dashboard_sync_finished",
+    ]);
+    expect(diagnostics[2].detail).toContain("unknown method file.attach");
   });
 });
 

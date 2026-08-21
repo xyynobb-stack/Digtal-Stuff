@@ -586,6 +586,7 @@ export async function syncDashboardAttachmentsForSubmit(
   client: DashboardPromptClient,
   sessionId: string,
   attachments?: Attachment[],
+  recordDiagnostic?: (event: ColdStartTimingEvent) => void,
 ): Promise<{ handled: boolean; refs: string[] }> {
   const images = (attachments ?? []).filter(
     (attachment) => attachment.kind === "image",
@@ -597,13 +598,31 @@ export async function syncDashboardAttachmentsForSubmit(
     return { handled: true, refs: [] };
   }
 
+  recordDiagnostic?.({
+    stage: "attachment.dashboard_sync_started",
+    sessionId,
+    detail: `total=${images.length + files.length}; images=${images.length}; files=${files.length}`,
+  });
+
   let attachedCount = 0;
   for (let index = 0; index < images.length; index++) {
     const image = images[index];
     const contentBase64 = base64FromDataUrl(image.dataUrl);
-    if (!contentBase64) return { handled: false, refs: [] };
+    if (!contentBase64) {
+      recordDiagnostic?.({
+        stage: "attachment.dashboard_item_failed",
+        sessionId,
+        detail: `rpc=image.attach_bytes; attachmentId=${image.id}; name=${JSON.stringify(image.name)}; index=${index}; error=missing-data-url`,
+      });
+      return { handled: false, refs: [] };
+    }
 
     try {
+      recordDiagnostic?.({
+        stage: "attachment.dashboard_item_started",
+        sessionId,
+        detail: `rpc=image.attach_bytes; attachmentId=${image.id}; name=${JSON.stringify(image.name)}; index=${index}; size=${image.size}; base64Chars=${contentBase64.length}`,
+      });
       const result = await client.request<ImageAttachBytesResponse>(
         "image.attach_bytes",
         {
@@ -616,8 +635,24 @@ export async function syncDashboardAttachmentsForSubmit(
         throw new Error(result?.message || `Could not attach ${image.name}`);
       }
       attachedCount += 1;
+      recordDiagnostic?.({
+        stage: "attachment.dashboard_item_ready",
+        sessionId,
+        detail: `rpc=image.attach_bytes; attachmentId=${image.id}; name=${JSON.stringify(image.name)}; index=${index}; attachedCount=${attachedCount}; gatewayPath=${Boolean(result.path)}`,
+      });
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      recordDiagnostic?.({
+        stage: "attachment.dashboard_item_failed",
+        sessionId,
+        detail: `rpc=image.attach_bytes; attachmentId=${image.id}; name=${JSON.stringify(image.name)}; index=${index}; attachedCount=${attachedCount}; error=${JSON.stringify(message)}`,
+      });
       if (attachedCount === 0 && dashboardAttachmentUnsupportedError(err)) {
+        recordDiagnostic?.({
+          stage: "attachment.dashboard_sync_finished",
+          sessionId,
+          detail: "handled=false; reason=attachment-rpc-unsupported; refs=0",
+        });
         return { handled: false, refs: [] };
       }
       throw err;
@@ -635,15 +670,32 @@ export async function syncDashboardAttachmentsForSubmit(
 
     if (attachment.kind === "text-file") {
       const dataUrl = dashboardDataUrlForTextAttachment(attachment);
-      if (!dataUrl) return { handled: false, refs: [] };
+      if (!dataUrl) {
+        recordDiagnostic?.({
+          stage: "attachment.dashboard_item_failed",
+          sessionId,
+          detail: `rpc=file.attach; attachmentId=${attachment.id}; name=${JSON.stringify(name)}; index=${index}; kind=text-file; error=missing-text`,
+        });
+        return { handled: false, refs: [] };
+      }
       params.data_url = dataUrl;
     } else if (attachment.kind === "path-ref" && attachment.path) {
       params.path = attachment.path;
     } else {
+      recordDiagnostic?.({
+        stage: "attachment.dashboard_item_failed",
+        sessionId,
+        detail: `rpc=file.attach; attachmentId=${attachment.id}; name=${JSON.stringify(name)}; index=${index}; kind=${attachment.kind}; error=missing-path`,
+      });
       return { handled: false, refs: [] };
     }
 
     try {
+      recordDiagnostic?.({
+        stage: "attachment.dashboard_item_started",
+        sessionId,
+        detail: `rpc=file.attach; attachmentId=${attachment.id}; name=${JSON.stringify(name)}; index=${index}; kind=${attachment.kind}; size=${attachment.size}; hasPath=${Boolean(params.path)}; hasDataUrl=${Boolean(params.data_url)}`,
+      });
       const result = await client.request<FileAttachResponse>(
         "file.attach",
         params,
@@ -653,14 +705,35 @@ export async function syncDashboardAttachmentsForSubmit(
       }
       refs.push(result.ref_text);
       attachedCount += 1;
+      recordDiagnostic?.({
+        stage: "attachment.dashboard_item_ready",
+        sessionId,
+        detail: `rpc=file.attach; attachmentId=${attachment.id}; name=${JSON.stringify(name)}; index=${index}; kind=${attachment.kind}; attachedCount=${attachedCount}; hasRef=${Boolean(result.ref_text)}`,
+      });
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      recordDiagnostic?.({
+        stage: "attachment.dashboard_item_failed",
+        sessionId,
+        detail: `rpc=file.attach; attachmentId=${attachment.id}; name=${JSON.stringify(name)}; index=${index}; kind=${attachment.kind}; attachedCount=${attachedCount}; hasPath=${Boolean(params.path)}; hasDataUrl=${Boolean(params.data_url)}; error=${JSON.stringify(message)}`,
+      });
       if (attachedCount === 0 && dashboardAttachmentUnsupportedError(err)) {
+        recordDiagnostic?.({
+          stage: "attachment.dashboard_sync_finished",
+          sessionId,
+          detail: "handled=false; reason=attachment-rpc-unsupported; refs=0",
+        });
         return { handled: false, refs: [] };
       }
       throw err;
     }
   }
 
+  recordDiagnostic?.({
+    stage: "attachment.dashboard_sync_finished",
+    sessionId,
+    detail: `handled=true; attached=${attachedCount}; refs=${refs.length}`,
+  });
   return { handled: true, refs };
 }
 
@@ -2252,9 +2325,14 @@ export function useDashboardChatTransport({
       sessionId: string,
       attachments?: Attachment[],
     ): Promise<{ handled: boolean; refs: string[] }> => {
-      return syncDashboardAttachmentsForSubmit(client, sessionId, attachments);
+      return syncDashboardAttachmentsForSubmit(
+        client,
+        sessionId,
+        attachments,
+        recordTiming,
+      );
     },
-    [],
+    [recordTiming],
   );
 
   const sendMessage = useCallback(
@@ -2386,6 +2464,11 @@ export function useDashboardChatTransport({
       };
       if (dashboardText === null) {
         if (fallbackOnUnavailable) {
+          recordTiming({
+            stage: "attachment.transport_fallback",
+            turnId: timingTurnId,
+            detail: `reason=dashboard-preflight-unattachable; attachments=${attachments?.length ?? 0}`,
+          });
           finishTimingFailed("dashboard attachment fallback");
           return false;
         }
@@ -2473,6 +2556,12 @@ export function useDashboardChatTransport({
         );
         if (!syncedAttachments.handled) {
           if (fallbackOnUnavailable) {
+            recordTiming({
+              stage: "attachment.transport_fallback",
+              turnId: timingTurnId,
+              sessionId: selectedSessionId,
+              detail: `reason=dashboard-sync-unhandled; attachments=${attachments?.length ?? 0}`,
+            });
             finishTimingFailed("dashboard attachment fallback");
             return false;
           }

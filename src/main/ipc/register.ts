@@ -20,7 +20,11 @@ import type {
   DesktopSessionContinuationItem,
   DesktopSessionLocalError,
 } from "../../shared/session-continuation";
-import { stageAttachment, clearStagedAttachments } from "../attachment-staging";
+import {
+  stageAttachment,
+  stageAttachmentFromPath,
+  clearStagedAttachments,
+} from "../attachment-staging";
 import { persistPromptImageAttachments } from "../session-attachment-store";
 import {
   discoverProviderModels,
@@ -1811,7 +1815,25 @@ export function registerIpcHandlers(context: IpcContext): void {
     },
   );
 
-  // Attachment staging — for pasted blobs that have no filesystem origin.
+  // Attachment staging — picker/drop files are copied from their origin;
+  // pasted blobs without an origin are written from bytes.
+  ipcMain.handle(
+    "stage-attachment-from-path",
+    (
+      _event,
+      scopeId: string,
+      sourcePath: string,
+      filename: string,
+      expectedSize?: number,
+    ) => {
+      return stageAttachmentFromPath(
+        scopeId,
+        sourcePath,
+        filename,
+        expectedSize,
+      );
+    },
+  );
   ipcMain.handle(
     "stage-attachment",
     (_event, sessionId: string, filename: string, base64Bytes: string) => {

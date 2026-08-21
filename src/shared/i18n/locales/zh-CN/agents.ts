@@ -8,6 +8,7 @@ export default {
   cloneConfig: "复制配置与 API Key",
   cloneFromLabel: "从以下档案复制",
   running: "运行中",
+  removeImage: "恢复默认头像",
   off: "已关闭",
   starting: "启动中…",
   createFailed: "创建档案失败",

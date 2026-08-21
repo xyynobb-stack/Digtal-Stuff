@@ -83,7 +83,9 @@ export default function AppearancePane(): React.JSX.Element {
                   </div>
                 </div>
                 <div className="settings-theme-card-row">
-                  <span className="settings-theme-card-name">{th.name}</span>
+                  <span className="settings-theme-card-name">
+                    {t(`settings.theme.names.${th.id}`)}
+                  </span>
                   {active && (
                     <span className="settings-theme-card-check">
                       <Check size={14} />

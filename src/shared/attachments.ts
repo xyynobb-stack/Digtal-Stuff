@@ -19,9 +19,8 @@ export interface Attachment {
   originalSize?: number;
   // Text files: raw UTF-8 contents (already validated to be text)
   text?: string;
-  // Path-ref attachments (PDFs, docx, etc.): absolute filesystem path.
-  // Origin is the original file path for picker/drag-drop, or a staged
-  // copy under %LOCALAPPDATA%/hermes/desktop-staging/<session>/ for paste.
+  // Path-ref attachments (PDFs, docx, etc.): absolute path to an app-owned
+  // staged copy under %LOCALAPPDATA%/hermes/desktop-staging/<scope>/.
   path?: string;
 }
 

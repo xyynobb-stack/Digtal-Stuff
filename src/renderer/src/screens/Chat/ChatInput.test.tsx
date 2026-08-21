@@ -1,4 +1,10 @@
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // ChatInput pulls translations through useI18n (which requires the i18next
@@ -21,12 +27,14 @@ function renderInput(
 ): {
   onSubmit: ReturnType<typeof vi.fn>;
   textarea: HTMLTextAreaElement;
+  container: HTMLElement;
 } {
   const onSubmit = vi.fn();
-  render(
+  const { container } = render(
     <ChatInput
       isLoading={false}
       hasSession={true}
+      stagingScopeId="test-run"
       onSubmit={onSubmit}
       onQuickAsk={vi.fn()}
       onAbort={vi.fn()}
@@ -36,7 +44,7 @@ function renderInput(
   const textarea = screen.getByPlaceholderText(
     "chat.typeMessage",
   ) as HTMLTextAreaElement;
-  return { onSubmit, textarea };
+  return { onSubmit, textarea, container };
 }
 
 describe("ChatInput — CJK IME Enter handling", () => {
@@ -70,6 +78,87 @@ describe("ChatInput — CJK IME Enter handling", () => {
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith("안녕하세요", []);
+  });
+});
+
+describe("ChatInput — attachment ingestion barrier", () => {
+  it("does not submit until the selected file has reached app-owned staging", async () => {
+    let finishCopy: (path: string) => void = () => {};
+    const copyPromise = new Promise<string>((resolve) => {
+      finishCopy = resolve;
+    });
+    Object.defineProperty(window, "hermesAPI", {
+      configurable: true,
+      value: {
+        getPathForFile: vi.fn(() => "C:/Users/me/report.docx"),
+        stageAttachmentFromPath: vi.fn(() => copyPromise),
+        stageAttachment: vi.fn(),
+        recordColdStartTiming: vi.fn(),
+      },
+    });
+
+    const { onSubmit, textarea, container } = renderInput();
+    const picker = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["document"], "report.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    fireEvent.change(picker, { target: { files: [file] } });
+    fireEvent.change(textarea, { target: { value: "请总结附件" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText("chat.attachmentPreparing")).toBeVisible();
+
+    finishCopy("C:/staging/test-run/report.docx");
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    expect(onSubmit.mock.calls[0][0]).toBe("请总结附件");
+    expect(onSubmit.mock.calls[0][1]).toEqual([
+      expect.objectContaining({
+        kind: "path-ref",
+        path: "C:/staging/test-run/report.docx",
+      }),
+    ]);
+  });
+
+  it("does not silently send text when staging the selected file fails", async () => {
+    let failCopy: (error: Error) => void = () => {};
+    const copyPromise = new Promise<string>((_resolve, reject) => {
+      failCopy = reject;
+    });
+    Object.defineProperty(window, "hermesAPI", {
+      configurable: true,
+      value: {
+        getPathForFile: vi.fn(() => "C:/Users/me/moved.docx"),
+        stageAttachmentFromPath: vi.fn(() => copyPromise),
+        stageAttachment: vi.fn(),
+        recordColdStartTiming: vi.fn(),
+      },
+    });
+
+    const { onSubmit, textarea, container } = renderInput();
+    const picker = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["document"], "moved.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    fireEvent.change(picker, { target: { files: [file] } });
+    fireEvent.change(textarea, { target: { value: "请总结附件" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    failCopy(new Error("source disappeared"));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "chat.attachReadFailed",
+      ),
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(textarea.value).toBe("请总结附件");
   });
 });
 

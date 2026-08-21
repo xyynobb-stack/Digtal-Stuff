@@ -95,3 +95,17 @@ The dashboard transport applies the full route through `session.create` or `sess
 Attachment turns must not be forced through the CLI override fallback because the CLI path cannot carry multimodal input.
 
 [[src/main/hermes.ts#sendMessageViaCli]] can inline text-file attachments but ignores images, while the gateway/API path preserves image parts and path refs through [[src/main/hermes.ts#buildUserContent]]. When a session override is active and the user sends attachments, [[src/main/hermes.ts#shouldForceCliForSessionOverride]] leaves the turn eligible for the dashboard/gateway or API transport instead of silently dropping media.
+
+### Attachment transport diagnostics
+
+Attachment failures are traced without changing transport selection, attachment payloads, or fallback behavior.
+
+[[src/renderer/src/screens/Chat/attachmentUtils.ts#processFiles]] records each local file's ingestion lifecycle, and [[src/renderer/src/screens/Chat/ChatInput.tsx#ChatInput]] snapshots the accepted attachments plus any still-running ingestion when Send is clicked. [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#syncDashboardAttachmentsForSubmit]] records each attachment RPC without file bytes or absolute paths; [[src/renderer/src/screens/Chat/hooks/useChatActions.ts#useChatActions]] records whether an attachment turn subsequently dispatches through the legacy path. These events share `cold-start-timing.log` so an intermittent failure can be reconstructed from one ordered timeline.
+
+### App-owned attachment staging
+
+Path-reference documents enter app-owned staging during selection, so moving or deleting the source afterward cannot invalidate the turn.
+
+Images and text files already become self-contained data/text payloads during ingestion.
+
+[[src/main/attachment-staging.ts#stageAttachmentFromPath]] copies through a private partial file, verifies the byte count, and atomically publishes the staged path. [[src/renderer/src/screens/Chat/ChatInput.tsx#ChatInput]] serializes ingestion and treats it as a send barrier: an immediate Enter waits for staging, while a copy failure preserves the draft and never degrades into a text-only send. The established dashboard/legacy selection rules are unchanged.

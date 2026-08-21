@@ -490,6 +490,12 @@ interface HermesAPI {
     filename: string,
     base64Bytes: string,
   ) => Promise<string>;
+  stageAttachmentFromPath: (
+    scopeId: string,
+    sourcePath: string,
+    filename: string,
+    expectedSize?: number,
+  ) => Promise<string>;
   clearStagedAttachments: (sessionId: string) => Promise<void>;
   discoverProviderModels: (
     provider: string,
@@ -1025,11 +1031,19 @@ interface HermesAPI {
   onUpdateAvailable: (
     callback: (info: { version: string; releaseNotes: string }) => void,
   ) => () => void;
+  onUpdateNotAvailable: (
+    callback: (info: { version: string }) => void,
+  ) => () => void;
   onUpdateDownloadProgress: (
     callback: (info: { percent: number }) => void,
   ) => () => void;
   onUpdateDownloaded: (callback: () => void) => () => void;
-  onUpdateError: (callback: (message: string) => void) => () => void;
+  onUpdateError: (
+    callback: (
+      message: string,
+      operation?: "startup" | "manual-check" | "download" | null,
+    ) => void,
+  ) => () => void;
 
   // Menu events
   onMenuNewChat: (callback: () => void) => () => void;

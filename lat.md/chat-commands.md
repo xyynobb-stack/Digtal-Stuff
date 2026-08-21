@@ -86,6 +86,12 @@ On `message.complete` the desktop treats the persisted `final_response` as canon
 
 [[src/renderer/src/screens/Chat/dashboardEventAdapter.ts#completeAssistantWithFinalText]] replaces an ordinary turn's assistant preview with the canonical final text. This cleans reasoning accidentally mislabeled upstream as `message.delta`; `reasoning.delta` remains a separate Thought row. When the turn contains a tool call/result, the helper instead uses [[src/renderer/src/screens/Chat/dashboardEventAdapter.ts#mergeStreamedWithFinal]] to preserve a real pre-tool explanation omitted from the final. On remote/SSH, deltas are not rendered, so the final is always used verbatim.
 
+### Legacy attachment reconciliation
+
+A legacy attachment turn keeps one user bubble and places subsequent reasoning after it, even though the optimistic renderer row and persisted gateway row encode the attachment differently.
+
+[[src/renderer/src/screens/Chat/sessionHistory.ts#reconcileStreamedWithDb]] matches the app-owned path-ref attachment against the persisted `[Attached file: …]` transport marker while comparing the clean user text. It retains the richer optimistic attachment chip, consumes the duplicate database user row, and preserves the canonical ordering of the following Thought and assistant rows. [[src/renderer/src/screens/Chat/Chat.tsx#Chat]] also shows a dismissible diagnostic notice whenever the legacy transport is actually invoked; the notice does not change when fallback is selected.
+
 ## Streaming source-of-truth ref
 
 `handleGatewayEvent` in [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] applies stream events against a synchronous `messagesRef`, not React state, because state lags a render behind and each successive delta must build on the previous one.

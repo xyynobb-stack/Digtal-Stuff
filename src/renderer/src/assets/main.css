@@ -3900,6 +3900,32 @@ body:has(.shell-vibrant),
   transition: background var(--transition);
 }
 
+.sidebar-update-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+}
+
+.sidebar-update-dismiss {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 20px;
+}
+
+.sidebar-update-dismiss:hover {
+  background: rgb(255 255 255 / 18%);
+}
+
 .sidebar-collapsed .sidebar-update-btn {
   width: 40px;
   height: 40px;
@@ -6103,6 +6129,47 @@ body:has(.shell-vibrant),
   flex: 0 0 auto;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+.chat-legacy-transport-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--warning, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning, #d9a441) 10%, var(--bg-secondary));
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.chat-legacy-transport-banner span {
+  flex: 1 1 auto;
+}
+
+.chat-legacy-transport-dismiss {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 17px;
+}
+
+.chat-legacy-transport-dismiss:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.chat-attachment-preparing {
+  align-self: center;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .agent-initialization-banner {

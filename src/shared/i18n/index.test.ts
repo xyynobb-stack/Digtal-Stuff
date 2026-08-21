@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { t, getLocaleDirection } from "./index";
 
 describe("shared i18n", () => {
-  it("returns English text by default", () => {
-    expect(t("welcome.title")).toBe("Welcome to JingYuAI");
+  it("returns Simplified Chinese text by default", () => {
+    expect(t("welcome.title")).toBe("欢迎使用 JingYuAI");
+  });
+
+  it("still returns English when explicitly selected", () => {
+    expect(t("welcome.title", "en")).toBe("Welcome to JingYuAI");
   });
 
   it("falls back to the key when an English key is missing", () => {
@@ -12,6 +16,14 @@ describe("shared i18n", () => {
 
   it("returns zh-CN text when available", () => {
     expect(t("welcome.title", "zh-CN")).toBe("欢迎使用 JingYuAI");
+  });
+
+  it("contains the Chinese reasoning, profile, and appearance labels", () => {
+    expect(t("chat.reasoningEffort.title", "zh-CN")).toBe("推理能力");
+    expect(t("navigation.profile", "zh-CN")).toBe("个人资料");
+    expect(t("settings.hardwareAcceleration.label", "zh-CN")).toBe(
+      "硬件加速",
+    );
   });
 
   it("returns zh-TW text when available", () => {

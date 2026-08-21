@@ -6,6 +6,8 @@ The Electron main process configures `electron-updater` from `electron-builder.y
 
 When GitHub reports a newer release, [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] shows an upgrade button in the sidebar footer. The button downloads the update when needed, shows progress, and becomes a restart action after the update is ready.
 
+An `update-not-available` result is a successful check and clears stale footer state instead of appearing as an error. Background startup-check failures stay in the updater log rather than creating a permanent sidebar warning; manual check/download failures remain visible and dismissible. [[src/renderer/src/components/settings/useSettingsData.ts#useSettingsData]] applies the same distinction in About settings.
+
 [[src/renderer/src/components/settings/AboutPane.tsx#AboutPane]] presents JingYuAI Desktop separately from the compatible Agent engine because they use independent update channels. [[src/renderer/src/components/settings/useSettingsData.ts#useSettingsData]] drives version, preference, download, and restart actions.
 
 ## Stable and beta release channels

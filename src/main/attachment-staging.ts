@@ -1,12 +1,15 @@
-import { mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { copyFile, mkdir, rename, stat, unlink } from "fs/promises";
+import { randomUUID } from "crypto";
+import { isAbsolute, join } from "path";
 import { HERMES_HOME } from "./installer";
 
 /**
- * Staging area for pasted attachments.  Picker / drag-drop attachments
- * keep their original filesystem path; pasted attachments have no origin
- * path, so we write their bytes to disk here and pass that path to the
- * agent.
+ * App-owned staging area for path-reference attachments. Picker / drag-drop
+ * documents are copied here as soon as the user selects them; pasted blobs are
+ * written from their bytes. The agent therefore never depends on a binary
+ * document remaining at its original location until Send is clicked. Images
+ * and text files already carry their own data/text payload instead of a path.
  *
  * Layout:
  *   %LOCALAPPDATA%/hermes/desktop-staging/<sessionId>/<filename>
@@ -61,6 +64,59 @@ export function stageAttachment(
   const target = uniquePath(dir, filename);
   writeFileSync(target, Buffer.from(base64Bytes, "base64"));
   return target;
+}
+
+/**
+ * Copy a picker / drag-drop attachment into the app-owned staging area.
+ *
+ * The copy lands under a temporary name and is renamed only after the byte
+ * count has been verified. Callers therefore receive either a complete file
+ * or an error; the gateway can never observe a partially copied attachment.
+ */
+export async function stageAttachmentFromPath(
+  scopeId: string,
+  sourcePath: string,
+  filename: string,
+  expectedSize?: number,
+): Promise<string> {
+  if (!sourcePath || !isAbsolute(sourcePath)) {
+    throw new Error("Attachment source path must be absolute");
+  }
+
+  const sourceInfo = await stat(sourcePath);
+  if (!sourceInfo.isFile()) {
+    throw new Error("Attachment source is not a file");
+  }
+  if (
+    typeof expectedSize === "number" &&
+    expectedSize >= 0 &&
+    sourceInfo.size !== expectedSize
+  ) {
+    throw new Error(
+      `Attachment changed while being selected (expected ${expectedSize} bytes, found ${sourceInfo.size})`,
+    );
+  }
+
+  const scopeSegment = sanitizeSegment(scopeId || "default", "default");
+  const dir = join(STAGING_ROOT, scopeSegment);
+  await mkdir(dir, { recursive: true });
+  const target = uniquePath(dir, filename);
+  const temporary = `${target}.part-${randomUUID()}`;
+
+  try {
+    await copyFile(sourcePath, temporary);
+    const copiedInfo = await stat(temporary);
+    if (copiedInfo.size !== sourceInfo.size) {
+      throw new Error(
+        `Attachment copy was incomplete (expected ${sourceInfo.size} bytes, copied ${copiedInfo.size})`,
+      );
+    }
+    await rename(temporary, target);
+    return target;
+  } catch (error) {
+    await unlink(temporary).catch(() => {});
+    throw error;
+  }
 }
 
 /**

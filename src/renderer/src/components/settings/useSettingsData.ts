@@ -271,6 +271,14 @@ export function useSettingsData(profile?: string) {
       setDesktopUpdateVersion(info.version);
       setDesktopUpdateError(null);
     });
+    const cleanupNotAvailable = window.hermesAPI.onUpdateNotAvailable(
+      (info) => {
+        setDesktopUpdateState("uptodate");
+        setDesktopUpdateVersion(info.version);
+        setDesktopUpdatePercent(null);
+        setDesktopUpdateError(null);
+      },
+    );
     const cleanupProgress = window.hermesAPI.onUpdateDownloadProgress(
       (info) => {
         setDesktopUpdateState("downloading");
@@ -283,12 +291,16 @@ export function useSettingsData(profile?: string) {
       setDesktopUpdatePercent(null);
       setDesktopUpdateError(null);
     });
-    const cleanupError = window.hermesAPI.onUpdateError((message) => {
-      setDesktopUpdateState("error");
-      setDesktopUpdateError(message);
-    });
+    const cleanupError = window.hermesAPI.onUpdateError(
+      (message, operation) => {
+        if (operation === "startup") return;
+        setDesktopUpdateState("error");
+        setDesktopUpdateError(message);
+      },
+    );
     return () => {
       cleanupAvailable();
+      cleanupNotAvailable();
       cleanupProgress();
       cleanupDownloaded();
       cleanupError();

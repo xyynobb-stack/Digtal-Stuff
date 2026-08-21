@@ -10,6 +10,12 @@ New local and SSH profiles also receive a default SOUL identity of JingYuAI, whi
 
 The renderer title fallback lives in [[src/renderer/src/main.tsx]], while the native title and notification fallback live in [[src/main/app/start.ts#startMainProcess]] and [[src/main/ipc/register.ts#registerIpcHandlers]]. Packaging uses the same name and generated platform icons under `build/`.
 
+## Default language
+
+Fresh installations open in Simplified Chinese, while an explicit locale previously saved by the user remains authoritative.
+
+[[src/shared/i18n/config.ts]] defines the fresh-profile default. Visible navigation, reasoning controls, appearance settings, theme names, hardware acceleration controls, and the profile entry use translation keys rather than embedded English; in Chinese, `Profile` is rendered as “个人资料”.
+
 ## Shared image assets
 
 One square PNG is the renderer and native-window source of truth so the splash, onboarding, chat empty state, title bar, profile fallback, About pane, and first-party provider card display the same mark.

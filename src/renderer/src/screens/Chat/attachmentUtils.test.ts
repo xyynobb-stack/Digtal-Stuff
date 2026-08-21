@@ -8,7 +8,9 @@ import { processFiles, filesFromClipboard } from "./attachmentUtils";
 // and routing through a fake stageAttachment.
 beforeEach(() => {
   (window as unknown as { hermesAPI: Record<string, unknown> }).hermesAPI = {
+    recordColdStartTiming: vi.fn(),
     getPathForFile: vi.fn(() => ""),
+    stageAttachmentFromPath: vi.fn(),
     stageAttachment: vi.fn(
       async (sessionId: string, filename: string): Promise<string> =>
         `C:/staging/${sessionId || "default"}/${filename}`,
@@ -134,18 +136,32 @@ describe("processFiles", () => {
     expect(a.mime).toBe("application/pdf");
   });
 
-  it("uses the origin path returned by webUtils for picker/drag-drop files", async () => {
+  it("copies picker/drag-drop files into app-owned staging", async () => {
+    const recordColdStartTiming = vi.fn();
+    const stageAttachmentFromPath = vi.fn(
+      async (): Promise<string> => "C:/staging/test-run/doc.pdf",
+    );
     (window as unknown as { hermesAPI: Record<string, unknown> }).hermesAPI = {
       getPathForFile: vi.fn(() => "C:/Users/me/Downloads/doc.pdf"),
       stageAttachment: vi.fn(),
+      stageAttachmentFromPath,
+      recordColdStartTiming,
     };
     const file = makeFile("doc.pdf", "application/pdf", "%PDF-1.4");
-    const out = await processFiles([file], 0);
+    const out = await processFiles([file], 0, {
+      stagingScopeId: "test-run",
+    });
     expect(out.errors).toEqual([]);
     expect(out.attachments).toHaveLength(1);
     const a = out.attachments[0];
     expect(a.kind).toBe("path-ref");
-    expect(a.path).toBe("C:/Users/me/Downloads/doc.pdf");
+    expect(a.path).toBe("C:/staging/test-run/doc.pdf");
+    expect(stageAttachmentFromPath).toHaveBeenCalledWith(
+      "test-run",
+      "C:/Users/me/Downloads/doc.pdf",
+      "doc.pdf",
+      file.size,
+    );
     expect(
       (
         window as unknown as {
@@ -153,6 +169,20 @@ describe("processFiles", () => {
         }
       ).hermesAPI.stageAttachment,
     ).not.toHaveBeenCalled();
+    expect(
+      recordColdStartTiming.mock.calls.map(([event]) => event.stage),
+    ).toEqual([
+      "attachment.ingest_started",
+      "attachment.file_started",
+      "attachment.file_ready",
+      "attachment.ingest_finished",
+    ]);
+    expect(recordColdStartTiming.mock.calls[2][0].detail).toContain(
+      "kind=path-ref",
+    );
+    expect(recordColdStartTiming.mock.calls[2][0].detail).toContain(
+      "source=origin-copy",
+    );
   });
 
   it("blocks path-ref attachments in remote mode", async () => {

@@ -268,7 +268,7 @@ export default function ProfileSwitcher({
               onClick={editCurrent}
             >
               <ProfileIcon size={17} />
-              <span>Profile</span>
+              <span>{t("navigation.profile")}</span>
             </button>
             <div className="account-menu-divider" />
             <button

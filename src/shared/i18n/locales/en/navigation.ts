@@ -4,6 +4,7 @@ export default {
   sessions: "Sessions",
   discover: "Discover",
   agents: "Profiles",
+  profile: "Profile",
   office: "Office",
   models: "Models",
   providers: "Providers",

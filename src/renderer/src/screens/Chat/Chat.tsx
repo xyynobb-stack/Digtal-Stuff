@@ -196,6 +196,9 @@ function Chat({
     };
   }, [profile, initialSessionId, sessionTemplateStorageKey]);
   const [isLoading, setIsLoading] = useState(false);
+  const [legacyTransportNotice, setLegacyTransportNotice] = useState<
+    "fallback" | "direct" | null
+  >(null);
   useEffect(() => {
     onLoadingChange?.(runId, isLoading);
   }, [runId, isLoading, onLoadingChange]);
@@ -830,6 +833,10 @@ function Chat({
     [],
   );
 
+  const handleLegacyTransport = useCallback((automaticFallback: boolean) => {
+    setLegacyTransportNotice(automaticFallback ? "fallback" : "direct");
+  }, []);
+
   const actions = useChatActions({
     runId,
     profile,
@@ -862,6 +869,7 @@ function Chat({
     abortDashboard: dashboardTransport.enabled
       ? dashboardTransport.abort
       : undefined,
+    onLegacyTransport: handleLegacyTransport,
   });
 
   // Stable ref to handleSend so the drain effect doesn't re-trigger on
@@ -1174,6 +1182,26 @@ function Chat({
       </div>
 
       <div className="chat-input-area">
+        {legacyTransportNotice && (
+          <div className="chat-legacy-transport-banner" role="status">
+            <span>
+              {t(
+                legacyTransportNotice === "fallback"
+                  ? "chat.legacyFallbackNotice"
+                  : "chat.legacyDirectNotice",
+              )}
+            </span>
+            <button
+              type="button"
+              className="chat-legacy-transport-dismiss"
+              onClick={() => setLegacyTransportNotice(null)}
+              aria-label={t("common.close")}
+              title={t("common.close")}
+            >
+              ×
+            </button>
+          </div>
+        )}
         {agentInitialization && (
           <AgentInitializationBanner status={agentInitialization} />
         )}
@@ -1186,6 +1214,7 @@ function Chat({
           isLoading={isLoading}
           hasSession={!!hermesSessionId}
           sessionId={hermesSessionId}
+          stagingScopeId={runId}
           remoteMode={remoteMode}
           profile={profile}
           contextUsage={contextUsage}

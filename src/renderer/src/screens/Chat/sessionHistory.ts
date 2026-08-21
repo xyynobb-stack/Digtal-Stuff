@@ -149,10 +149,21 @@ function normalizeWhitespace(s: string): string {
 
 const LEGACY_TEXT_FILE_WRAPPER_RE =
   /(?:\s*<file\b[^>]*>[\s\S]*?<\/file>\s*)+$/i;
+const LEGACY_PATH_REF_BLOCK_RE = /(?:\s*\[Attached file:\s*[^\]\r\n]+\]\s*)+$/i;
+
+function legacyPathRefs(s: string): string[] {
+  const block = s.match(LEGACY_PATH_REF_BLOCK_RE)?.[0] || "";
+  if (!block) return [];
+  return [...block.matchAll(/\[Attached file:\s*([^\]\r\n]+)\]/gi)].map(
+    (match) => match[1].trim(),
+  );
+}
 
 function normalizeBubbleContentForMatch(s: string): string {
   return normalizeWhitespace(
-    s.replace(LEGACY_TEXT_FILE_WRAPPER_RE, ""),
+    s
+      .replace(LEGACY_PATH_REF_BLOCK_RE, "")
+      .replace(LEGACY_TEXT_FILE_WRAPPER_RE, ""),
   ).replace(/(?:\s+\[(?:screenshot|image)\])+$/i, "");
 }
 
@@ -460,6 +471,25 @@ function sameAttachments(a: ChatBubbleMessage, b: ChatBubbleMessage): boolean {
   );
 }
 
+function sameLegacyPathRefAttachments(
+  a: ChatBubbleMessage,
+  b: ChatBubbleMessage,
+): boolean {
+  const aRefs = legacyPathRefs(a.content);
+  const bRefs = legacyPathRefs(b.content);
+  const refs = aRefs.length > 0 ? aRefs : bRefs;
+  if (refs.length === 0) return false;
+
+  const attachmentOwner = aRefs.length > 0 ? b : a;
+  const paths = (attachmentOwner.attachments ?? [])
+    .filter((attachment) => attachment.kind === "path-ref" && attachment.path)
+    .map((attachment) => attachment.path!.trim().toLowerCase());
+  return (
+    paths.length === refs.length &&
+    refs.every((path, index) => path.toLowerCase() === paths[index])
+  );
+}
+
 function userContentKey(m: ChatBubbleMessage): string {
   return `${normalizeMessageText(m.content)}\n${(m.attachments ?? [])
     .map(
@@ -503,7 +533,7 @@ function findMatchingUserIndex(
       m.role === "user" &&
       normalizeBubbleContentForMatch(m.content) ===
         normalizeBubbleContentForMatch(user.content) &&
-      sameAttachments(m, user),
+      (sameAttachments(m, user) || sameLegacyPathRefAttachments(m, user)),
   );
 }
 

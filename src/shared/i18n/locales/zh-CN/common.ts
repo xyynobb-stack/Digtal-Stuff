@@ -26,7 +26,7 @@ export default {
   refresh: "刷新",
   copy: "复制",
   settings: "设置",
-  provider: "提供商",
+  provider: "供应商",
   model: "模型",
   baseUrl: "基础 URL",
   port: "端口",

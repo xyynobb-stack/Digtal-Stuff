@@ -85,6 +85,8 @@ interface UseChatActionsArgs {
    *  an agent prompt while a turn is already in flight. */
   enqueueMessage?: (text: string, attachments?: Attachment[]) => void;
   abortDashboard?: () => void;
+  /** Reports that this turn is being sent through the compatibility transport. */
+  onLegacyTransport?: (automaticFallback: boolean) => void;
 }
 
 interface UseChatActionsResult {
@@ -136,6 +138,7 @@ export function useChatActions({
   addAgentMessage,
   enqueueMessage,
   abortDashboard,
+  onLegacyTransport,
 }: UseChatActionsArgs): UseChatActionsResult {
   const messagesRef = useRef(messages);
   const isLoadingRef = useRef(isLoading);
@@ -196,6 +199,26 @@ export function useChatActions({
           const handled = await sendViaDashboard(agentText, agentAttachments);
           if (handled) return;
         }
+        onLegacyTransport?.(Boolean(sendViaDashboard));
+        if ((agentAttachments?.length ?? 0) > 0) {
+          try {
+            window.hermesAPI.recordColdStartTiming?.({
+              stage: "attachment.legacy_send_started",
+              atMs: Date.now(),
+              sessionId: hermesSessionId || undefined,
+              detail: `attachments=${agentAttachments?.length ?? 0}; items=${(
+                agentAttachments ?? []
+              )
+                .map(
+                  (attachment) =>
+                    `${attachment.id}:${attachment.kind}:${JSON.stringify(attachment.name)}:${attachment.size}:path=${Boolean(attachment.path)}:data=${Boolean(attachment.dataUrl)}:text=${typeof attachment.text === "string"}`,
+                )
+                .join("|")}`,
+            });
+          } catch {
+            // Diagnostic logging must not affect the legacy send path.
+          }
+        }
         await window.hermesAPI.sendMessage(
           agentText,
           profile,
@@ -209,11 +232,42 @@ export function useChatActions({
           runId,
           sessionModelRef.current || undefined,
         );
-      } catch {
+        if ((agentAttachments?.length ?? 0) > 0) {
+          try {
+            window.hermesAPI.recordColdStartTiming?.({
+              stage: "attachment.legacy_send_dispatched",
+              atMs: Date.now(),
+              sessionId: hermesSessionId || undefined,
+              detail: `attachments=${agentAttachments?.length ?? 0}`,
+            });
+          } catch {
+            // Diagnostic logging must not affect the legacy send path.
+          }
+        }
+      } catch (err) {
+        if ((agentAttachments?.length ?? 0) > 0) {
+          try {
+            window.hermesAPI.recordColdStartTiming?.({
+              stage: "attachment.legacy_send_failed",
+              atMs: Date.now(),
+              sessionId: hermesSessionId || undefined,
+              detail: `attachments=${agentAttachments?.length ?? 0}; error=${JSON.stringify(err instanceof Error ? err.message : String(err))}`,
+            });
+          } catch {
+            // Diagnostic logging must not affect existing error handling.
+          }
+        }
         // onChatError IPC already surfaces this to the user
       }
     },
-    [runId, profile, hermesSessionId, contextFolder, sendViaDashboard],
+    [
+      runId,
+      profile,
+      hermesSessionId,
+      contextFolder,
+      sendViaDashboard,
+      onLegacyTransport,
+    ],
   );
 
   // Shared "side question" flow (the 💭 quick-ask button and a typed `/btw`).

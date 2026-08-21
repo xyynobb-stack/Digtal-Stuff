@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../components/useI18n", () => ({
   useI18n: () => ({
-    t: (key: string): string => (key === "common.appName" ? "JingYuAI" : key),
+    t: (key: string): string =>
+      key === "common.appName"
+        ? "JingYuAI"
+        : key === "navigation.profile"
+          ? "个人资料"
+          : key,
   }),
 }));
 
@@ -120,7 +125,7 @@ describe("ProfileSwitcher", () => {
     fireEvent.click(trigger);
 
     expect(screen.getByRole("menu")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Profile" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "个人资料" })).toBeVisible();
     expect(
       screen.getByRole("menuitem", { name: "navigation.providers" }),
     ).toBeVisible();
@@ -134,7 +139,7 @@ describe("ProfileSwitcher", () => {
       screen.getByRole("menuitem", { name: "navigation.settings" }),
     ).toBeVisible();
 
-    fireEvent.click(screen.getByRole("menuitem", { name: "Profile" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "个人资料" }));
     expect(openProfile).toHaveBeenCalledWith("default", expect.any(Object));
 
     fireEvent.click(trigger);

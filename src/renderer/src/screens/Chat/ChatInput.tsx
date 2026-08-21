@@ -51,6 +51,8 @@ interface ChatInputProps {
   isLoading: boolean;
   hasSession: boolean;
   sessionId?: string | null;
+  /** Stable run id used before the backend has assigned a session id. */
+  stagingScopeId: string;
   remoteMode?: boolean;
   /** Active profile — used to resolve the provider for voice transcription. */
   profile?: string;
@@ -74,6 +76,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       isLoading,
       hasSession,
       sessionId,
+      stagingScopeId,
       remoteMode,
       profile,
       contextUsage,
@@ -92,11 +95,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [slashFilter, setSlashFilter] = useState("");
     const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
+    const attachmentsRef = useRef<Attachment[]>([]);
     const [attachmentError, setAttachmentError] = useState<string | null>(null);
+    const attachmentErrorRef = useRef<string | null>(null);
+    const [attachmentIngestionCount, setAttachmentIngestionCount] = useState(0);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const slashMenuRef = useRef<HTMLDivElement>(null);
     const slashMenuListRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const attachmentIngestionsRef = useRef(0);
+    const attachmentIngestionTailRef = useRef<Promise<void>>(Promise.resolve());
+    const sendAwaitingAttachmentsRef = useRef(false);
     const [slashMenuScrollTop, setSlashMenuScrollTop] = useState(0);
     const [slashMenuViewportHeight, setSlashMenuViewportHeight] = useState(
       SLASH_COMMAND_VIEWPORT_HEIGHT,
@@ -179,25 +188,51 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const ingestFiles = useCallback(
       async (files: File[] | FileList): Promise<AttachmentError[]> => {
-        const { attachments: added, errors } = await processFiles(
-          files,
-          attachments.length,
-          {
-            sessionId: sessionId || undefined,
-            remoteMode: !!remoteMode,
-          },
+        attachmentIngestionsRef.current += 1;
+        setAttachmentIngestionCount((count) => count + 1);
+        const previous = attachmentIngestionTailRef.current;
+        const operation = previous
+          .catch(() => {})
+          .then(async () => {
+            const { attachments: added, errors } = await processFiles(
+              files,
+              attachmentsRef.current.length,
+              {
+                sessionId: sessionId || undefined,
+                stagingScopeId: sessionId || stagingScopeId,
+                remoteMode: !!remoteMode,
+              },
+            );
+            if (added.length > 0) {
+              const next = [...attachmentsRef.current, ...added];
+              attachmentsRef.current = next;
+              setAttachments(next);
+            }
+            if (errors.length > 0) {
+              const message = formatError(errors[0]);
+              attachmentErrorRef.current = message;
+              setAttachmentError(message);
+            } else {
+              attachmentErrorRef.current = null;
+              setAttachmentError(null);
+            }
+            return errors;
+          });
+        attachmentIngestionTailRef.current = operation.then(
+          () => undefined,
+          () => undefined,
         );
-        if (added.length > 0) {
-          setAttachments((prev) => [...prev, ...added]);
+        try {
+          return await operation;
+        } finally {
+          attachmentIngestionsRef.current = Math.max(
+            0,
+            attachmentIngestionsRef.current - 1,
+          );
+          setAttachmentIngestionCount((count) => Math.max(0, count - 1));
         }
-        if (errors.length > 0) {
-          setAttachmentError(formatError(errors[0]));
-        } else {
-          setAttachmentError(null);
-        }
-        return errors;
       },
-      [attachments.length, formatError, sessionId, remoteMode],
+      [formatError, sessionId, stagingScopeId, remoteMode],
     );
 
     useImperativeHandle(
@@ -228,6 +263,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         clear(): void {
           setInput("");
           setAttachments([]);
+          attachmentsRef.current = [];
+          attachmentErrorRef.current = null;
           setAttachmentError(null);
           if (inputRef.current) inputRef.current.style.height = "auto";
         },
@@ -353,24 +390,76 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       history.push(text);
       setInput("");
       setAttachments([]);
+      attachmentsRef.current = [];
+      attachmentErrorRef.current = null;
       setAttachmentError(null);
       if (inputRef.current) inputRef.current.style.height = "auto";
     }
 
-    function handleSend(): void {
-      const text = input.trim();
-      const hasPayload = text.length > 0 || attachments.length > 0;
-      if (!hasPayload) return;
+    async function waitForAttachmentIngestions(): Promise<void> {
+      while (true) {
+        const barrier = attachmentIngestionTailRef.current;
+        await barrier;
+        if (barrier === attachmentIngestionTailRef.current) return;
+      }
+    }
+
+    function submitPreparedMessage(
+      text: string,
+      sendAttachments: Attachment[],
+    ): void {
+      if (!text && sendAttachments.length === 0) return;
+      try {
+        window.hermesAPI.recordColdStartTiming?.({
+          stage: "attachment.submit_snapshot",
+          atMs: Date.now(),
+          sessionId: sessionId || undefined,
+          detail: `attachments=${sendAttachments.length}; ingestionInFlight=${attachmentIngestionsRef.current}; items=${sendAttachments
+            .map(
+              (attachment) =>
+                `${attachment.id}:${attachment.kind}:${JSON.stringify(attachment.name)}:${attachment.size}:path=${Boolean(attachment.path)}:data=${Boolean(attachment.dataUrl)}:text=${typeof attachment.text === "string"}`,
+            )
+            .join("|")}`,
+        });
+      } catch {
+        // Diagnostic logging must not affect the send action.
+      }
       setSlashMenuOpen(false);
-      const sendAttachments = attachments;
       clearAfterSend(text);
       onSubmit(text, sendAttachments);
     }
 
-    function handleQuickAsk(): void {
+    function handleSend(): void {
+      const text = input.trim();
+      const hasPayload =
+        text.length > 0 ||
+        attachmentsRef.current.length > 0 ||
+        attachmentIngestionsRef.current > 0;
+      if (!hasPayload) return;
+      if (attachmentIngestionsRef.current === 0) {
+        if (attachmentErrorRef.current) return;
+        submitPreparedMessage(text, attachmentsRef.current);
+        return;
+      }
+
+      if (sendAwaitingAttachmentsRef.current) return;
+      sendAwaitingAttachmentsRef.current = true;
+      void waitForAttachmentIngestions()
+        .then(() => {
+          if (attachmentErrorRef.current) return;
+          submitPreparedMessage(text, attachmentsRef.current);
+        })
+        .finally(() => {
+          sendAwaitingAttachmentsRef.current = false;
+        });
+    }
+
+    async function handleQuickAsk(): Promise<void> {
       const text = input.trim();
       if (!text) return;
-      const sendAttachments = attachments;
+      await waitForAttachmentIngestions();
+      if (attachmentErrorRef.current) return;
+      const sendAttachments = attachmentsRef.current;
       clearAfterSend(text);
       onQuickAsk(text, sendAttachments);
     }
@@ -479,7 +568,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     }
 
     function removeAttachment(id: string): void {
-      setAttachments((prev) => prev.filter((a) => a.id !== id));
+      const next = attachmentsRef.current.filter((a) => a.id !== id);
+      attachmentsRef.current = next;
+      setAttachments(next);
+      attachmentErrorRef.current = null;
       setAttachmentError(null);
     }
 
@@ -490,7 +582,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     // can queue messages while the agent is mid-response.
     const readinessOk = readiness?.ok !== false;
     const canSend =
-      (input.trim().length > 0 || attachments.length > 0) && readinessOk;
+      (input.trim().length > 0 || attachments.length > 0) &&
+      readinessOk &&
+      attachmentIngestionCount === 0 &&
+      !attachmentError;
 
     // Map fixLocation → user-facing call to action. The strings are
     // wrapped in i18n; the location ids come from main/validation.ts.
@@ -628,7 +723,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             )}
           </div>
         )}
-        {(attachments.length > 0 || attachmentError) && (
+        {(attachments.length > 0 ||
+          attachmentError ||
+          attachmentIngestionCount > 0) && (
           <div className="chat-attachment-strip">
             {attachments.map((att) => (
               <AttachmentChip
@@ -640,6 +737,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             {attachmentError && (
               <div className="chat-attachment-error" role="alert">
                 {attachmentError}
+              </div>
+            )}
+            {attachmentIngestionCount > 0 && (
+              <div className="chat-attachment-preparing" role="status">
+                {t("chat.attachmentPreparing")}
               </div>
             )}
           </div>
@@ -678,7 +780,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             <button
               className="chat-attach-btn"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
+              disabled={isLoading || attachmentIngestionCount > 0}
               title={t("chat.attach")}
               aria-label={t("chat.attach")}
               type="button"
@@ -738,6 +840,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   <button
                     className="chat-btw-btn"
                     onClick={handleQuickAsk}
+                    disabled={attachmentIngestionCount > 0}
                     title={t("chat.quickAskTitle")}
                   >
                     💭

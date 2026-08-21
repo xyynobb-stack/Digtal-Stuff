@@ -606,6 +606,20 @@ const hermesAPI = {
   ): Promise<string> =>
     ipcRenderer.invoke("stage-attachment", sessionId, filename, base64Bytes),
 
+  stageAttachmentFromPath: (
+    scopeId: string,
+    sourcePath: string,
+    filename: string,
+    expectedSize?: number,
+  ): Promise<string> =>
+    ipcRenderer.invoke(
+      "stage-attachment-from-path",
+      scopeId,
+      sourcePath,
+      filename,
+      expectedSize,
+    ),
+
   clearStagedAttachments: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke("clear-staged-attachments", sessionId),
 
@@ -1423,6 +1437,15 @@ const hermesAPI = {
     return () => ipcRenderer.removeListener("update-available", handler);
   },
 
+  onUpdateNotAvailable: (
+    callback: (info: { version: string }) => void,
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, info: unknown): void =>
+      callback(info as { version: string });
+    ipcRenderer.on("update-not-available", handler);
+    return () => ipcRenderer.removeListener("update-not-available", handler);
+  },
+
   onUpdateDownloadProgress: (
     callback: (info: { percent: number }) => void,
   ): (() => void) => {
@@ -1439,11 +1462,26 @@ const hermesAPI = {
     return () => ipcRenderer.removeListener("update-downloaded", handler);
   },
 
-  onUpdateError: (callback: (message: string) => void): (() => void) => {
+  onUpdateError: (
+    callback: (
+      message: string,
+      operation?: "startup" | "manual-check" | "download" | null,
+    ) => void,
+  ): (() => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      message: unknown,
-    ): void => callback(String(message));
+      payload: unknown,
+    ): void => {
+      if (payload && typeof payload === "object" && "message" in payload) {
+        const detail = payload as {
+          message: unknown;
+          operation?: "startup" | "manual-check" | "download" | null;
+        };
+        callback(String(detail.message), detail.operation);
+        return;
+      }
+      callback(String(payload));
+    };
     ipcRenderer.on("update-error", handler);
     return () => ipcRenderer.removeListener("update-error", handler);
   },

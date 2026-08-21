@@ -52,6 +52,7 @@ describe("useSettingsData remote OAuth", () => {
         getConfig: vi.fn(async () => ""),
         onConnectionConfigChanged: vi.fn(() => vi.fn()),
         onUpdateAvailable: vi.fn(() => vi.fn()),
+        onUpdateNotAvailable: vi.fn(() => vi.fn()),
         onUpdateDownloadProgress: vi.fn(() => vi.fn()),
         onUpdateDownloaded: vi.fn(() => vi.fn()),
         onUpdateError: vi.fn(() => vi.fn()),

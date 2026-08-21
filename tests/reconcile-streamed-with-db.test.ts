@@ -5,6 +5,7 @@ import {
   reconcileStreamedWithDb,
 } from "../src/renderer/src/screens/Chat/sessionHistory";
 import type { ChatMessage } from "../src/renderer/src/screens/Chat/types";
+import { buildSessionSkillEnvelope } from "../src/renderer/src/screens/Chat/sessionSkillEnvelope";
 
 /**
  * `reconcileStreamedWithDb` is the end-of-stream merge between the
@@ -65,6 +66,26 @@ const STREAMED_TEXT_FILE_USER = (
       mime: "text/plain",
       size: 12,
       text: "hello world\n",
+    },
+  ],
+});
+
+const STREAMED_PATH_REF_USER = (
+  content: string,
+  path: string,
+  id = "u-path",
+): ChatMessage => ({
+  id,
+  role: "user",
+  content,
+  attachments: [
+    {
+      id: "path-1",
+      kind: "path-ref",
+      name: "report.docx",
+      mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size: 128,
+      path,
     },
   ],
 });
@@ -180,10 +201,7 @@ describe("reconcileStreamedWithDb", () => {
       {
         kind: "user",
         id: 91,
-        content:
-          "[Active session skills: ]\n" +
-          "Only the listed skills are available to this chat. Load and follow each listed skill with the skill_view tool before answering. An empty list means no skills are available.\n\n" +
-          "[User message]\n你好",
+        content: buildSessionSkillEnvelope("你好", []),
       },
     ]);
 
@@ -1131,6 +1149,44 @@ describe("reconcileStreamedWithDb", () => {
       "agent-image",
     ]);
     expect(merged.filter((m) => m.id === "user-active-image")).toHaveLength(1);
+  });
+
+  it("merges a Legacy path marker into the optimistic attachment bubble and keeps Thought after it", () => {
+    const path = "C:\\staging\\run-1\\report.docx";
+    const localUser = {
+      ...STREAMED_PATH_REF_USER("文档中有什么？", path, "user-path"),
+      turnId: "turn-path",
+    };
+    const streamedAnswer = {
+      ...STREAMED_AGENT("这是文档摘要。", "agent-path"),
+      turnId: "turn-path",
+    };
+    const dbUser = DB_USER(`文档中有什么？\n\n[Attached file: ${path}]`, 500);
+    const dbReasoning = DB_REASONING("I should inspect the document.", 501);
+    const dbAnswer = DB_AGENT("这是文档摘要。", 502);
+
+    const merged = reconcileAfterDbRefresh(
+      [localUser, streamedAnswer],
+      [dbUser, dbReasoning, dbAnswer],
+      {
+        activeTurn: {
+          turnId: "turn-path",
+          userId: "user-path",
+          startIndex: 0,
+          status: "running",
+        },
+      },
+    );
+
+    expect(merged.map((message) => message.id)).toEqual([
+      "user-path",
+      "db-r-501",
+      "agent-path",
+    ]);
+    expect("content" in merged[0] && merged[0].content).toBe("文档中有什么？");
+    expect(
+      "attachments" in merged[0] ? merged[0].attachments : [],
+    ).toHaveLength(1);
   });
 });
 

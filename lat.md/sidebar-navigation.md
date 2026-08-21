@@ -36,6 +36,12 @@ Session titles in the inline list are constrained to the sidebar width and trunc
 
 The native sidebar scrollbar is hidden to avoid layout shifts. [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] measures the chat scroll container and renders an absolutely positioned overlay thumb only while the user is scrolling, so showing or hiding the scrollbar never changes row width.
 
+## User-visible session titles
+
+会话标题只根据用户在输入框中实际提交的文字生成，不能读取 Desktop 注入的技能说明、写作模板控制语句或附件传输引用。
+
+普通 Dashboard 提交同时携带模型使用的 `text` 与仅供标题等展示元数据使用的 `display_text`。首次提交、会话恢复重试和忙时队列都保留两者；旧版客户端缺少 `display_text` 时，Gateway 仅在完整匹配已知 Desktop 私有信封后才提取 `[User message]`，避免误改用户自己输入的相似文本。
+
 ## Project grouping
 
 Workspace-linked conversations are grouped under project rows so repository chats stay together without hiding ordinary chats.

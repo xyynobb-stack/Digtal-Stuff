@@ -67,6 +67,7 @@ interface UseChatActionsArgs {
   sendViaDashboard?: (
     text: string,
     attachments?: Attachment[],
+    displayText?: string,
   ) => Promise<boolean>;
   /** Run an Agent-owned slash command through the gateway pipeline. Undefined
    *  on legacy transport; the central router reports it as unavailable. */
@@ -196,7 +197,12 @@ export function useChatActions({
           : attachments;
       try {
         if (sendViaDashboard) {
-          const handled = await sendViaDashboard(agentText, agentAttachments);
+          // @lat: [[sidebar-navigation#User-visible session titles]]
+          const handled = await sendViaDashboard(
+            agentText,
+            agentAttachments,
+            text,
+          );
           if (handled) return;
         }
         onLegacyTransport?.(Boolean(sendViaDashboard));

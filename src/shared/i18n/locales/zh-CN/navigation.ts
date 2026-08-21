@@ -17,6 +17,7 @@ export default {
   memory: "记忆",
   tools: "工具",
   schedules: "计划任务",
+  records: "我的记录",
   kanban: "看板",
   gateway: "网关",
   settings: "设置",

@@ -13,12 +13,44 @@ import type { DashboardRpcEvent } from "../dashboardGatewayClient";
 import {
   ensureDashboardRuntimeSession,
   shouldAcceptSessionReadinessSnapshot,
+  submitDashboardPromptWithRecovery,
   useDashboardChatTransport,
   type AgentInitializationStatus,
 } from "./useDashboardChatTransport";
 import type { ActiveTurn, ChatMessage, UsageState } from "../types";
 
 type SetUsageMock = Mock<(value: SetStateAction<UsageState | null>) => void>;
+
+describe("dashboard prompt display text", () => {
+  it("keeps the user-visible text on both the initial and recovered submit", async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("session not found"))
+      .mockResolvedValueOnce({ session_id: "recovered" })
+      .mockResolvedValueOnce({ status: "streaming" });
+
+    await submitDashboardPromptWithRecovery(
+      { request },
+      {
+        sessionId: "stale",
+        storedSessionId: "stored",
+        text: "[Active session skills: built-in]\n...model-facing...",
+        displayText: "这份附件里有什么？",
+      },
+    );
+
+    expect(request).toHaveBeenNthCalledWith(1, "prompt.submit", {
+      session_id: "stale",
+      text: "[Active session skills: built-in]\n...model-facing...",
+      display_text: "这份附件里有什么？",
+    });
+    expect(request).toHaveBeenNthCalledWith(3, "prompt.submit", {
+      session_id: "recovered",
+      text: "[Active session skills: built-in]\n...model-facing...",
+      display_text: "这份附件里有什么？",
+    });
+  });
+});
 
 const dashboardMock = vi.hoisted(() => ({
   close: vi.fn(),

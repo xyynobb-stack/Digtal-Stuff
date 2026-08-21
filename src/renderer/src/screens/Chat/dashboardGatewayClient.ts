@@ -173,6 +173,7 @@ export class DashboardGatewayClient {
   request<T = unknown>(
     method: string,
     params: Record<string, unknown> = {},
+    timeoutMs = this.requestTimeoutMs,
   ): Promise<T> {
     const socket = this.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -188,7 +189,7 @@ export class DashboardGatewayClient {
       const timeout = window.setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`JingYuAI dashboard request timed out: ${method}`));
-      }, this.requestTimeoutMs);
+      }, timeoutMs);
       this.pending.set(id, {
         resolve: (value: unknown) => resolve(value as T),
         reject,

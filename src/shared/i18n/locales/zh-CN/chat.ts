@@ -79,6 +79,7 @@ export default {
   categoryAgent: "代理",
   categoryTools: "工具",
   categoryInfo: "信息",
+  voiceInput: "输入音频",
   noUsageData: "暂无使用数据。请先发送一条消息。",
   media: {
     open: "打开",

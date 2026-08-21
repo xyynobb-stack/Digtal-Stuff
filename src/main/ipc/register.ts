@@ -17,6 +17,11 @@ import type { Attachment } from "../../shared/attachments";
 import type { SessionModelOverride } from "../../shared/model-override";
 import type { AppLocale } from "../../shared/i18n/types";
 import type {
+  WorkRecordQuery,
+  WorkRecordSnapshot,
+} from "../../shared/work-records";
+import { getWorkRecordStore } from "../work-records";
+import type {
   DesktopSessionContinuationItem,
   DesktopSessionLocalError,
 } from "../../shared/session-continuation";
@@ -693,6 +698,42 @@ export function registerIpcHandlers(context: IpcContext): void {
     openExternalUrl,
   } = context;
   const mainWindow = getMainWindow();
+  const workRecords = getWorkRecordStore((ids) => {
+    getMainWindow()?.webContents.send("work-records-changed", ids);
+  });
+  ipcMain.on("work-record-snapshot", (_event, snapshot: WorkRecordSnapshot) => {
+    workRecords?.enqueue(snapshot);
+  });
+  ipcMain.handle(
+    "work-records-list",
+    (_event, query: WorkRecordQuery) => workRecords?.list(query) ?? [],
+  );
+  ipcMain.handle(
+    "work-record-get",
+    (_event, id: string) => workRecords?.get(id) ?? null,
+  );
+  ipcMain.handle(
+    "work-record-rename",
+    (_event, id: string, title: string) =>
+      workRecords?.rename(id, title) ?? false,
+  );
+  ipcMain.handle(
+    "work-record-delete",
+    (_event, id: string) => workRecords?.delete(id) ?? false,
+  );
+  ipcMain.handle(
+    "work-records-export",
+    (_event, query: WorkRecordQuery) => workRecords?.exportAll(query) ?? null,
+  );
+  ipcMain.handle(
+    "work-record-export",
+    (_event, id: string) => workRecords?.exportOne(id) ?? null,
+  );
+  ipcMain.handle(
+    "work-record-open-attachment",
+    (_event, id: string, index: number) =>
+      workRecords?.openAttachment(id, index) ?? false,
+  );
   ipcMain.on("record-cold-start-timing", (_event, timing: unknown) => {
     if (!timing || typeof timing !== "object") return;
     const candidate = timing as Partial<ColdStartTimingEvent>;

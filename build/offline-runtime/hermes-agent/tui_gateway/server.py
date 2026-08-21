@@ -1629,6 +1629,7 @@ def _compute_host_turn_frame(
     sid: str,
     session: dict,
     text: Any,
+    display_text: Any = None,
     image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
 ) -> dict:
@@ -1646,6 +1647,7 @@ def _compute_host_turn_frame(
         "request_id": rid,
         "session_key": session.get("session_key") or sid,
         "text": text,
+        "display_text": display_text,
         "history": history,
         "history_version": history_version,
         "cols": int(session.get("cols", 80) or 80),
@@ -1732,6 +1734,7 @@ def _submit_prompt_to_compute_host(
     sid: str,
     session: dict,
     text: Any,
+    display_text: Any = None,
     image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
 ) -> dict:
@@ -1741,6 +1744,7 @@ def _submit_prompt_to_compute_host(
         sid,
         session,
         text,
+        display_text=display_text,
         image_paths=image_paths,
         queued_prompt_generation=queued_prompt_generation,
     )
@@ -7296,11 +7300,49 @@ def _maybe_schedule_auto_continue(sid: str, session: dict, session_key: str) -> 
     return {"attempt": attempt, "interrupted_at": marker["started_at"]}
 
 
+_DESKTOP_SESSION_SKILL_PREFIX = "[Active session skills: "
+_DESKTOP_SESSION_SKILL_INSTRUCTION = (
+    "Built-in skills are always available to this chat. The listed names are the "
+    "only user-added custom skills enabled for this chat. Load and follow each "
+    "listed custom skill with the skill_view tool before answering. An empty "
+    "list means no custom skills are enabled."
+)
+_DESKTOP_USER_MESSAGE_MARKER = "\n\n[User message]\n"
+
+
+# @lat: [[sidebar-navigation#User-visible session titles]]
+def _desktop_display_text_from_prompt(text: Any) -> Any:
+    """Return the visible user text from an exact Desktop control envelope.
+
+    Old Desktop clients only send ``text``.  Keep them compatible without
+    treating arbitrary marker-like user content as control data: unwrapping is
+    allowed only when the known prefix, instruction, and user marker all match.
+    """
+    if not isinstance(text, str) or not text.startswith(
+        _DESKTOP_SESSION_SKILL_PREFIX
+    ):
+        return text
+    selection_end = text.find("]\n", len(_DESKTOP_SESSION_SKILL_PREFIX))
+    if selection_end < 0:
+        return text
+    control_start = selection_end + 2
+    if not text.startswith(_DESKTOP_SESSION_SKILL_INSTRUCTION, control_start):
+        return text
+    marker_start = text.find(
+        _DESKTOP_USER_MESSAGE_MARKER,
+        control_start + len(_DESKTOP_SESSION_SKILL_INSTRUCTION),
+    )
+    if marker_start < 0:
+        return text
+    return text[marker_start + len(_DESKTOP_USER_MESSAGE_MARKER):]
+
+
 def _enqueue_prompt(
     session: dict,
     text: Any,
     transport: Any,
     image_paths: list[str] | None = None,
+    display_text: Any = None,
 ) -> None:
     """Stash a message to run as the very next turn once the live one ends.
 
@@ -7312,7 +7354,7 @@ def _enqueue_prompt(
     sent it even if the session transport is rebound meanwhile.
     """
     image_paths = list(image_paths or [])
-    queued = {"text": text, "transport": transport}
+    queued = {"text": text, "transport": transport, "display_text": display_text}
     if image_paths:
         queued["image_paths"] = image_paths
     existing = session.get("queued_prompt")
@@ -7326,6 +7368,17 @@ def _enqueue_prompt(
     ):
         prev = existing["text"]
         existing["text"] = f"{prev}\n\n{text}" if prev and text else (prev or text)
+        previous_display = existing.get("display_text")
+        if isinstance(previous_display, str) and isinstance(display_text, str):
+            existing["display_text"] = (
+                f"{previous_display}\n\n{display_text}"
+                if previous_display and display_text
+                else (previous_display or display_text)
+            )
+        else:
+            existing["display_text"] = _desktop_display_text_from_prompt(
+                existing["text"]
+            )
         return
     if existing:
         session.setdefault("queued_prompts", []).append(queued)
@@ -7369,7 +7422,13 @@ def _interrupt_busy_session(sid: str, session: dict, agent: Any) -> None:
 
 
 def _handle_busy_submit(
-    rid, sid: str, session: dict, text: Any, transport: Any, queued: bool = False
+    rid,
+    sid: str,
+    session: dict,
+    text: Any,
+    transport: Any,
+    queued: bool = False,
+    display_text: Any = None,
 ) -> dict | None:
     """Apply the ``display.busy_input_mode`` policy to a prompt that lands while
     a turn is in flight, instead of rejecting it with ``session busy``.
@@ -7442,7 +7501,13 @@ def _handle_busy_submit(
             if image_paths:
                 session["attached_images"] = image_paths + list(session.get("attached_images", []))
             return None
-        _enqueue_prompt(session, text, transport, image_paths=image_paths)
+        _enqueue_prompt(
+            session,
+            text,
+            transport,
+            image_paths=image_paths,
+            display_text=display_text,
+        )
         session["last_active"] = time.time()
 
     # Attachments need a separate model invocation. Queue them without
@@ -7485,12 +7550,18 @@ def _drain_queued_prompt(rid, sid: str, session: dict) -> bool:
                     sid,
                     session,
                     queued["text"],
+                    display_text=queued.get("display_text"),
                     image_paths=queued["image_paths"],
                     queued_prompt_generation=queue_generation,
                 )
             else:
                 resp = _submit_prompt_to_compute_host(
-                    rid, sid, session, queued["text"], queued_prompt_generation=queue_generation
+                    rid,
+                    sid,
+                    session,
+                    queued["text"],
+                    display_text=queued.get("display_text"),
+                    queued_prompt_generation=queue_generation,
                 )
             if resp.get("error"):
                 message = str(((resp.get("error") or {}).get("message")) or "queued prompt failed")
@@ -7515,6 +7586,7 @@ def _drain_queued_prompt(rid, sid: str, session: dict) -> bool:
                     sid,
                     session,
                     queued["text"],
+                    display_text=queued.get("display_text"),
                     queued_prompt_generation=queue_generation,
                 )
     except Exception as exc:
@@ -9311,11 +9383,17 @@ def _run_prompt_submit(
     session: dict,
     text: Any,
     *,
+    display_text: Any = None,
     display_kind: str | None = None,
     display_metadata: dict | None = None,
     image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
 ) -> None:
+    title_text = (
+        display_text
+        if isinstance(display_text, str)
+        else _desktop_display_text_from_prompt(text)
+    )
     with session["history_lock"]:
         if (
             queued_prompt_generation is not None
@@ -9864,8 +9942,8 @@ def _run_prompt_submit(
                 status == "complete"
                 and isinstance(raw, str)
                 and raw.strip()
-                and isinstance(text, str)
-                and text.strip()
+                and isinstance(title_text, str)
+                and title_text.strip()
             ):
                 try:
                     from agent.title_generator import maybe_auto_title
@@ -9879,7 +9957,7 @@ def _run_prompt_submit(
                     maybe_auto_title(
                         _get_db(),
                         _title_key,
-                        text,
+                        title_text,
                         raw,
                         session.get("history", []),
                         # Keep auxiliary auto-detection aligned with the active

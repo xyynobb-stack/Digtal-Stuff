@@ -39,6 +39,12 @@ import type {
   SshDockerProvisionResult,
 } from "../shared/ssh-docker";
 import type { ColdStartTimingEvent } from "../shared/cold-start-timing";
+import type {
+  WorkRecordDetail,
+  WorkRecordQuery,
+  WorkRecordSnapshot,
+  WorkRecordSummary,
+} from "../shared/work-records";
 
 /**
  * Mirror of the renderer-side `CredentialPoolEntry` ambient type
@@ -101,6 +107,28 @@ const electronAPI = {
 };
 
 const hermesAPI = {
+  recordWorkRecordSnapshot: (snapshot: WorkRecordSnapshot): void =>
+    ipcRenderer.send("work-record-snapshot", snapshot),
+  listWorkRecords: (query: WorkRecordQuery): Promise<WorkRecordSummary[]> =>
+    ipcRenderer.invoke("work-records-list", query),
+  getWorkRecord: (id: string): Promise<WorkRecordDetail | null> =>
+    ipcRenderer.invoke("work-record-get", id),
+  renameWorkRecord: (id: string, title: string): Promise<boolean> =>
+    ipcRenderer.invoke("work-record-rename", id, title),
+  deleteWorkRecord: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke("work-record-delete", id),
+  exportWorkRecords: (query: WorkRecordQuery): Promise<string | null> =>
+    ipcRenderer.invoke("work-records-export", query),
+  exportWorkRecord: (id: string): Promise<string | null> =>
+    ipcRenderer.invoke("work-record-export", id),
+  openWorkRecordAttachment: (id: string, index: number): Promise<boolean> =>
+    ipcRenderer.invoke("work-record-open-attachment", id, index),
+  onWorkRecordsChanged: (callback: (ids: string[]) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, ids: string[]): void =>
+      callback(ids);
+    ipcRenderer.on("work-records-changed", listener);
+    return () => ipcRenderer.removeListener("work-records-changed", listener);
+  },
   recordColdStartTiming: (event: ColdStartTimingEvent): void =>
     ipcRenderer.send("record-cold-start-timing", event),
 

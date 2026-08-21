@@ -41,6 +41,12 @@ import type {
 import type { ChatToolEvent } from "../shared/chat-stream";
 import type { GpuPreferenceMode, GpuStatus } from "../shared/gpu";
 import type { ColdStartTimingEvent } from "../shared/cold-start-timing";
+import type {
+  WorkRecordDetail,
+  WorkRecordQuery,
+  WorkRecordSnapshot,
+  WorkRecordSummary,
+} from "../shared/work-records";
 
 interface ElectronAPI {
   process: {
@@ -236,6 +242,15 @@ interface KanbanCreateTaskInput {
 }
 
 interface HermesAPI {
+  recordWorkRecordSnapshot: (snapshot: WorkRecordSnapshot) => void;
+  listWorkRecords: (query: WorkRecordQuery) => Promise<WorkRecordSummary[]>;
+  getWorkRecord: (id: string) => Promise<WorkRecordDetail | null>;
+  renameWorkRecord: (id: string, title: string) => Promise<boolean>;
+  deleteWorkRecord: (id: string) => Promise<boolean>;
+  exportWorkRecords: (query: WorkRecordQuery) => Promise<string | null>;
+  exportWorkRecord: (id: string) => Promise<string | null>;
+  openWorkRecordAttachment: (id: string, index: number) => Promise<boolean>;
+  onWorkRecordsChanged: (callback: (ids: string[]) => void) => () => void;
   recordColdStartTiming: (event: ColdStartTimingEvent) => void;
 
   // Installation

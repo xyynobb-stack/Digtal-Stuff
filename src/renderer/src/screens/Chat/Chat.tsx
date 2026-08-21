@@ -28,6 +28,10 @@ import {
   type AgentInitializationStatus,
 } from "./hooks/useDashboardChatTransport";
 import { useI18n } from "../../components/useI18n";
+import {
+  useWorkRecordCapture,
+  type WorkRecordEnrichmentInput,
+} from "./hooks/useWorkRecordCapture";
 import { buildChatTranscript } from "./transcriptUtils";
 import { ConfigHealthBanner } from "../../components/ConfigHealthBanner";
 import FollowUsModal from "../../components/FollowUsModal";
@@ -113,6 +117,7 @@ interface ChatProps {
   /** Resolved avatar/colour of `profile`, so idle agent avatars in the
    *  transcript show the agent's profile picture instead of the loading gif. */
   agentAppearance?: { color?: string | null; avatar?: string | null };
+  profileDisplayName?: string;
 }
 
 function Chat({
@@ -128,6 +133,7 @@ function Chat({
   onSessionIdChange,
   onTitleChange,
   agentAppearance,
+  profileDisplayName,
 }: ChatProps): React.JSX.Element {
   const { t } = useI18n();
   // Identity + appearance of the agent this conversation is with. Passed to the
@@ -750,6 +756,38 @@ function Chat({
     onDashboardUnavailable: handleDashboardUnavailable,
     onAgentInitializationChange: setAgentInitialization,
     onResumedModelIdentity: handleResumedModelIdentity,
+  });
+
+  const enrichWorkRecord = useCallback(
+    async (input: WorkRecordEnrichmentInput): Promise<string | null> => {
+      if (!dashboardTransport.enabled) return null;
+      const response = await dashboardTransport.runOneShot({
+        template: "work_record",
+        variables: {
+          prompt: input.prompt,
+          attachments: input.attachments.join("\n"),
+          actions: input.actions.join("\n"),
+          result: input.result,
+        },
+        task: "title_generation",
+        max_tokens: 500,
+        temperature: 0.2,
+      });
+      return typeof response?.text === "string" ? response.text : null;
+    },
+    [dashboardTransport.enabled, dashboardTransport.runOneShot],
+  );
+
+  useWorkRecordCapture({
+    messages,
+    profileId: profile ?? "default",
+    profileName: profileDisplayName ?? profile ?? "default",
+    sessionId: hermesSessionId,
+    skills: activeSkills,
+    template: Boolean(activeWritingTemplate),
+    contextFolder,
+    isLoading,
+    enrichWorkRecord: dashboardTransport.enabled ? enrichWorkRecord : undefined,
   });
 
   const [agentCommandCatalog, setAgentCommandCatalog] =

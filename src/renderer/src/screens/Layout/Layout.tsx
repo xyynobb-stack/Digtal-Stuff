@@ -29,12 +29,14 @@ import Tools from "../Tools/Tools";
 import Providers from "../Providers/Providers";
 import Schedules from "../Schedules/Schedules";
 import Kanban from "../Kanban/Kanban";
+import WorkRecords from "../WorkRecords/WorkRecords";
 import RemoteNotice from "../../components/RemoteNotice";
 import VerifyWarningBanner from "../../components/VerifyWarningBanner";
 import { useSettingsModal } from "../../components/settings/SettingsModalContext";
 import {
   Compass,
   Timer,
+  History,
   Kanban as KanbanIcon,
   Download,
   PanelLeftClose,
@@ -53,6 +55,7 @@ type View =
   | "memory"
   | "tools"
   | "schedules"
+  | "records"
   | "kanban";
 
 const PINNED_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
@@ -63,6 +66,7 @@ const PINNED_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
   // "skills" lives under the Discover tab (installed + community), so it's no
   // longer a top-level nav item.
   { view: "schedules", icon: Timer, labelKey: "navigation.schedules" },
+  { view: "records", icon: History, labelKey: "navigation.records" },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = "hermes.sidebar.collapsed";
@@ -192,7 +196,10 @@ function Layout({
   // run's profile name) can render real avatars. Refreshed when the selected
   // profile or the current view changes — e.g. after editing on the Agents page.
   const [profileAppearance, setProfileAppearance] = useState<
-    Record<string, { color?: string | null; avatar?: string | null }>
+    Record<
+      string,
+      { name?: string; color?: string | null; avatar?: string | null }
+    >
   >({});
   useEffect(() => {
     let cancelled = false;
@@ -200,9 +207,12 @@ function Layout({
       .listProfiles()
       .then((list) => {
         if (cancelled) return;
-        const map: Record<string, { color?: string; avatar?: string | null }> =
-          {};
-        for (const p of list) map[p.id] = { color: p.color, avatar: p.avatar };
+        const map: Record<
+          string,
+          { name?: string; color?: string; avatar?: string | null }
+        > = {};
+        for (const p of list)
+          map[p.id] = { name: p.name, color: p.color, avatar: p.avatar };
         setProfileAppearance(map);
       })
       .catch(() => {
@@ -867,6 +877,7 @@ function Layout({
                   onSessionIdChange={handleRunSessionId}
                   onTitleChange={handleRunTitle}
                   agentAppearance={getAppearance(run.profile)}
+                  profileDisplayName={getAppearance(run.profile).name}
                 />
               </div>
             ))}
@@ -971,6 +982,17 @@ function Layout({
           {visitedViews.has("schedules") && (
             <div style={paneStyle("schedules")}>
               <Schedules profile={activeProfile} />
+            </div>
+          )}
+
+          {visitedViews.has("records") && (
+            <div style={paneStyle("records")}>
+              <WorkRecords
+                profile={activeProfile}
+                profileName={getAppearance(activeProfile).name ?? activeProfile}
+                visible={view === "records"}
+                onOpenSession={(id) => void handleResumeSession(id)}
+              />
             </div>
           )}
 

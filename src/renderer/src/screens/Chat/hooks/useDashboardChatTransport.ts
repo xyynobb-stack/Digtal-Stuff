@@ -266,7 +266,11 @@ interface UseDashboardChatTransportResult {
     model: string,
     modelBaseUrl?: string,
   ) => void;
-  sendMessage: (text: string, attachments?: Attachment[]) => Promise<boolean>;
+  sendMessage: (
+    text: string,
+    attachments?: Attachment[],
+    displayText?: string,
+  ) => Promise<boolean>;
   /**
    * Run a slash command through the gateway's `slash.exec` pipeline instead of
    * submitting it to the model as a literal prompt. `sys` renders command
@@ -285,6 +289,15 @@ interface UseDashboardChatTransportResult {
    * a `background.complete` event rendered into the transcript.
    */
   runBackground: (text: string) => Promise<{ taskId?: string; error?: string }>;
+  runOneShot: (params: {
+    template?: string;
+    variables?: Record<string, unknown>;
+    instructions?: string;
+    input?: string;
+    task?: string;
+    max_tokens?: number;
+    temperature?: number;
+  }) => Promise<{ text?: string }>;
 }
 
 interface DashboardSeedMessage {
@@ -343,6 +356,10 @@ export async function submitDashboardPromptWithRecovery(
     sessionId: string;
     storedSessionId?: string | null;
     text: string;
+    /** Exact composer text used for user-facing metadata such as auto titles.
+     *  The model still receives `text`, which may contain Desktop control
+     *  envelopes and attachment references. */
+    displayText?: string;
     /** Scopes the turn to this profile on the UNIFIED machine dashboard. Without
      *  it, prompt.submit runs in the dashboard's launch profile (default), so a
      *  named profile's chat would answer as `default`. session create/resume
@@ -354,11 +371,16 @@ export async function submitDashboardPromptWithRecovery(
     params.profile && params.profile !== "default"
       ? { profile: params.profile }
       : {};
+  const displayTextParam =
+    typeof params.displayText === "string"
+      ? { display_text: params.displayText }
+      : {};
   try {
     params.onSubmit?.();
     await client.request("prompt.submit", {
       session_id: params.sessionId,
       text: params.text,
+      ...displayTextParam,
       ...profileParam,
     });
     return params.sessionId;
@@ -381,6 +403,7 @@ export async function submitDashboardPromptWithRecovery(
     await client.request("prompt.submit", {
       session_id: recoveredSessionId,
       text: params.text,
+      ...displayTextParam,
       ...profileParam,
     });
     return recoveredSessionId;
@@ -2336,7 +2359,11 @@ export function useDashboardChatTransport({
   );
 
   const sendMessage = useCallback(
-    async (text: string, attachments?: Attachment[]): Promise<boolean> => {
+    async (
+      text: string,
+      attachments?: Attachment[],
+      displayText?: string,
+    ): Promise<boolean> => {
       if (!enabled) return false;
       const pendingClarifyRequestId = pendingClarifyRequestIdRef.current;
       if (pendingClarifyRequestId) {
@@ -2584,6 +2611,7 @@ export function useDashboardChatTransport({
           sessionId: submissionSessionId,
           storedSessionId: storedSessionIdRef.current,
           text: submitText,
+          displayText,
           profile,
           onSubmit: () =>
             recordTiming({
@@ -2695,6 +2723,26 @@ export function useDashboardChatTransport({
     [enabled, ensureClient, ensureRuntimeSession, ensureSelectedModel, profile],
   );
 
+  const runOneShot = useCallback(
+    async (params: {
+      template?: string;
+      variables?: Record<string, unknown>;
+      instructions?: string;
+      input?: string;
+      task?: string;
+      max_tokens?: number;
+      temperature?: number;
+    }): Promise<{ text?: string }> => {
+      if (!enabled) throw new Error("dashboard transport disabled");
+      const client = await ensureClient();
+      // One-shot helpers are deliberately not tied to the live session. They
+      // use the configured auxiliary backend and cannot mutate or lock the
+      // conversation while the user starts another turn.
+      return client.request<{ text?: string }>("llm.oneshot", params, 75_000);
+    },
+    [enabled, ensureClient],
+  );
+
   const abort = useCallback(() => {
     const client = clientRef.current;
     const sessionId = runtimeSessionIdRef.current;
@@ -2722,5 +2770,6 @@ export function useDashboardChatTransport({
     execSlash,
     getCommandCatalog,
     runBackground,
+    runOneShot,
   };
 }

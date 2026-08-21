@@ -7,6 +7,7 @@ export {
   ChevronRight,
   Circle,
   Clock,
+  History,
   Compass,
   Copy,
   Database,

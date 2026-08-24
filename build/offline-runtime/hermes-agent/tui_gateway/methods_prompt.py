@@ -117,6 +117,10 @@ def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
         return err
+    try:
+        output_dir = _validate_output_directory(params.get("output_dir"))
+    except ValueError as exc:
+        return _err(rid, 4004, str(exc))
     if (limit_message := _ensure_active_session_slot(sid, session)) is not None:
         return _err(rid, 4090, limit_message)
     if truncate_user_ordinal is not None and isinstance(text, str):
@@ -149,6 +153,7 @@ def _(rid, params: dict) -> dict:
             rid, sid, session, text, busy_transport,
             queued=bool(params.get("queued")),
             display_text=display_text,
+            output_dir=output_dir,
         )
         if busy_response is not None:
             return busy_response
@@ -252,7 +257,12 @@ def _(rid, params: dict) -> dict:
 
     if turn_isolation:
         isolated_response = _submit_prompt_to_compute_host(
-            rid, sid, session, text, display_text=display_text
+            rid,
+            sid,
+            session,
+            text,
+            display_text=display_text,
+            output_dir=output_dir,
         )
         if not isolated_response.get("error"):
             return isolated_response
@@ -332,7 +342,14 @@ def _(rid, params: dict) -> dict:
                     },
                 )
                 return
-        _run_prompt_submit(rid, sid, session, text, display_text=display_text)
+        _run_prompt_submit(
+            rid,
+            sid,
+            session,
+            text,
+            display_text=display_text,
+            output_dir=output_dir,
+        )
 
     run_thread = threading.Thread(target=run_after_agent_ready, daemon=True)
     # Keep a handle so session.interrupt can tell a live turn from a stuck

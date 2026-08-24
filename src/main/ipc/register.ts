@@ -15,6 +15,7 @@ import { readdir, readFile, stat } from "fs/promises";
 import { getActiveProfileNameSync } from "../utils";
 import type { Attachment } from "../../shared/attachments";
 import type { SessionModelOverride } from "../../shared/model-override";
+import type { SessionContextSettings } from "../../shared/session-output";
 import type { AppLocale } from "../../shared/i18n/types";
 import type {
   WorkRecordQuery,
@@ -41,7 +42,9 @@ import {
 } from "../session-continuation-store";
 import {
   getSessionContextFolder,
+  getSessionContextSettings,
   setSessionContextFolder,
+  setSessionContextSettings,
   getRecentSessionContextFolders,
 } from "../session-context-folder-store";
 import {
@@ -1627,6 +1630,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       contextFolder?: string,
       runId?: string,
       modelOverride?: SessionModelOverride,
+      outputDirectory?: string,
     ) => {
       // Each conversation has a stable runId minted by the renderer. Fall back
       // to a generated id for legacy callers so the run is still tracked.
@@ -1762,6 +1766,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         attachments,
         contextFolder,
         modelOverride,
+        outputDirectory,
       );
 
       activeRuns.set(chatRunId, handle.abort);
@@ -2203,12 +2208,29 @@ export function registerIpcHandlers(context: IpcContext): void {
   });
 
   ipcMain.handle(
+    "get-session-context-settings",
+    (_event, sessionId: string) => {
+      return getSessionContextSettings(sessionId);
+    },
+  );
+
+  ipcMain.handle(
     "set-session-context-folder",
     (_event, sessionId: string, folder: string | null) => {
       setSessionContextFolder(sessionId, folder);
       return true;
     },
   );
+
+  ipcMain.handle(
+    "set-session-context-settings",
+    (_event, sessionId: string, settings: SessionContextSettings) => {
+      setSessionContextSettings(sessionId, settings);
+      return true;
+    },
+  );
+
+  ipcMain.handle("get-default-output-directory", () => app.getPath("desktop"));
 
   ipcMain.handle(
     "list-recent-session-context-folders",

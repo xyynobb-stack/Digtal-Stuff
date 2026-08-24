@@ -37,6 +37,7 @@ import { ConfigHealthBanner } from "../../components/ConfigHealthBanner";
 import FollowUsModal from "../../components/FollowUsModal";
 import type { Attachment } from "../../../../shared/attachments";
 import type { SessionModelOverride } from "../../../../shared/model-override";
+import type { SessionOutputDestination } from "../../../../shared/session-output";
 import type { WritingTemplate } from "../../../../shared/writing-templates";
 import type { ActiveTurn, ChatMessage, UsageState } from "./types";
 import type { ContextUsage } from "./ContextGauge";
@@ -56,6 +57,7 @@ import type {
 interface QueuedMessage {
   text: string;
   attachments: Attachment[];
+  outputDirectory: Promise<string | undefined>;
 }
 
 export type { ChatMessage } from "./types";
@@ -282,6 +284,15 @@ function Chat({
   // persisted per session so a re-opened conversation restores its folder, and
   // reset on new chat below.
   const [contextFolder, setContextFolder] = useState<string | null>(null);
+  const [outputDestination, setOutputDestination] =
+    useState<SessionOutputDestination>("desktop");
+  // Click-intent refs update before React commits. An immediate Send therefore
+  // uses the choice the user just made, not a callback from the prior render.
+  const contextFolderIntentRef = useRef<string | null>(null);
+  const outputDestinationIntentRef =
+    useRef<SessionOutputDestination>("desktop");
+  const contextSettingsIntentRevisionRef = useRef(0);
+  const defaultOutputDirectoryPromiseRef = useRef<Promise<string> | null>(null);
   // Gate folder persistence until the stored value for a resumed session has
   // been loaded — otherwise the initial null would overwrite the saved folder
   // before the load resolves. A brand-new chat (no initialSessionId) has
@@ -292,11 +303,20 @@ function Chat({
   useEffect(() => {
     if (!initialSessionId) return;
     let cancelled = false;
+    const restoreRevision = contextSettingsIntentRevisionRef.current;
     void (async () => {
       try {
-        const folder =
-          await window.hermesAPI.getSessionContextFolder(initialSessionId);
-        if (!cancelled && folder) setContextFolder(folder);
+        const settings =
+          await window.hermesAPI.getSessionContextSettings(initialSessionId);
+        if (
+          !cancelled &&
+          contextSettingsIntentRevisionRef.current === restoreRevision
+        ) {
+          contextFolderIntentRef.current = settings.folder;
+          outputDestinationIntentRef.current = settings.outputDestination;
+          setContextFolder(settings.folder);
+          setOutputDestination(settings.outputDestination);
+        }
       } catch {
         /* best-effort — a missing folder just leaves the session unlinked */
       } finally {
@@ -314,7 +334,10 @@ function Chat({
   useEffect(() => {
     if (!hermesSessionId || !contextFolderLoadedRef.current) return;
     void window.hermesAPI
-      .setSessionContextFolder(hermesSessionId, contextFolder)
+      .setSessionContextSettings(hermesSessionId, {
+        folder: contextFolder,
+        outputDestination,
+      })
       .then(() => {
         window.dispatchEvent(
           new CustomEvent("hermes-session-context-folder-changed", {
@@ -325,7 +348,50 @@ function Chat({
       .catch(() => {
         /* best-effort sidebar refresh signal */
       });
-  }, [hermesSessionId, contextFolder]);
+  }, [hermesSessionId, contextFolder, outputDestination]);
+
+  const setContextFolderIntent = useCallback((folder: string | null) => {
+    contextSettingsIntentRevisionRef.current += 1;
+    contextFolderIntentRef.current = folder;
+    setContextFolder(folder);
+    if (!folder) {
+      outputDestinationIntentRef.current = "desktop";
+      setOutputDestination("desktop");
+    }
+  }, []);
+
+  const handleOutputDestinationChange = useCallback(
+    (destination: SessionOutputDestination) => {
+      contextSettingsIntentRevisionRef.current += 1;
+      const normalized =
+        destination === "context-folder" && contextFolderIntentRef.current
+          ? "context-folder"
+          : "desktop";
+      outputDestinationIntentRef.current = normalized;
+      setOutputDestination(normalized);
+    },
+    [],
+  );
+
+  // @lat: [[context-folder#Output destination]]
+  const resolveOutputDirectory = useCallback(async (): Promise<
+    string | undefined
+  > => {
+    if (connectionMode !== "local") return undefined;
+    if (
+      outputDestinationIntentRef.current === "context-folder" &&
+      contextFolderIntentRef.current
+    ) {
+      return contextFolderIntentRef.current;
+    }
+    defaultOutputDirectoryPromiseRef.current ??=
+      window.hermesAPI.getDefaultOutputDirectory();
+    return defaultOutputDirectoryPromiseRef.current;
+  }, [connectionMode]);
+  const resolveContextFolder = useCallback(
+    (): string | null => contextFolderIntentRef.current,
+    [],
+  );
   // Whether the worktree panel is visible (only applies when contextFolder is set)
   // Default false so the panel doesn't open automatically and interfere with scrolling
   const [worktreeVisible, setWorktreeVisible] = useState<boolean>(false);
@@ -667,7 +733,7 @@ function Chat({
     }
     setMessages([]);
     setHermesSessionId(null);
-    setContextFolder(null);
+    setContextFolderIntent(null);
     setActiveWritingTemplate(null);
     // Clearing the conversation reverts to the global default model — the
     // session-scoped pick belongs to the conversation being cleared (#688).
@@ -681,7 +747,14 @@ function Chat({
     setToolProgress(null);
     queueRef.current = [];
     setQueuedMessages([]);
-  }, [isLoading, runId, hermesSessionId, setMessages, modelConfig.reload]);
+  }, [
+    isLoading,
+    runId,
+    hermesSessionId,
+    setMessages,
+    modelConfig.reload,
+    setContextFolderIntent,
+  ]);
 
   const localCommands = useLocalCommands({
     profile,
@@ -739,6 +812,7 @@ function Chat({
   const dashboardTransport = useDashboardChatTransport({
     activeTurnRef,
     contextFolder,
+    resolveContextFolder,
     connectionMode,
     enabled: dashboardChatEnabled,
     fallbackOnUnavailable: chatTransportPreference === "auto",
@@ -865,10 +939,14 @@ function Chat({
   // an agent prompt while a turn is already in flight).
   const enqueueMessage = useCallback(
     (text: string, attachments: Attachment[] = []) => {
-      queueRef.current.push({ text, attachments });
+      queueRef.current.push({
+        text,
+        attachments,
+        outputDirectory: resolveOutputDirectory(),
+      });
       setQueuedMessages([...queueRef.current]);
     },
-    [],
+    [resolveOutputDirectory],
   );
 
   const handleLegacyTransport = useCallback((automaticFallback: boolean) => {
@@ -889,7 +967,8 @@ function Chat({
     slashCatalog,
     onOpenSettings: onOpenDiagnose,
     activeTurnRef,
-    contextFolder,
+    resolveContextFolder,
+    resolveOutputDirectory,
     activeSkills,
     activeWritingTemplate,
     sessionModel: sessionModelOverride,
@@ -925,12 +1004,21 @@ function Chat({
     const next = queueRef.current.shift();
     if (!next) return;
     setQueuedMessages([...queueRef.current]);
-    handleSendRef.current(next.text, next.attachments, true).catch(() => {
-      // Put the message back at the front so it isn't silently lost if
-      // the send fails (e.g. IPC error before onChatError fires).
-      queueRef.current.unshift(next);
-      setQueuedMessages([...queueRef.current]);
-    });
+    void next.outputDirectory
+      .then((outputDirectory) =>
+        handleSendRef.current(
+          next.text,
+          next.attachments,
+          true,
+          outputDirectory,
+        ),
+      )
+      .catch(() => {
+        // Put the message back at the front so it isn't silently lost if
+        // the send fails (e.g. IPC error before onChatError fires).
+        queueRef.current.unshift(next);
+        setQueuedMessages([...queueRef.current]);
+      });
   }, [isLoading]);
 
   const handleRemoveQueued = useCallback((index: number) => {
@@ -958,13 +1046,17 @@ function Chat({
         return;
       }
       if (isLoading) {
-        queueRef.current.push({ text, attachments });
+        queueRef.current.push({
+          text,
+          attachments,
+          outputDirectory: resolveOutputDirectory(),
+        });
         setQueuedMessages([...queueRef.current]);
         return;
       }
       void handleSendRef.current(text, attachments);
     },
-    [isLoading],
+    [isLoading, resolveOutputDirectory],
   );
 
   const handleSuggestion = useCallback((text: string) => {
@@ -977,12 +1069,12 @@ function Chat({
       return;
     }
     const path = await window.hermesAPI.selectFolder();
-    if (path) setContextFolder(path);
-  }, [remoteMode]);
+    if (path) setContextFolderIntent(path);
+  }, [remoteMode, setContextFolderIntent]);
 
   const handleClearFolder = useCallback(() => {
-    setContextFolder(null);
-  }, []);
+    setContextFolderIntent(null);
+  }, [setContextFolderIntent]);
 
   // Stable toolbar callbacks so the memoized ModelPicker / ContextFolderChip
   // don't re-render on every streaming chunk (each chunk re-renders <Chat>).
@@ -1017,9 +1109,12 @@ function Chat({
     [dashboardTransport.setModelSelectionIntent, modelConfig.selectModel],
   );
 
-  const handleSelectRecentFolder = useCallback((path: string) => {
-    setContextFolder(path);
-  }, []);
+  const handleSelectRecentFolder = useCallback(
+    (path: string) => {
+      setContextFolderIntent(path);
+    },
+    [setContextFolderIntent],
+  );
 
   const handleToggleWorktree = useCallback(() => {
     setWorktreeVisible((v) => !v);
@@ -1285,12 +1380,15 @@ function Chat({
 
               <ContextFolderChip
                 contextFolder={contextFolder}
+                outputDestination={outputDestination}
+                showOutputLocation={connectionMode === "local"}
                 show
                 worktreeVisible={worktreeVisible}
                 onPickFolder={handlePickFolder}
                 onClearFolder={handleClearFolder}
                 onToggleWorktree={handleToggleWorktree}
                 onSelectRecentFolder={handleSelectRecentFolder}
+                onOutputDestinationChange={handleOutputDestinationChange}
               />
 
               <SessionTemplatePicker
@@ -1314,7 +1412,7 @@ function Chat({
         open={folderPickerOpen}
         onCancel={() => setFolderPickerOpen(false)}
         onSelect={(path) => {
-          setContextFolder(path);
+          setContextFolderIntent(path);
           setFolderPickerOpen(false);
         }}
       />

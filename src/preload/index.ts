@@ -9,6 +9,7 @@ import type {
 import type { SessionModelOverride } from "../shared/model-override";
 import type { DesktopSessionContinuationItem } from "../shared/session-continuation";
 import type { DesktopSessionLocalError } from "../shared/session-continuation";
+import type { SessionContextSettings } from "../shared/session-output";
 import type {
   ImportWalletInput,
   ProfileWallet,
@@ -564,6 +565,7 @@ const hermesAPI = {
     contextFolder?: string,
     runId?: string,
     modelOverride?: SessionModelOverride,
+    outputDirectory?: string,
   ): Promise<{ response: string; sessionId?: string }> =>
     ipcRenderer.invoke(
       "send-message",
@@ -575,6 +577,7 @@ const hermesAPI = {
       contextFolder,
       runId,
       modelOverride,
+      outputDirectory,
     ),
 
   abortChat: (runId?: string): Promise<void> =>
@@ -934,11 +937,25 @@ const hermesAPI = {
   getSessionContextFolder: (sessionId: string): Promise<string | null> =>
     ipcRenderer.invoke("get-session-context-folder", sessionId),
 
+  getSessionContextSettings: (
+    sessionId: string,
+  ): Promise<SessionContextSettings> =>
+    ipcRenderer.invoke("get-session-context-settings", sessionId),
+
   setSessionContextFolder: (
     sessionId: string,
     folder: string | null,
   ): Promise<boolean> =>
     ipcRenderer.invoke("set-session-context-folder", sessionId, folder),
+
+  setSessionContextSettings: (
+    sessionId: string,
+    settings: SessionContextSettings,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke("set-session-context-settings", sessionId, settings),
+
+  getDefaultOutputDirectory: (): Promise<string> =>
+    ipcRenderer.invoke("get-default-output-directory"),
 
   listRecentSessionContextFolders: (limit?: number): Promise<string[]> =>
     ipcRenderer.invoke("list-recent-session-context-folders", limit),

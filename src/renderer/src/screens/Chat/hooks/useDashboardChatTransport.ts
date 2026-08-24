@@ -219,6 +219,7 @@ interface EnsureDashboardRuntimeSessionResult {
 interface UseDashboardChatTransportArgs {
   activeTurnRef: React.MutableRefObject<ActiveTurn | null>;
   contextFolder: string | null;
+  resolveContextFolder: () => string | null;
   connectionMode: DashboardConnectionMode;
   enabled: boolean;
   fallbackOnUnavailable: boolean;
@@ -270,6 +271,7 @@ interface UseDashboardChatTransportResult {
     text: string,
     attachments?: Attachment[],
     displayText?: string,
+    outputDirectory?: string,
   ) => Promise<boolean>;
   /**
    * Run a slash command through the gateway's `slash.exec` pipeline instead of
@@ -360,6 +362,8 @@ export async function submitDashboardPromptWithRecovery(
      *  The model still receives `text`, which may contain Desktop control
      *  envelopes and attachment references. */
     displayText?: string;
+    /** Turn-scoped destination for newly generated user deliverables. */
+    outputDirectory?: string;
     /** Scopes the turn to this profile on the UNIFIED machine dashboard. Without
      *  it, prompt.submit runs in the dashboard's launch profile (default), so a
      *  named profile's chat would answer as `default`. session create/resume
@@ -375,12 +379,16 @@ export async function submitDashboardPromptWithRecovery(
     typeof params.displayText === "string"
       ? { display_text: params.displayText }
       : {};
+  const outputDirectoryParam = params.outputDirectory
+    ? { output_dir: params.outputDirectory }
+    : {};
   try {
     params.onSubmit?.();
     await client.request("prompt.submit", {
       session_id: params.sessionId,
       text: params.text,
       ...displayTextParam,
+      ...outputDirectoryParam,
       ...profileParam,
     });
     return params.sessionId;
@@ -404,6 +412,7 @@ export async function submitDashboardPromptWithRecovery(
       session_id: recoveredSessionId,
       text: params.text,
       ...displayTextParam,
+      ...outputDirectoryParam,
       ...profileParam,
     });
     return recoveredSessionId;
@@ -1189,6 +1198,7 @@ export function dashboardContinuationItemsFromTranscript(
 export function useDashboardChatTransport({
   activeTurnRef,
   contextFolder,
+  resolveContextFolder,
   connectionMode,
   enabled,
   fallbackOnUnavailable,
@@ -2003,6 +2013,7 @@ export function useDashboardChatTransport({
     ): Promise<string> => {
       let targetSessionId = runtimeSessionIdRef.current;
       let justCreated = false;
+      const intendedContextFolder = resolveContextFolder();
 
       if (!targetSessionId) {
         const selected = selectedModelRef.current;
@@ -2013,7 +2024,7 @@ export function useDashboardChatTransport({
         if (!pending || options.forceCreate) {
           pending = ensureDashboardRuntimeSession({
             client,
-            contextFolder,
+            contextFolder: intendedContextFolder,
             excludeSeedUserId,
             forceCreate: options.forceCreate ?? false,
             messages: messagesRef.current,
@@ -2141,8 +2152,8 @@ export function useDashboardChatTransport({
                   }
                 : null;
         }
-        if (justCreated && contextFolder) {
-          lastSyncedCwdRef.current = contextFolder;
+        if (justCreated && intendedContextFolder) {
+          lastSyncedCwdRef.current = intendedContextFolder;
         }
         const storedId = response.storedSessionId;
         storedSessionIdRef.current = storedId;
@@ -2151,15 +2162,15 @@ export function useDashboardChatTransport({
       }
 
       if (
-        contextFolder &&
+        intendedContextFolder &&
         targetSessionId &&
-        lastSyncedCwdRef.current !== contextFolder
+        lastSyncedCwdRef.current !== intendedContextFolder
       ) {
-        lastSyncedCwdRef.current = contextFolder;
+        lastSyncedCwdRef.current = intendedContextFolder;
         await client
           .request("session.cwd.set", {
             session_id: targetSessionId,
-            cwd: contextFolder,
+            cwd: intendedContextFolder,
           })
           .catch((err) => {
             lastSyncedCwdRef.current = null;
@@ -2172,7 +2183,7 @@ export function useDashboardChatTransport({
     [
       activeTurnRef,
       applySessionReadiness,
-      contextFolder,
+      resolveContextFolder,
       onResumedModelIdentity,
       profile,
       setHermesSessionId,
@@ -2400,6 +2411,7 @@ export function useDashboardChatTransport({
       text: string,
       attachments?: Attachment[],
       displayText?: string,
+      outputDirectory?: string,
     ): Promise<boolean> => {
       if (!enabled) return false;
       const pendingClarifyRequestId = pendingClarifyRequestIdRef.current;
@@ -2649,6 +2661,7 @@ export function useDashboardChatTransport({
           storedSessionId: storedSessionIdRef.current,
           text: submitText,
           displayText,
+          outputDirectory,
           profile,
           onSubmit: () =>
             recordTiming({

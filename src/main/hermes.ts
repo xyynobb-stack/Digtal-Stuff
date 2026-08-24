@@ -1175,16 +1175,32 @@ export function buildUserContent(
  */
 export function contextFolderSystemMessage(
   contextFolder?: string,
+  outputDirectory?: string,
 ): { role: "system"; content: string } | null {
   const folder = contextFolder?.trim();
-  if (!folder) return null;
+  const output = outputDirectory?.trim();
+  if (!folder && !output) return null;
+  const parts: string[] = [];
+  if (folder) {
+    parts.push(
+      `The working folder for this conversation is ${folder}. ` +
+        `When the user asks you to read, create, modify, or run project ` +
+        `files, use the file, terminal, and code-execution tools with ` +
+        `absolute paths under this folder.`,
+    );
+  }
+  if (output) {
+    parts.push(
+      `Save newly generated user deliverables in ${output}. ` +
+        `Use an absolute path in that directory unless the user explicitly ` +
+        `requests another location. Existing source files should still be ` +
+        `edited in place, and caches or temporary files should remain in ` +
+        `their managed temporary directories.`,
+    );
+  }
   return {
     role: "system",
-    content:
-      `The working folder for this conversation is ${folder}. ` +
-      `When the user asks you to read, create, modify, or run project ` +
-      `files, use the file, terminal, and code-execution tools with ` +
-      `absolute paths under this folder.`,
+    content: parts.join("\n\n"),
   };
 }
 
@@ -1213,6 +1229,7 @@ function sendMessageViaApi(
   attachments?: Attachment[],
   contextFolder?: string,
   override?: SessionModelOverride,
+  outputDirectory?: string,
 ): ChatHandle {
   const mc = effectiveModelConfig(profile, override);
   const controller = new AbortController();
@@ -1237,7 +1254,7 @@ function sendMessageViaApi(
   // there. Injected only at the request-build step — the renderer's visible
   // transcript stays clean, and getSessionMessages filters non-user/assistant
   // roles, so reloaded sessions stay clean too.
-  const ctxSystem = contextFolderSystemMessage(contextFolder);
+  const ctxSystem = contextFolderSystemMessage(contextFolder, outputDirectory);
   if (ctxSystem) messages.unshift(ctxSystem);
 
   const reasoningEffort = reasoningEffortForProfile(profile);
@@ -1624,6 +1641,7 @@ function sendMessageViaRuns(
   attachments?: Attachment[],
   contextFolder?: string,
   override?: SessionModelOverride,
+  outputDirectory?: string,
 ): ChatHandle {
   const mc = effectiveModelConfig(profile, override);
   const controller = new AbortController();
@@ -1632,7 +1650,7 @@ function sendMessageViaRuns(
   const sessionId =
     resumeSessionId ||
     (headersForAuth.Authorization ? `desk-${Date.now()}-${randomUUID()}` : "");
-  const ctxSystem = contextFolderSystemMessage(contextFolder);
+  const ctxSystem = contextFolderSystemMessage(contextFolder, outputDirectory);
   const bodyObj: Record<string, unknown> = {
     model: mc.model || "hermes-agent",
     input: message,
@@ -1688,6 +1706,7 @@ function sendMessageViaRuns(
       attachments,
       contextFolder,
       override,
+      outputDirectory,
     );
   }
 
@@ -1903,6 +1922,7 @@ async function sendMessageViaTuiGateway(
   resumeSessionId?: string,
   history?: Array<{ role: string; content: string }>,
   contextFolder?: string,
+  outputDirectory?: string,
 ): Promise<ChatHandle> {
   const client = getTuiGatewayClient(profile);
   let activeSessionId = "";
@@ -1962,6 +1982,8 @@ async function sendMessageViaTuiGateway(
       history,
       undefined,
       contextFolder,
+      undefined,
+      outputDirectory,
     )
       .then((handle) => {
         fallbackHandle = handle;
@@ -2209,6 +2231,7 @@ async function sendMessageViaTuiGateway(
     await client.request("prompt.submit", {
       session_id: activeSessionId,
       text: message,
+      ...(outputDirectory ? { output_dir: outputDirectory } : {}),
     });
   } catch (error) {
     cleanup();
@@ -2303,7 +2326,12 @@ function sendMessageViaCli(
   resumeSessionId?: string,
   attachments?: Attachment[],
   override?: SessionModelOverride,
+  outputDirectory?: string,
 ): ChatHandle {
+  const outputPolicy = contextFolderSystemMessage(undefined, outputDirectory);
+  if (outputPolicy) {
+    message = `${outputPolicy.content}\n\n[User message]\n${message}`;
+  }
   // CLI fallback can't pipe multimodal content; inline text-file attachments
   // and ignore images.  The gateway is the supported attachment path; this
   // is only hit when the API server isn't reachable.
@@ -2645,6 +2673,7 @@ async function sendMessageViaNonGatewayApi(
   attachments?: Attachment[],
   contextFolder?: string,
   override?: SessionModelOverride,
+  outputDirectory?: string,
 ): Promise<ChatHandle> {
   const approvalCommand = /^\/(?:approve|deny)\b/i.test(message.trim());
   if (!attachments?.length && !approvalCommand) {
@@ -2659,6 +2688,7 @@ async function sendMessageViaNonGatewayApi(
         attachments,
         contextFolder,
         override,
+        outputDirectory,
       );
     }
   }
@@ -2672,6 +2702,7 @@ async function sendMessageViaNonGatewayApi(
     attachments,
     contextFolder,
     override,
+    outputDirectory,
   );
 }
 
@@ -2684,6 +2715,7 @@ async function sendMessageViaBestApi(
   attachments?: Attachment[],
   contextFolder?: string,
   override?: SessionModelOverride,
+  outputDirectory?: string,
 ): Promise<ChatHandle> {
   const approvalCommand = /^\/(?:approve|deny)\b/i.test(message.trim());
   // Skip the TUI gateway when a session-scoped model override is active — the
@@ -2704,6 +2736,7 @@ async function sendMessageViaBestApi(
         resumeSessionId,
         history,
         contextFolder,
+        outputDirectory,
       );
     } catch (error) {
       console.warn(
@@ -2722,6 +2755,7 @@ async function sendMessageViaBestApi(
     attachments,
     contextFolder,
     override,
+    outputDirectory,
   );
 }
 
@@ -2734,6 +2768,7 @@ async function sendMessageViaBestApiWithLocalRecovery(
   attachments?: Attachment[],
   contextFolder?: string,
   override?: SessionModelOverride,
+  outputDirectory?: string,
 ): Promise<ChatHandle> {
   let aborted = false;
   let retrying = false;
@@ -2779,6 +2814,7 @@ async function sendMessageViaBestApiWithLocalRecovery(
         attachments,
         contextFolder,
         override,
+        outputDirectory,
       );
       return;
     }
@@ -2790,6 +2826,7 @@ async function sendMessageViaBestApiWithLocalRecovery(
       resumeSessionId,
       attachments,
       override,
+      outputDirectory,
     );
   };
 
@@ -2868,6 +2905,7 @@ async function sendMessageViaBestApiWithLocalRecovery(
     attachments,
     contextFolder,
     override,
+    outputDirectory,
   );
 
   return handle;
@@ -2882,6 +2920,7 @@ export async function sendMessage(
   attachments?: Attachment[],
   contextFolder?: string,
   override?: SessionModelOverride,
+  outputDirectory?: string,
 ): Promise<ChatHandle> {
   ensureInitialized();
 
@@ -2897,6 +2936,7 @@ export async function sendMessage(
       attachments,
       contextFolder,
       override,
+      outputDirectory,
     );
   }
 
@@ -2914,6 +2954,7 @@ export async function sendMessage(
       resumeSessionId,
       attachments,
       override,
+      outputDirectory,
     );
   }
 
@@ -2938,6 +2979,7 @@ export async function sendMessage(
       attachments,
       contextFolder,
       override,
+      outputDirectory,
     );
   }
 
@@ -2949,6 +2991,7 @@ export async function sendMessage(
     resumeSessionId,
     attachments,
     override,
+    outputDirectory,
   );
 }
 

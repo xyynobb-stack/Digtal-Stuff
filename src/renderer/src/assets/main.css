@@ -7393,6 +7393,16 @@ body:has(.shell-vibrant),
   color: var(--text-secondary);
 }
 
+.chat-ctxfolder-output-label {
+  max-width: 120px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-ctxfolder-name {
   max-width: 160px;
   overflow: hidden;

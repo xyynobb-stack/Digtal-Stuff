@@ -36,6 +36,7 @@ describe("dashboard prompt display text", () => {
         storedSessionId: "stored",
         text: "[Active session skills: built-in]\n...model-facing...",
         displayText: "这份附件里有什么？",
+        outputDirectory: "C:\\Users\\me\\Desktop",
       },
     );
 
@@ -43,11 +44,13 @@ describe("dashboard prompt display text", () => {
       session_id: "stale",
       text: "[Active session skills: built-in]\n...model-facing...",
       display_text: "这份附件里有什么？",
+      output_dir: "C:\\Users\\me\\Desktop",
     });
     expect(request).toHaveBeenNthCalledWith(3, "prompt.submit", {
       session_id: "recovered",
       text: "[Active session skills: built-in]\n...model-facing...",
       display_text: "这份附件里有什么？",
+      output_dir: "C:\\Users\\me\\Desktop",
     });
   });
 });
@@ -165,6 +168,7 @@ function Harness({
   const transport = useDashboardChatTransport({
     activeTurnRef,
     contextFolder,
+    resolveContextFolder: () => contextFolder,
     connectionMode,
     enabled: true,
     fallbackOnUnavailable,

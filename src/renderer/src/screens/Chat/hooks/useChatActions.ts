@@ -54,8 +54,10 @@ interface UseChatActionsArgs {
    *  (e.g. `/settings appearance`). */
   onOpenSettings?: (section?: string) => void;
   activeTurnRef: React.MutableRefObject<ActiveTurn | null>;
-  /** Working folder bound to this conversation (issue #27), or null. */
-  contextFolder: string | null;
+  /** Resolve the latest folder click intent at send time. */
+  resolveContextFolder: () => string | null;
+  /** Resolve the latest output-location click intent at send time. */
+  resolveOutputDirectory: () => Promise<string | undefined>;
   /** Skills explicitly enabled by the user for this chat session. */
   activeSkills?: string[];
   /** Original template file selected for this chat; the Agent interprets it. */
@@ -68,6 +70,7 @@ interface UseChatActionsArgs {
     text: string,
     attachments?: Attachment[],
     displayText?: string,
+    outputDirectory?: string,
   ) => Promise<boolean>;
   /** Run an Agent-owned slash command through the gateway pipeline. Undefined
    *  on legacy transport; the central router reports it as unavailable. */
@@ -95,6 +98,7 @@ interface UseChatActionsResult {
     text: string,
     attachments?: Attachment[],
     skipLoadingCheck?: boolean,
+    outputDirectoryOverride?: string,
   ) => Promise<void>;
   handleQuickAsk: (text: string, attachments?: Attachment[]) => Promise<void>;
   /** Launch a side-question (`/btw`) background prompt. Bypasses the busy queue;
@@ -129,7 +133,8 @@ export function useChatActions({
   slashCatalog,
   onOpenSettings,
   activeTurnRef,
-  contextFolder,
+  resolveContextFolder,
+  resolveOutputDirectory,
   activeSkills = [],
   activeWritingTemplate = null,
   sessionModel,
@@ -173,7 +178,11 @@ export function useChatActions({
   );
 
   const sendToAgent = useCallback(
-    async (text: string, attachments?: Attachment[]): Promise<void> => {
+    async (
+      text: string,
+      attachments?: Attachment[],
+      outputDirectoryOverride?: string,
+    ): Promise<void> => {
       const selected = activeSkillsRef.current;
       const selectedTemplate = activeWritingTemplateRef.current;
       const agentText = !text.startsWith("/")
@@ -196,12 +205,16 @@ export function useChatActions({
             ]
           : attachments;
       try {
+        const resolvedContextFolder = resolveContextFolder();
+        const outputDirectory =
+          outputDirectoryOverride ?? (await resolveOutputDirectory());
         if (sendViaDashboard) {
           // @lat: [[sidebar-navigation#User-visible session titles]]
           const handled = await sendViaDashboard(
             agentText,
             agentAttachments,
             text,
+            outputDirectory,
           );
           if (handled) return;
         }
@@ -234,9 +247,10 @@ export function useChatActions({
             content: m.content,
           })),
           agentAttachments,
-          contextFolder ?? undefined,
+          resolvedContextFolder ?? undefined,
           runId,
           sessionModelRef.current || undefined,
+          outputDirectory,
         );
         if ((agentAttachments?.length ?? 0) > 0) {
           try {
@@ -270,7 +284,8 @@ export function useChatActions({
       runId,
       profile,
       hermesSessionId,
-      contextFolder,
+      resolveContextFolder,
+      resolveOutputDirectory,
       sendViaDashboard,
       onLegacyTransport,
     ],
@@ -324,6 +339,7 @@ export function useChatActions({
       text: string,
       attachments?: Attachment[],
       skipLoadingCheck = false,
+      outputDirectoryOverride?: string,
     ): Promise<void> => {
       const hasPayload = text.length > 0 || (attachments?.length ?? 0) > 0;
       if (!hasPayload) return;
@@ -463,7 +479,7 @@ export function useChatActions({
         status: "running",
       };
       onSessionStarted?.();
-      await sendToAgent(text, attachments);
+      await sendToAgent(text, attachments, outputDirectoryOverride);
     },
     [
       activeTurnRef,

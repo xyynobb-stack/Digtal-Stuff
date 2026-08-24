@@ -8,6 +8,7 @@ import type {
 import type { SessionModelOverride } from "../shared/model-override";
 import type { DesktopSessionContinuationItem } from "../shared/session-continuation";
 import type { DesktopSessionLocalError } from "../shared/session-continuation";
+import type { SessionContextSettings } from "../shared/session-output";
 import type {
   ImportWalletInput,
   ProfileWallet,
@@ -472,6 +473,7 @@ interface HermesAPI {
     contextFolder?: string,
     runId?: string,
     modelOverride?: SessionModelOverride,
+    outputDirectory?: string,
   ) => Promise<{ response: string; sessionId?: string }>;
   abortChat: (runId?: string) => Promise<void>;
   transcribeAudio: (
@@ -674,10 +676,18 @@ interface HermesAPI {
     error: DesktopSessionLocalError,
   ) => Promise<boolean>;
   getSessionContextFolder: (sessionId: string) => Promise<string | null>;
+  getSessionContextSettings: (
+    sessionId: string,
+  ) => Promise<SessionContextSettings>;
   setSessionContextFolder: (
     sessionId: string,
     folder: string | null,
   ) => Promise<boolean>;
+  setSessionContextSettings: (
+    sessionId: string,
+    settings: SessionContextSettings,
+  ) => Promise<boolean>;
+  getDefaultOutputDirectory: () => Promise<string>;
   listRecentSessionContextFolders: (limit?: number) => Promise<string[]>;
   getSessionModelOverride: (
     sessionId: string,

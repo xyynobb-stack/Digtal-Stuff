@@ -1,10 +1,13 @@
 import { memo, useState, useEffect, useRef } from "react";
 import { FolderOpen, FolderTree, X, Check } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
+import type { SessionOutputDestination } from "../../../../shared/session-output";
 
 interface ContextFolderChipProps {
   /** Working folder bound to this conversation (issue #27), or null. */
   contextFolder: string | null;
+  outputDestination: SessionOutputDestination;
+  showOutputLocation: boolean;
   /** Hidden in remote/SSH mode, where the picker browses the wrong machine. */
   show: boolean;
   worktreeVisible: boolean;
@@ -12,6 +15,7 @@ interface ContextFolderChipProps {
   onClearFolder: () => void;
   onToggleWorktree: () => void;
   onSelectRecentFolder?: (path: string) => void;
+  onOutputDestinationChange: (destination: SessionOutputDestination) => void;
 }
 
 /** Last path segment, for the compact chip label (handles \ and /). */
@@ -27,12 +31,15 @@ function folderName(p: string): string {
  */
 export const ContextFolderChip = memo(function ContextFolderChip({
   contextFolder,
+  outputDestination,
+  showOutputLocation,
   show,
   worktreeVisible,
   onPickFolder,
   onClearFolder,
   onToggleWorktree,
   onSelectRecentFolder,
+  onOutputDestinationChange,
 }: ContextFolderChipProps): React.JSX.Element | null {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -83,10 +90,14 @@ export const ContextFolderChip = memo(function ContextFolderChip({
 
   const renderDropdown = (): React.JSX.Element => (
     <div className="chat-ctxfolder-dropdown">
-      <div className="chat-ctxfolder-dropdown-header">Recent</div>
+      <div className="chat-ctxfolder-dropdown-header">
+        {t("chat.contextFolderRecent")}
+      </div>
       <div className="chat-ctxfolder-dropdown-list">
         {recentFolders.length === 0 ? (
-          <div className="chat-ctxfolder-dropdown-empty">No recent folders</div>
+          <div className="chat-ctxfolder-dropdown-empty">
+            {t("chat.contextFolderNoRecent")}
+          </div>
         ) : (
           recentFolders.map((path) => {
             const isSelected = path === contextFolder;
@@ -126,8 +137,56 @@ export const ContextFolderChip = memo(function ContextFolderChip({
           onPickFolder();
         }}
       >
-        <span>Open folder...</span>
+        <span>{t("chat.contextFolderOpen")}</span>
       </button>
+      {showOutputLocation && (
+        <>
+          <div className="chat-ctxfolder-dropdown-divider" />
+          <div className="chat-ctxfolder-dropdown-header">
+            {t("chat.outputLocation")}
+          </div>
+          <button
+            type="button"
+            className={`chat-ctxfolder-dropdown-item${
+              outputDestination === "desktop"
+                ? " chat-ctxfolder-dropdown-item--active"
+                : ""
+            }`}
+            onClick={() => onOutputDestinationChange("desktop")}
+          >
+            <span className="chat-ctxfolder-dropdown-item-name">
+              {t("chat.outputDesktop")}
+            </span>
+            {outputDestination === "desktop" && (
+              <Check size={14} className="chat-ctxfolder-dropdown-item-check" />
+            )}
+          </button>
+          {contextFolder && (
+            <button
+              type="button"
+              className={`chat-ctxfolder-dropdown-item${
+                outputDestination === "context-folder"
+                  ? " chat-ctxfolder-dropdown-item--active"
+                  : ""
+              }`}
+              onClick={() => onOutputDestinationChange("context-folder")}
+              title={contextFolder}
+            >
+              <span className="chat-ctxfolder-dropdown-item-name">
+                {t("chat.outputContextFolder", {
+                  name: folderName(contextFolder),
+                })}
+              </span>
+              {outputDestination === "context-folder" && (
+                <Check
+                  size={14}
+                  className="chat-ctxfolder-dropdown-item-check"
+                />
+              )}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 
@@ -159,6 +218,22 @@ export const ContextFolderChip = memo(function ContextFolderChip({
         <FolderOpen size={13} />
         <span className="chat-ctxfolder-name">{folderName(contextFolder)}</span>
       </button>
+      {showOutputLocation && (
+        <span
+          className="chat-ctxfolder-output-label"
+          title={
+            outputDestination === "context-folder" && contextFolder
+              ? t("chat.outputToFolder", { path: contextFolder })
+              : t("chat.outputToDesktop")
+          }
+        >
+          {outputDestination === "context-folder" && contextFolder
+            ? t("chat.outputToFolderShort", {
+                name: folderName(contextFolder),
+              })
+            : t("chat.outputToDesktopShort")}
+        </span>
+      )}
       <button
         className="chat-meta-chip-icon"
         onClick={onClearFolder}

@@ -404,6 +404,7 @@ class ComputeHost:
                 session,
                 text,
                 display_text=frame.get("display_text"),
+                output_dir=frame.get("output_dir"),
             )
             run_thread = session.get("_run_thread")
             if run_thread is not None and hasattr(run_thread, "join"):

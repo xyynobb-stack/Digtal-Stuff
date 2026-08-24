@@ -389,4 +389,17 @@ describe("contextFolderSystemMessage (issue #27)", () => {
     const msg = contextFolderSystemMessage("/work");
     expect(msg!.content.toLowerCase()).toContain("absolute path");
   });
+
+  it("keeps generated deliverables separate from the working folder", () => {
+    const msg = contextFolderSystemMessage("/work/source", "/home/me/Desktop");
+    expect(msg!.content).toContain("/work/source");
+    expect(msg!.content).toContain("/home/me/Desktop");
+    expect(msg!.content).toContain("Existing source files");
+  });
+
+  it("can set an output directory without a context folder", () => {
+    const msg = contextFolderSystemMessage(undefined, "/home/me/Desktop");
+    expect(msg).not.toBeNull();
+    expect(msg!.content).toContain("/home/me/Desktop");
+  });
 });

@@ -1632,6 +1632,7 @@ def _compute_host_turn_frame(
     display_text: Any = None,
     image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
+    output_dir: str | None = None,
 ) -> dict:
     with session["history_lock"]:
         history = list(session.get("history", []))
@@ -1659,6 +1660,7 @@ def _compute_host_turn_frame(
         "source": _session_source(session),
         "attached_images": attached_images,
         "queued_prompt_generation": queued_prompt_generation,
+        "output_dir": output_dir,
     }
 
 
@@ -1737,6 +1739,7 @@ def _submit_prompt_to_compute_host(
     display_text: Any = None,
     image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
+    output_dir: str | None = None,
 ) -> dict:
     cfg = _load_dashboard_process_isolation_config()
     frame = _compute_host_turn_frame(
@@ -1747,6 +1750,7 @@ def _submit_prompt_to_compute_host(
         display_text=display_text,
         image_paths=image_paths,
         queued_prompt_generation=queued_prompt_generation,
+        output_dir=output_dir,
     )
 
     def _complete(done: dict) -> None:
@@ -7310,6 +7314,43 @@ _DESKTOP_SESSION_SKILL_INSTRUCTION = (
 _DESKTOP_USER_MESSAGE_MARKER = "\n\n[User message]\n"
 
 
+# @lat: [[context-folder#Output destination]]
+def _validate_output_directory(raw: Any) -> str | None:
+    """Return a canonical, gateway-visible output directory."""
+    if raw is None or raw == "":
+        return None
+    if not isinstance(raw, str):
+        raise ValueError("output_dir must be a string")
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("output_dir must be an absolute path")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"output_dir is unavailable: {exc}") from exc
+    if not resolved.is_dir():
+        raise ValueError("output_dir must be an existing directory")
+    return str(resolved)
+
+
+def _enrich_with_output_directory(message: Any, output_dir: str | None) -> Any:
+    """Add a model-only deliverable policy without changing visible history."""
+    if not output_dir:
+        return message
+    note = (
+        "[Desktop output location]\n"
+        f"Save newly generated user-facing deliverables in: {output_dir}\n"
+        "Use absolute paths under that directory unless the user explicitly "
+        "requests another location. Edit existing source files in place. Keep "
+        "temporary files and caches in their managed temporary directories."
+    )
+    if isinstance(message, str):
+        return f"{note}\n\n{message}"
+    if isinstance(message, list):
+        return [{"type": "text", "text": note}, *message]
+    return message
+
+
 # @lat: [[sidebar-navigation#User-visible session titles]]
 def _desktop_display_text_from_prompt(text: Any) -> Any:
     """Return the visible user text from an exact Desktop control envelope.
@@ -7343,6 +7384,7 @@ def _enqueue_prompt(
     transport: Any,
     image_paths: list[str] | None = None,
     display_text: Any = None,
+    output_dir: str | None = None,
 ) -> None:
     """Stash a message to run as the very next turn once the live one ends.
 
@@ -7354,7 +7396,12 @@ def _enqueue_prompt(
     sent it even if the session transport is rebound meanwhile.
     """
     image_paths = list(image_paths or [])
-    queued = {"text": text, "transport": transport, "display_text": display_text}
+    queued = {
+        "text": text,
+        "transport": transport,
+        "display_text": display_text,
+        "output_dir": output_dir,
+    }
     if image_paths:
         queued["image_paths"] = image_paths
     existing = session.get("queued_prompt")
@@ -7365,6 +7412,7 @@ def _enqueue_prompt(
         and not existing.get("image_paths")
         and not image_paths
         and not session.get("queued_prompts")
+        and existing.get("output_dir") == output_dir
     ):
         prev = existing["text"]
         existing["text"] = f"{prev}\n\n{text}" if prev and text else (prev or text)
@@ -7429,6 +7477,7 @@ def _handle_busy_submit(
     transport: Any,
     queued: bool = False,
     display_text: Any = None,
+    output_dir: str | None = None,
 ) -> dict | None:
     """Apply the ``display.busy_input_mode`` policy to a prompt that lands while
     a turn is in flight, instead of rejecting it with ``session busy``.
@@ -7507,6 +7556,7 @@ def _handle_busy_submit(
             transport,
             image_paths=image_paths,
             display_text=display_text,
+            output_dir=output_dir,
         )
         session["last_active"] = time.time()
 
@@ -7553,6 +7603,7 @@ def _drain_queued_prompt(rid, sid: str, session: dict) -> bool:
                     display_text=queued.get("display_text"),
                     image_paths=queued["image_paths"],
                     queued_prompt_generation=queue_generation,
+                    output_dir=queued.get("output_dir"),
                 )
             else:
                 resp = _submit_prompt_to_compute_host(
@@ -7562,6 +7613,7 @@ def _drain_queued_prompt(rid, sid: str, session: dict) -> bool:
                     queued["text"],
                     display_text=queued.get("display_text"),
                     queued_prompt_generation=queue_generation,
+                    output_dir=queued.get("output_dir"),
                 )
             if resp.get("error"):
                 message = str(((resp.get("error") or {}).get("message")) or "queued prompt failed")
@@ -7579,6 +7631,7 @@ def _drain_queued_prompt(rid, sid: str, session: dict) -> bool:
                     queued["text"],
                     image_paths=queued["image_paths"],
                     queued_prompt_generation=queue_generation,
+                    output_dir=queued.get("output_dir"),
                 )
             else:
                 _run_prompt_submit(
@@ -7588,6 +7641,7 @@ def _drain_queued_prompt(rid, sid: str, session: dict) -> bool:
                     queued["text"],
                     display_text=queued.get("display_text"),
                     queued_prompt_generation=queue_generation,
+                    output_dir=queued.get("output_dir"),
                 )
     except Exception as exc:
         print(
@@ -9388,6 +9442,7 @@ def _run_prompt_submit(
     display_metadata: dict | None = None,
     image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
+    output_dir: str | None = None,
 ) -> None:
     title_text = (
         display_text
@@ -9575,6 +9630,11 @@ def _run_prompt_submit(
                         run_message = _enrich_with_attached_images(prompt, images)
                 else:
                     run_message = _enrich_with_attached_images(prompt, images)
+
+            # The destination is captured by prompt.submit. Apply it only to
+            # model input so the visible transcript remains clean and a queued
+            # turn cannot be redirected by a later UI selection.
+            run_message = _enrich_with_output_directory(run_message, output_dir)
 
             # Streaming TTS: voice-mode replies are spoken sentence-by-sentence
             # as tokens arrive (CLI parity) instead of after the full turn.

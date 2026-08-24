@@ -1,5 +1,10 @@
 import type Database from "better-sqlite3";
 import { getDbConnection } from "./db";
+import type {
+  SessionContextSettings,
+  SessionOutputDestination,
+} from "../shared/session-output";
+import { normalizeSessionOutputDestination } from "../shared/session-output";
 
 /**
  * Desktop-owned, per-session store for the working folder the user links to a
@@ -18,9 +23,18 @@ function ensureTable(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS ${TABLE} (
       session_id TEXT PRIMARY KEY,
       folder_path TEXT NOT NULL,
+      output_destination TEXT NOT NULL DEFAULT 'desktop',
       updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
     );
   `);
+  const columns = db.prepare(`PRAGMA table_info(${TABLE})`).all() as Array<{
+    name: string;
+  }>;
+  if (!columns.some((column) => column.name === "output_destination")) {
+    db.exec(
+      `ALTER TABLE ${TABLE} ADD COLUMN output_destination TEXT NOT NULL DEFAULT 'desktop'`,
+    );
+  }
 }
 
 function tableExists(db: Database.Database): boolean {
@@ -48,13 +62,79 @@ export function setSessionContextFolder(
     return;
   }
 
+  const current = getSessionContextSettings(sessionId);
+  const outputDestination = normalizeSessionOutputDestination(
+    current.outputDestination,
+    folder,
+  );
   db.prepare(
-    `INSERT INTO ${TABLE} (session_id, folder_path, updated_at)
-     VALUES (?, ?, strftime('%s', 'now'))
+    `INSERT INTO ${TABLE} (session_id, folder_path, output_destination, updated_at)
+     VALUES (?, ?, ?, strftime('%s', 'now'))
      ON CONFLICT(session_id) DO UPDATE SET
        folder_path = excluded.folder_path,
+       output_destination = excluded.output_destination,
        updated_at = excluded.updated_at`,
-  ).run(sessionId, folder);
+  ).run(sessionId, folder, outputDestination);
+}
+
+/** Read the linked folder and its independent output-location preference. */
+export function getSessionContextSettings(
+  sessionId: string,
+): SessionContextSettings {
+  if (!sessionId) return { folder: null, outputDestination: "desktop" };
+  const db = getDbConnection(true);
+  if (!db || !tableExists(db)) {
+    return { folder: null, outputDestination: "desktop" };
+  }
+  const columns = db.prepare(`PRAGMA table_info(${TABLE})`).all() as Array<{
+    name: string;
+  }>;
+  const hasOutputDestination = columns.some(
+    (column) => column.name === "output_destination",
+  );
+  const row = db
+    .prepare(
+      hasOutputDestination
+        ? `SELECT folder_path, output_destination FROM ${TABLE} WHERE session_id = ?`
+        : `SELECT folder_path FROM ${TABLE} WHERE session_id = ?`,
+    )
+    .get(sessionId) as
+    | { folder_path?: string; output_destination?: string }
+    | undefined;
+  const folder = row?.folder_path || null;
+  return {
+    folder,
+    outputDestination: normalizeSessionOutputDestination(
+      row?.output_destination,
+      folder,
+    ),
+  };
+}
+
+/** Atomically persist the folder and output preference from one renderer snapshot. */
+export function setSessionContextSettings(
+  sessionId: string,
+  settings: SessionContextSettings,
+): void {
+  if (!sessionId) return;
+  const db = getDbConnection(false);
+  if (!db) return;
+  ensureTable(db);
+  const folder = settings.folder?.trim() || null;
+  if (!folder) {
+    db.prepare(`DELETE FROM ${TABLE} WHERE session_id = ?`).run(sessionId);
+    return;
+  }
+  const outputDestination: SessionOutputDestination =
+    normalizeSessionOutputDestination(settings.outputDestination, folder);
+  db.prepare(
+    `INSERT INTO ${TABLE} (session_id, folder_path, output_destination, updated_at)
+     VALUES (?, ?, ?, strftime('%s', 'now'))
+     ON CONFLICT(session_id) DO UPDATE SET
+       folder_path = excluded.folder_path,
+       output_destination = excluded.output_destination,
+       updated_at = excluded.updated_at`,
+  ).run(sessionId, folder, outputDestination);
 }
 
 /** Read the folder linked to a session, or null when none is stored. */

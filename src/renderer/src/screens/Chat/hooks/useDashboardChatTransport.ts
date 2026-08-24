@@ -1365,6 +1365,23 @@ export function useDashboardChatTransport({
     [clearBackgroundNoticeTimer, onAgentInitializationChange],
   );
 
+  // Runtime session ids belong to the WebSocket transport that created or
+  // resumed them. Keep the durable stored id, but discard every runtime-scoped
+  // cache after a disconnect/reclaim so the next connection must resume (or
+  // create) before issuing another session RPC.
+  const invalidateRuntimeSessionBinding = useCallback((): void => {
+    runtimeSessionIdRef.current = null;
+    runtimeSessionCreationRef.current = null;
+    reasoningSegmentClosedRef.current = false;
+    appliedModelRef.current = null;
+    resolvedRouteRef.current = null;
+    createdWithSelectedModelRef.current = null;
+    recreateRuntimeSessionRef.current = false;
+    lastRuntimeSessionWasCreatedRef.current = false;
+    lastSyncedCwdRef.current = null;
+    resetSessionReadiness();
+  }, [resetSessionReadiness]);
+
   const applySessionReadiness = useCallback(
     (readiness: SessionReadinessResponse): void => {
       const previous = sessionReadinessRef.current;
@@ -1576,6 +1593,23 @@ export function useDashboardChatTransport({
   const handleGatewayEvent = useCallback(
     (event: DashboardStreamEvent): void => {
       const runtimeSessionId = runtimeSessionIdRef.current;
+      if (event.type === "session.reclaimed") {
+        const payload = asRecord(event.payload);
+        const reclaimedSessionId = String(
+          event.session_id || payload.session_id || "",
+        ).trim();
+        if (
+          runtimeSessionId &&
+          reclaimedSessionId &&
+          reclaimedSessionId === runtimeSessionId
+        ) {
+          logDashboardEvent(event, "accepted", runtimeSessionId);
+          invalidateRuntimeSessionBinding();
+        } else {
+          logDashboardEvent(event, "dropped", runtimeSessionId);
+        }
+        return;
+      }
       if (
         event.session_id &&
         runtimeSessionId &&
@@ -1832,6 +1866,7 @@ export function useDashboardChatTransport({
       clearBackgroundNoticeTimer,
       confirmSessionAgentReadyFromOutput,
       connectionMode,
+      invalidateRuntimeSessionBinding,
       recordTiming,
       onAgentInitializationChange,
       setIsLoading,
@@ -1897,6 +1932,7 @@ export function useDashboardChatTransport({
             onClose: () => {
               if (clientRef.current === client) {
                 clientRef.current = null;
+                invalidateRuntimeSessionBinding();
               }
             },
           });
@@ -1953,6 +1989,7 @@ export function useDashboardChatTransport({
       profile,
       connectionMode,
       fallbackOnUnavailable,
+      invalidateRuntimeSessionBinding,
       onDashboardUnavailable,
     ]);
 

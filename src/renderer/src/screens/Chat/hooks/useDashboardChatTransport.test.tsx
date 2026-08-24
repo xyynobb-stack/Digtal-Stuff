@@ -62,6 +62,7 @@ const dashboardMock = vi.hoisted(() => ({
     request: ReturnType<typeof vi.fn>;
   }>,
   onEvent: null as ((event: DashboardRpcEvent) => void) | null,
+  onClose: null as (() => void) | null,
   request: vi.fn(),
 }));
 
@@ -73,8 +74,12 @@ vi.mock("../dashboardGatewayClient", () => ({
     request = dashboardMock.request;
 
     constructor(
-      options: { onEvent?: (event: DashboardRpcEvent) => void } = {},
+      options: {
+        onClose?: () => void;
+        onEvent?: (event: DashboardRpcEvent) => void;
+      } = {},
     ) {
+      dashboardMock.onClose = options.onClose ?? null;
       dashboardMock.onEvent = options.onEvent ?? null;
       dashboardMock.instances.push(this);
     }
@@ -350,6 +355,7 @@ describe("useDashboardChatTransport recovery", () => {
     dashboardMock.close.mockClear();
     dashboardMock.connect.mockClear();
     dashboardMock.instances.length = 0;
+    dashboardMock.onClose = null;
     dashboardMock.onEvent = null;
     dashboardMock.request.mockReset();
     Object.defineProperty(window, "hermesAPI", {
@@ -485,6 +491,87 @@ describe("useDashboardChatTransport recovery", () => {
     expect(window.hermesAPI.freshDashboardWsUrl).toHaveBeenCalledTimes(1);
     expect(dashboardMock.connect).toHaveBeenCalledWith("ws://fresh-dashboard");
   });
+
+  // @lat: [[chat-commands#Transport connection lifecycle#Runtime session rebinding]]
+  it.each(["socket-close", "session-reclaimed"] as const)(
+    "resumes the stored session after %s invalidates the runtime binding",
+    async (cause) => {
+      dashboardMock.request.mockImplementation(async (method) => {
+        if (method === "session.create") {
+          return {
+            session_id: "live-before-disconnect",
+            stored_session_id: "stored-chat",
+            info: {
+              model: "bad-model",
+              provider: "bad-provider",
+              route_id: "route:v1:bad",
+            },
+          };
+        }
+        if (method === "session.resume") {
+          return {
+            session_id: "live-after-resume",
+            stored_session_id: "stored-chat",
+            info: {
+              model: "bad-model",
+              provider: "bad-provider",
+              route_id: "route:v1:bad",
+            },
+          };
+        }
+        if (method === "model.identity" || method === "model.resolve") {
+          return {
+            model: "bad-model",
+            provider: "bad-provider",
+            route_id: "route:v1:bad",
+          };
+        }
+        return {};
+      });
+      const api: HarnessApi = {};
+      render(<Harness api={api} initialActiveTurn={null} />);
+
+      await waitFor(() => {
+        expect(dashboardMock.request).toHaveBeenCalledWith(
+          "session.create",
+          expect.any(Object),
+        );
+      });
+
+      act(() => {
+        if (cause === "socket-close") {
+          dashboardMock.onClose?.();
+          return;
+        }
+        dashboardMock.onEvent?.({
+          type: "session.reclaimed",
+          payload: {
+            session_id: "live-before-disconnect",
+            stored_session_id: "stored-chat",
+            reason: "ws_orphan_reap",
+          },
+        });
+      });
+
+      await act(async () => {
+        await api.send?.("hello after reconnect");
+      });
+
+      expect(dashboardMock.request).toHaveBeenCalledWith("session.resume", {
+        session_id: "stored-chat",
+        cols: 96,
+      });
+      expect(dashboardMock.request).toHaveBeenCalledWith("prompt.submit", {
+        session_id: "live-after-resume",
+        text: "hello after reconnect",
+      });
+      expect(
+        dashboardMock.request.mock.calls.filter(
+          ([method]) => method === "session.create",
+        ),
+      ).toHaveLength(1);
+    },
+  );
 
   it("records submit, first model output, first text output, and completion once", async () => {
     // @lat: [[main-process#Cold-start timing diagnostics]]

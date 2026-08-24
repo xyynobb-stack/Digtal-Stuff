@@ -70,6 +70,5 @@ rpm:
   afterInstall: build/linux-after-install.sh
 npmRebuild: false
 publish:
-  provider: github
-  owner: xyynobb-stack
-  repo: Digtal-Stuff
+  provider: generic
+  url: http://192.168.2.254/jingyuai-updates

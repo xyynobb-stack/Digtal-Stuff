@@ -38,6 +38,12 @@ Local startup publishes one shared readiness promise with the child process. Con
 
 [[src/renderer/src/screens/Chat/dashboardGatewayClient.ts#DashboardGatewayClient#connect]] resolves on `open`, rejects on `error` or an early `close`, **and** rejects on a connect-timeout (default 10s). A WebSocket stuck in `CONNECTING` — TCP accepted but the upgrade never completing, e.g. when a busy renderer starves the handshake — fires none of those events on its own, so without the timer the connect promise never settles. When it never settles, `ensureClient` in [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] never resolves, its cached `connectingRef` promise poisons every later send, `setIsLoading(false)` never runs, and the user sees a permanent loading spinner. The timeout makes the promise reject so auto mode falls back to the legacy HTTP transport (and explicit-dashboard mode surfaces a real error) instead of hanging. Per-request calls are separately bounded by their own 30s timeout.
 
+### Runtime session rebinding
+
+An unexpected WebSocket close invalidates the renderer's ephemeral runtime session binding while retaining the durable stored session id, so the next connection must resume or recreate before issuing any session-scoped RPC.
+
+The gateway may reclaim a WebSocket-orphaned runtime after its grace period while the conversation remains persisted. [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] therefore clears runtime-scoped route, readiness, and CWD caches both on the owning socket's `close` callback and on a matching `session.reclaimed` event. A later prewarm or send enters the existing `session.resume`/`session.create` path instead of submitting with a stale id; reclaim broadcasts for other tabs are ignored.
+
 ## Layered desktop readiness
 
 Desktop readiness separates the minimum chat path from unrelated services, so the first user turn does not become an implicit backend-startup probe.

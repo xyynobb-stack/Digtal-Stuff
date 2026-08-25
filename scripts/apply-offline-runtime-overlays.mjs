@@ -40,6 +40,40 @@ export function patchGatewayServerSource(source) {
     );
 }
 
+/**
+ * Keep the Skills tools on the Desktop/TUI surface when platform defaults are
+ * resolved to an explicit toolset list. Without this overlay, the fallback
+ * configured-toolset path can omit `skills`, which also suppresses the Skill
+ * index from the Agent system prompt.
+ *
+ * @returns {string} Gateway source with Skills added to implicit Desktop selections.
+ */
+export function patchDesktopSkillToolsetSource(source) {
+  const normalized = source.replace(/\r\n/g, "\n");
+  if (
+    normalized.includes('return sorted({*selection, "project", "skills"})') &&
+    normalized.includes('return sorted(enabled | {"project", "skills"})')
+  ) {
+    return normalized;
+  }
+
+  const codingAnchor = 'return sorted({*selection, "project"})';
+  const configuredAnchor = 'return sorted(enabled | {"project"})';
+  if (
+    !normalized.includes(codingAnchor) ||
+    !normalized.includes(configuredAnchor)
+  ) {
+    throw new Error("Desktop Skills toolset patch markers were not found");
+  }
+
+  return normalized
+    .replace(codingAnchor, 'return sorted({*selection, "project", "skills"})')
+    .replace(
+      configuredAnchor,
+      'return sorted(enabled | {"project", "skills"})',
+    );
+}
+
 /** @returns {string} TTS source whose availability probe never installs packages. */
 export function patchTtsRequirementsSource(source) {
   if (
@@ -155,8 +189,8 @@ export function applyOfflineRuntimeOverlays({
   }
 
   fs.cpSync(overlayRoot, agentRoot, { recursive: true, force: true });
-  const patched = patchGatewayServerSource(
-    fs.readFileSync(gatewayServerPath, "utf8"),
+  const patched = patchDesktopSkillToolsetSource(
+    patchGatewayServerSource(fs.readFileSync(gatewayServerPath, "utf8")),
   );
   fs.writeFileSync(gatewayServerPath, patched, "utf8");
   fs.writeFileSync(

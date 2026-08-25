@@ -14,7 +14,14 @@ import {
   patchDashboardCliColdStartSource,
   patchDashboardColdStartSource,
 } from "../scripts/patch-dashboard-cold-start.mjs";
-import { patchTtsRequirementsSource } from "../scripts/apply-offline-runtime-overlays.mjs";
+import {
+  patchDesktopSkillToolsetSource,
+  patchTtsRequirementsSource,
+} from "../scripts/apply-offline-runtime-overlays.mjs";
+import {
+  ensureDevAgentSkillToolset,
+  syncDevMarketReportWorkflowTools,
+} from "../scripts/prepare-dev-agent.mjs";
 import {
   SQLITE_RUNTIME_SHA3_256,
   SQLITE_RUNTIME_VERSION,
@@ -24,6 +31,7 @@ import {
 } from "../scripts/prepare-sqlite-runtime.mjs";
 import {
   packageOfflineRuntime,
+  verifyDesktopSkillToolsetRuntime,
   verifyOfflineRuntimePackage,
 } from "../scripts/package-offline-runtime.mjs";
 
@@ -44,6 +52,7 @@ describe("single Runtime archive", () => {
     const packageRoot = join(root, "package");
     const required = [
       "hermes-agent/run_agent.py",
+      "hermes-agent/tui_gateway/server.py",
       "hermes-agent/hermes_cli/web_dist/index.html",
       "hermes-agent/venv/Scripts/python.exe",
       "hermes-agent/venv/Scripts/hermes.exe",
@@ -58,7 +67,13 @@ describe("single Runtime archive", () => {
     for (const relative of required) {
       const target = join(runtimeRoot, relative);
       mkdirSync(join(target, ".."), { recursive: true });
-      writeFileSync(target, `${relative}\n`, "utf8");
+      writeFileSync(
+        target,
+        relative === "hermes-agent/tui_gateway/server.py"
+          ? 'return sorted({*selection, "project", "skills"})\nreturn sorted(enabled | {"project", "skills"})\n'
+          : `${relative}\n`,
+        "utf8",
+      );
     }
 
     const packaged = await packageOfflineRuntime({ runtimeRoot, packageRoot });
@@ -69,6 +84,95 @@ describe("single Runtime archive", () => {
     expect(
       readFileSync(join(packageRoot, "runtime-archive.json"), "utf8"),
     ).toContain(packaged.manifest.sha256);
+  });
+});
+
+describe("desktop Agent Skills toolset overlay", () => {
+  // @lat: [[chat-commands#Session Skill activation]]
+  it("keeps Skills tools in implicit coding and configured selections", () => {
+    const source = `
+def _load_enabled_toolsets():
+    if selection is not None:
+        return sorted({*selection, "project"})
+    return sorted(enabled | {"project"})
+`;
+
+    const patched = patchDesktopSkillToolsetSource(source);
+
+    expect(patched).toContain(
+      'return sorted({*selection, "project", "skills"})',
+    );
+    expect(patched).toContain('return sorted(enabled | {"project", "skills"})');
+    expect(patchDesktopSkillToolsetSource(patched)).toBe(patched);
+  });
+
+  it("patches the installed development gateway before startup", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-dev-agent-"));
+    tempRoots.push(root);
+    const gateway = join(root, "tui_gateway", "server.py");
+    mkdirSync(join(gateway, ".."), { recursive: true });
+    writeFileSync(
+      gateway,
+      'return sorted({*selection, "project"})\nreturn sorted(enabled | {"project"})\n',
+      "utf8",
+    );
+
+    expect(ensureDevAgentSkillToolset(root)).toBe(true);
+    expect(readFileSync(gateway, "utf8")).toContain(
+      'return sorted(enabled | {"project", "skills"})',
+    );
+  });
+
+  it("is applied by the Windows offline runtime preparation path", () => {
+    const source = readFileSync(
+      join(process.cwd(), "scripts", "prepare-offline-runtime.mjs"),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      "gatewayServer = patchDesktopSkillToolsetSource(gatewayServer);",
+    );
+  });
+
+  it("blocks packaging when the staged gateway omits Skills", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-unpatched-agent-"));
+    tempRoots.push(root);
+    const gateway = join(root, "hermes-agent", "tui_gateway", "server.py");
+    mkdirSync(join(gateway, ".."), { recursive: true });
+    writeFileSync(
+      gateway,
+      'return sorted({*selection, "project"})\nreturn sorted(enabled | {"project"})\n',
+      "utf8",
+    );
+
+    expect(() => verifyDesktopSkillToolsetRuntime(root)).toThrow(
+      "missing the required Skills toolset overlay",
+    );
+  });
+});
+
+describe("market report workflow development overlay", () => {
+  it("copies both state and registry adapter modules into the installed Agent", () => {
+    const root = mkdtempSync(join(tmpdir(), "hermes-workflow-"));
+    tempRoots.push(root);
+    const overlay = join(root, "overlay");
+    const agent = join(root, "agent");
+    mkdirSync(join(overlay, "tools"), { recursive: true });
+    mkdirSync(join(agent, "tools"), { recursive: true });
+    for (const file of [
+      "market_report_workflow_state.py",
+      "market_report_workflow_tool.py",
+    ]) {
+      writeFileSync(join(overlay, "tools", file), file, "utf8");
+    }
+
+    expect(syncDevMarketReportWorkflowTools(agent, overlay)).toBe(true);
+    expect(
+      readFileSync(
+        join(agent, "tools", "market_report_workflow_tool.py"),
+        "utf8",
+      ),
+    ).toBe("market_report_workflow_tool.py");
   });
 });
 

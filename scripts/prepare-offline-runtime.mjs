@@ -10,6 +10,7 @@ import {
   patchDashboardCliColdStartSource,
   patchDashboardColdStartSource,
 } from "./patch-dashboard-cold-start.mjs";
+import { patchDesktopSkillToolsetSource } from "./apply-offline-runtime-overlays.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const outputRoot = path.join(projectRoot, "build", "offline-runtime");
@@ -209,6 +210,7 @@ if (!gatewayServer.includes("A slash worker can therefore report")) {
     readyModelMirrorBlock,
   );
 }
+gatewayServer = patchDesktopSkillToolsetSource(gatewayServer);
 fs.writeFileSync(gatewayServerPath, gatewayServer, "utf8");
 
 // Desktop chat sends a model-facing skill-selection envelope. Keep that

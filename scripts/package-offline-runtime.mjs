@@ -24,6 +24,30 @@ function sha256File(filePath) {
   return hash.digest("hex");
 }
 
+/** Refuse to package a Desktop Agent whose implicit toolsets drop Skills. */
+export function verifyDesktopSkillToolsetRuntime(runtimeRoot) {
+  const gatewayPath = path.join(
+    runtimeRoot,
+    "hermes-agent",
+    "tui_gateway",
+    "server.py",
+  );
+  if (!fs.existsSync(gatewayPath)) {
+    throw new Error(`Desktop gateway source is missing: ${gatewayPath}`);
+  }
+  const source = fs.readFileSync(gatewayPath, "utf8");
+  for (const marker of [
+    'return sorted({*selection, "project", "skills"})',
+    'return sorted(enabled | {"project", "skills"})',
+  ]) {
+    if (!source.includes(marker)) {
+      throw new Error(
+        "Desktop gateway is missing the required Skills toolset overlay",
+      );
+    }
+  }
+}
+
 /** Package every staged Runtime entry into one opaque payload for NSIS. */
 // @lat: [[main-process#Offline Windows runtime#Single Runtime archive]]
 export async function packageOfflineRuntime({ runtimeRoot, packageRoot }) {
@@ -33,6 +57,7 @@ export async function packageOfflineRuntime({ runtimeRoot, packageRoot }) {
   if (!fs.existsSync(buildMarker)) {
     throw new Error(`Runtime build marker is missing: ${buildMarker}`);
   }
+  verifyDesktopSkillToolsetRuntime(resolvedRuntimeRoot);
 
   const entries = fs
     .readdirSync(resolvedRuntimeRoot)

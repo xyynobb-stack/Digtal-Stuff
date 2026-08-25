@@ -146,6 +146,8 @@ The approval responses `/approve` and `/deny` (the `RENDERER_NATIVE_SLASH` set) 
 
 Bundled/system Skills are available in every conversation by default, while locally imported Skills live under `skills/custom` and require per-chat activation.
 
+The Desktop/TUI gateway must therefore keep the `skills` toolset when it converts platform defaults into an explicit toolset list. `patchDesktopSkillToolsetSource` in `scripts/apply-offline-runtime-overlays.mjs` enforces this for packaged runtimes, and `ensureDevAgentSkillToolset` in `scripts/prepare-dev-agent.mjs` applies the same rule before `npm run dev`; otherwise `skill_view` and the system Skill index disappear together and the model may incorrectly scan files as a fallback. Offline packaging also rejects a staged gateway that lacks either implicit `skills` selection marker, preventing a stale unpatched runtime from entering an installer.
+
 Discover broadcasts a refresh after an add, so its list and the Capabilities Skills page show the same installed set.
 
 [[src/renderer/src/screens/Chat/SessionSkillPicker.tsx#SessionSkillPicker]] lets the user enable imported custom Skills for one chat. The selection remains until deselected. [[src/renderer/src/screens/Chat/hooks/useChatActions.ts#useChatActions]] sends an envelope on each ordinary turn; an empty selection means no custom Skills are enabled. The packaged runtime binds it to the active task, filters only custom entries from `skills_list`, and rejects `skill_view` only for unselected custom Skills. Bundled/system Skills bypass this allowlist and remain available. The allowlist is cleared after the turn and never changes the installed library; slash commands are unchanged.

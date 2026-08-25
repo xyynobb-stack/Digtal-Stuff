@@ -293,6 +293,20 @@ try {
       cwd: agentDestination,
     },
   );
+  run(venvPython, [
+    "-m",
+    "pip",
+    "install",
+    "--disable-pip-version-check",
+    "-r",
+    path.join(
+      agentDestination,
+      "skills",
+      "research",
+      "market-report-rag",
+      "requirements.txt",
+    ),
+  ]);
 } finally {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });
 }

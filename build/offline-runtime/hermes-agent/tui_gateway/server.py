@@ -4074,7 +4074,7 @@ def _load_enabled_toolsets() -> list[str] | None:
                 # the focus-mode coding posture returns before the fallback path
                 # that normally adds it — without this the desktop loses the
                 # project tools exactly when sitting in a repo (see below).
-                return sorted({*selection, "project"})
+                return sorted({*selection, "project", "skills"})
         except Exception:
             pass
 
@@ -4191,7 +4191,7 @@ def _load_enabled_toolsets() -> list[str] | None:
         # surface them. This resolver runs ONLY in the desktop/TUI gateway, so
         # folding in the `project` toolset here is the gate that exposes them on
         # exactly the surface that can follow a project move.
-        return sorted(enabled | {"project"})
+        return sorted(enabled | {"project", "skills"})
     except Exception:
         if fallback_notice is not None:
             print(

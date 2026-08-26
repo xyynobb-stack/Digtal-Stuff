@@ -60,7 +60,7 @@ def check_open_preview_requirements() -> bool:
 OPEN_PREVIEW_SCHEMA = {
     "name": "open_preview",
     "description": (
-        "Open something in the preview pane beside the chat in the Hermes desktop "
+        "Open something in the preview pane beside the chat in the JingYu Agent desktop "
         "app. Use this when the user asks to see a page, dev server, or file in the "
         "preview pane — e.g. \"open cnn.com in the preview pane\" or \"preview "
         "localhost:3000\". Accepts a web URL (a bare domain like www.cnn.com is fine), "

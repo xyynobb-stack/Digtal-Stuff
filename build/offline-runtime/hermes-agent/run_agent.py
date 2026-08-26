@@ -5627,6 +5627,17 @@ class AIAgent:
             except Exception:
                 logger.debug("custom-provider extra_headers skipped", exc_info=True)
 
+        # HERMES_DESKTOP_COMPANY_RESPONSES_USER_AGENT
+        # The company chat and Responses routes share one URL. Use the named
+        # route plus protocol so this compatibility header cannot leak to chat.
+        if (
+            self.provider == "company-platform-responses"
+            and self.api_mode == "codex_responses"
+        ):
+            _desktop_headers = dict(self._client_kwargs.get("default_headers") or {})
+            _desktop_headers["User-Agent"] = "JingYu-Desktop"
+            self._client_kwargs["default_headers"] = _desktop_headers
+
     def _apply_user_default_headers(self) -> None:
         """Merge user-configured request headers onto the OpenAI client.
 

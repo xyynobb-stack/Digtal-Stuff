@@ -1242,7 +1242,9 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
     from agent import relay_llm
 
     active_client = client or agent._ensure_primary_openai_client(reason="codex_stream_direct")
-    max_stream_retries = 1
+    from agent import desktop_fallback as _desktop_fb
+    # JINGYU_COMPANY_CODEX_RETRY_OWNER
+    max_stream_retries = 0 if _desktop_fb.has_backup(agent) else 1
     # Accumulate streamed text so callers / compat shims can read it.
     agent._codex_streamed_text_parts: list = []
 

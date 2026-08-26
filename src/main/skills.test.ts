@@ -1,10 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -43,13 +37,14 @@ describe("starter user skills", () => {
     rmSync(mocks.home, { recursive: true, force: true });
   });
 
-  it("provisions the four editable skills without overwriting user changes", () => {
+  it("provisions editable skills including RAG without overwriting user changes", () => {
     // @lat: [[discover#Starter user skills]]
     const skills = listUserAddedSkills();
 
     expect(skills.map((skill) => skill.name)).toEqual([
       "finance",
       "hr",
+      "market-report-rag",
       "project-manager",
       "skill-creator",
     ]);
@@ -64,6 +59,28 @@ describe("starter user skills", () => {
     writeFileSync(hrFile, "user-owned content", "utf-8");
     ensureStarterUserSkills();
     expect(readFileSync(hrFile, "utf-8")).toBe("user-owned content");
+  });
+
+  it("exposes the packaged RAG Skill in each profile's user picker and preserves edits", () => {
+    // @lat: [[discover#Market report user Skill]]
+    for (const profile of [undefined, "employee-test"]) {
+      const rag = listUserAddedSkills(profile).find(
+        (skill) => skill.name === "market-report-rag",
+      );
+      expect(rag?.category).toBe("custom");
+      expect(existsSync(join(rag!.path, "scripts", "rag_client.py"))).toBe(
+        true,
+      );
+      expect(
+        existsSync(join(rag!.path, "references", "report-workflow.md")),
+      ).toBe(true);
+      const skillFile = join(rag!.path, "SKILL.md");
+      writeFileSync(skillFile, "User customized report instructions", "utf8");
+      ensureStarterUserSkills(profile);
+      expect(readFileSync(skillFile, "utf8")).toBe(
+        "User customized report instructions",
+      );
+    }
   });
 
   it("gates legacy profile skills that are absent from the bundled runtime", () => {
@@ -121,8 +138,8 @@ describe("starter user skills", () => {
 
     ensureLegacyUserSkillMarkers();
 
-    expect(
-      existsSync(join(localSkill, ".hermes-desktop-user-added")),
-    ).toBe(false);
+    expect(existsSync(join(localSkill, ".hermes-desktop-user-added"))).toBe(
+      false,
+    );
   });
 });

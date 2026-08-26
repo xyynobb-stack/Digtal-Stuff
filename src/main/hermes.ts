@@ -1,5 +1,6 @@
 import { ChildProcess, spawn } from "child_process";
 import { randomUUID } from "crypto";
+import { mirrorCompanyFallbackProvider } from "./agent-config-providers";
 import {
   existsSync,
   readFileSync,
@@ -3209,6 +3210,11 @@ export function startGatewayDetailed(profile?: string): GatewayStartResult {
 
   const key = profileKey(profile);
   const gatewayEnv = buildGatewayEnv(profile);
+  try {
+    mirrorCompanyFallbackProvider(profile);
+  } catch {
+    console.warn("[gateway] Could not configure the optional company fallback");
+  }
 
   // Route stderr to a log file so startup errors are visible for debugging.
   // Per-profile log dir so a named profile's failures (e.g. a duplicate bot

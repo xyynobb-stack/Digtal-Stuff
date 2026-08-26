@@ -20,7 +20,22 @@ export interface EmployeeChatModel {
   model: string;
   name: string;
   contextLength?: number;
+  apiMode: "chat_completions" | "codex_responses";
 }
+
+// Separate named routes share credentials, never a mutable protocol setting.
+export const EMPLOYEE_MODEL_ROUTES = [
+  {
+    apiMode: "chat_completions",
+    slug: "company-platform",
+    name: "Company Platform",
+  },
+  {
+    apiMode: "codex_responses",
+    slug: "company-platform-responses",
+    name: "Company Platform Responses",
+  },
+] as const;
 
 export interface EmployeeModelAccess {
   provider: string;
@@ -34,8 +49,8 @@ function normalizeBaseUrl(value: string): string {
 }
 
 /**
- * Keep only models the employee endpoint explicitly marks as OpenAI chat
- * compatible. Duplicate model ids are collapsed while preserving API order.
+ * Import supported conversational protocols, not just Chat Completions.
+ * Compact-only is not a conversation endpoint. Prefer chat when both exist.
  */
 export function normalizeEmployeeChatModels(
   entries: EmployeeAvailableModelPayload[] | undefined,
@@ -48,7 +63,12 @@ export function normalizeEmployeeChatModels(
     const formats = Array.isArray(entry.api_formats)
       ? entry.api_formats
       : [entry.api_formats];
-    if (!model || !formats.includes("openai:chat") || seen.has(model)) {
+    const apiMode = formats.includes("openai:chat")
+      ? "chat_completions"
+      : formats.includes("openai:responses")
+        ? "codex_responses"
+        : null;
+    if (!model || !apiMode || seen.has(model)) {
       continue;
     }
 
@@ -68,6 +88,7 @@ export function normalizeEmployeeChatModels(
     result.push({
       model,
       name: displayName,
+      apiMode,
       ...(contextLength ? { contextLength } : {}),
     });
   }

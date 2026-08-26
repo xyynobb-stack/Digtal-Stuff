@@ -3,11 +3,413 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  patchCompanyFallbackSafety,
+  patchCompanyCodexRetries,
+} from "./patch-company-fallback-safety.mjs";
+import {
   patchDashboardCliColdStartSource,
   patchDashboardColdStartSource,
 } from "./patch-dashboard-cold-start.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
+
+export const JINGYU_AGENT_PROMPT_RELATIVE_PATHS = [
+  "agent/prompt_builder.py",
+  "agent/system_prompt.py",
+  "agent/moa_loop.py",
+  "hermes_cli/default_soul.py",
+  "hermes_cli/doctor.py",
+  "hermes_cli/profile_describer.py",
+  "docker/SOUL.md",
+  "tools/close_terminal_tool.py",
+  "tools/focus_pane_tool.py",
+  "tools/open_preview_tool.py",
+  "tools/read_terminal_tool.py",
+];
+
+/** Recover same-endpoint providers by model as well as URL on session resume. */
+export function patchDesktopProtocolRoutingSource(source) {
+  const normalized = source.replace(/\r\n/g, "\n");
+  if (normalized.includes("HERMES_DESKTOP_MODEL_PROTOCOL_ROUTES"))
+    return normalized;
+  const signature =
+    "def find_custom_provider_identity_by_model(model: str) -> Optional[str]:";
+  const serves =
+    "    def _entry_serves_model(entry: Dict[str, Any]) -> bool:\n";
+  const canonical = "    # 1. Reverse-lookup by endpoint URL.\n";
+  if (
+    ![signature, serves, canonical].every((anchor) =>
+      normalized.includes(anchor),
+    )
+  ) {
+    throw new Error("Desktop model protocol routing markers were not found");
+  }
+  return normalized
+    .replace(
+      signature,
+      "def find_custom_provider_identity_by_model(model: str, base_url: Optional[str] = None) -> Optional[str]:",
+    )
+    .replace(
+      serves,
+      serves +
+        `        if base_url:
+            entry_url = entry.get("api") or entry.get("url") or entry.get("base_url") or ""
+            if _normalize_base_url_for_match(entry_url) != _normalize_base_url_for_match(base_url):
+                return False
+`,
+    )
+    .replace(
+      canonical,
+      `    # HERMES_DESKTOP_MODEL_PROTOCOL_ROUTES: one URL can serve multiple protocols.
+    # Preserve the session's model-specific named route before URL-only recovery.
+    if base_url and model:
+        identity = find_custom_provider_identity_by_model(model, base_url=base_url)
+        if identity:
+            return identity
+
+` + canonical,
+    );
+}
+
+/**
+ * Give the employee GPT Responses route a neutral desktop User-Agent.
+ *
+ * The company gateway accepts the same Responses body from ordinary HTTP
+ * clients but stalls requests identified as the OpenAI Python SDK. Scope this
+ * override to the named Responses route and protocol so the chat-completions
+ * route sharing the same base URL (for example DeepSeek) is untouched.
+ */
+export function patchCompanyResponsesUserAgentSource(source) {
+  const marker = "HERMES_DESKTOP_COMPANY_RESPONSES_USER_AGENT";
+  if (source.includes(marker)) return source.replace(/\r\n/g, "\n");
+
+  const normalized = source.replace(/\r\n/g, "\n");
+  const anchor = `            except Exception:
+                logger.debug("custom-provider extra_headers skipped", exc_info=True)
+`;
+  if (!normalized.includes(anchor)) {
+    throw new Error("Company Responses User-Agent patch marker was not found");
+  }
+
+  const injection = `${anchor}
+        # HERMES_DESKTOP_COMPANY_RESPONSES_USER_AGENT
+        # Both employee routes share one gateway URL, so URL-scoped headers
+        # would leak into chat_completions. Apply this after generic overrides
+        # and only to the named Responses route used by company GPT models.
+        if (
+            self.provider == "company-platform-responses"
+            and self.api_mode == "codex_responses"
+        ):
+            _desktop_headers = dict(self._client_kwargs.get("default_headers") or {})
+            _desktop_headers["User-Agent"] = "JingYu-Desktop"
+            self._client_kwargs["default_headers"] = _desktop_headers
+`;
+  return normalized.replace(anchor, injection);
+}
+
+/**
+ * Apply the desktop employee-gateway fallback policy to the vendored Agent.
+ * The 30-second limit is a no-first-event watchdog, not a total generation
+ * timeout, and transparent switching is forbidden once visible text escaped.
+ */
+export function patchCompanyResponsesFallbackSource(source) {
+  const marker = "HERMES_DESKTOP_COMPANY_RESPONSES_FALLBACK";
+  if (
+    source.includes(marker) ||
+    source.includes("JINGYU_COMPANY_FALLBACK_SAFETY_HELPERS_V2")
+  )
+    return patchCompanyFallbackSafety(source, "helpers");
+  const normalized = source.replace(/\r\n/g, "\n");
+  const ttfbAnchor = `    _ttfb_timeout = _env_float("HERMES_CODEX_TTFB_TIMEOUT_SECONDS", 120.0)
+`;
+  const fallbackAnchor = `    if reason in {FailoverReason.rate_limit, FailoverReason.billing, FailoverReason.upstream_rate_limit}:
+`;
+  const apiModeAnchor = `        # Determine api_mode from provider / base URL / model
+        fb_api_mode = "chat_completions"
+`;
+  if (
+    !normalized.includes(ttfbAnchor) ||
+    !normalized.includes(fallbackAnchor) ||
+    !normalized.includes(apiModeAnchor)
+  ) {
+    throw new Error("Company Responses fallback patch markers were not found");
+  }
+
+  const patched = normalized
+    .replace(
+      ttfbAnchor,
+      `${ttfbAnchor}    # ${marker}: fail over only when the employee gateway emits no SSE event.
+    # Do not turn this into a 30s total-response timeout: long, healthy streamed
+    # generations must continue once the first event has arrived.
+    if (
+        getattr(agent, "provider", "") == "company-platform-responses"
+        and agent._has_pending_fallback()
+    ):
+        _ttfb_timeout = 30.0
+`,
+    )
+    .replace(
+      fallbackAnchor,
+      `    # ${marker}: the managed AIHub route only masks recoverable upstream
+    # failures. Authentication, request-shape, context, TLS, and policy errors
+    # remain visible, and a partially displayed answer is never mixed with a
+    # second provider's continuation.
+    if getattr(agent, "provider", "") == "company-platform-responses":
+        _visible = agent._strip_think_blocks(
+            getattr(agent, "_current_streamed_assistant_text", "") or ""
+        ).strip()
+        if _visible:
+            logger.warning("Desktop fallback suppressed after visible output")
+            return False
+        _desktop_allowed_reasons = {
+            FailoverReason.rate_limit,
+            FailoverReason.billing,
+            FailoverReason.upstream_rate_limit,
+            FailoverReason.overloaded,
+            FailoverReason.server_error,
+            FailoverReason.timeout,
+            FailoverReason.model_not_found,
+        }
+        if reason is not None and reason not in _desktop_allowed_reasons:
+            logger.info("Desktop fallback suppressed for %s", reason.value)
+            return False
+
+${fallbackAnchor}`,
+    )
+    .replace(
+      apiModeAnchor,
+      `${apiModeAnchor}        _explicit_fb_api_mode = str(fb.get("api_mode") or "").strip()
+        if _explicit_fb_api_mode in {
+            "chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse"
+        }:
+            fb_api_mode = _explicit_fb_api_mode
+`,
+    )
+    .replace(
+      `        if fb_provider == "openai-codex":
+            fb_api_mode = "codex_responses"
+`,
+      `        if _explicit_fb_api_mode:
+            pass
+        elif fb_provider == "openai-codex":
+            fb_api_mode = "codex_responses"
+`,
+    );
+  return patchCompanyFallbackSafety(patched, "helpers");
+}
+
+/** Tighten retry/fallback triggers only for the employee Responses route. */
+export function patchCompanyResponsesFallbackLoopSource(source) {
+  const marker = "HERMES_DESKTOP_COMPANY_RESPONSES_FALLBACK_LOOP";
+  if (
+    source.includes(marker) ||
+    source.includes("JINGYU_COMPANY_FALLBACK_SAFETY_LOOP_V2")
+  )
+    return patchCompanyFallbackSafety(source, "loop");
+  const normalized = source.replace(/\r\n/g, "\n");
+  const shouldFallbackAnchor = `                _should_fallback = (
+                    is_rate_limited
+                    or (_is_transport_failure and retry_count >= 2)
+                )
+`;
+  if (!normalized.includes(shouldFallbackAnchor)) {
+    throw new Error("Company Responses fallback-loop marker was not found");
+  }
+  const patched = normalized
+    .replace(
+      shouldFallbackAnchor,
+      `                # ${marker}: gateway 502/503/504 cannot be repaired by
+                # retrying the same upstream. A 500 or transport failure gets
+                # one quick retry; rate limits keep their existing fast path.
+                _desktop_company_route = (
+                    getattr(agent, "provider", "") == "company-platform-responses"
+                )
+                _desktop_fast_gateway_failure = (
+                    _desktop_company_route and status_code in {502, 503, 504}
+                )
+                _desktop_no_first_event = (
+                    _desktop_company_route
+                    and classified.reason == FailoverReason.timeout
+                    and "ttfb threshold" in str(api_error).lower()
+                )
+                _desktop_retry_then_fallback = (
+                    _desktop_company_route
+                    and retry_count >= 2
+                    and (
+                        status_code == 500
+                        or classified.reason == FailoverReason.timeout
+                    )
+                )
+                _should_fallback = (
+                    is_rate_limited
+                    or _desktop_fast_gateway_failure
+                    or _desktop_no_first_event
+                    or _desktop_retry_then_fallback
+                    or (_is_transport_failure and retry_count >= 2)
+                )
+`,
+    )
+    .replace(
+      `                    if agent._try_activate_fallback():
+                        active_system_prompt = _sync_failover_system_message(
+                            agent, api_messages, active_system_prompt)
+                        retry_count = 0
+                        compression_attempts = 0
+                        _retry.primary_recovery_attempted = False
+                        continue
+                    if api_kwargs is not None:
+`,
+      `                    if agent._try_activate_fallback(reason=classified.reason):
+                        active_system_prompt = _sync_failover_system_message(
+                            agent, api_messages, active_system_prompt)
+                        retry_count = 0
+                        compression_attempts = 0
+                        _retry.primary_recovery_attempted = False
+                        continue
+                    if api_kwargs is not None:
+`,
+    )
+    .replace(
+      `                    if agent._try_activate_fallback():
+                        active_system_prompt = _sync_failover_system_message(
+                            agent, api_messages, active_system_prompt)
+                        retry_count = 0
+                        compression_attempts = 0
+                        _retry.primary_recovery_attempted = False
+                        continue
+                    # Terminal — flush buffered retry/fallback trace.
+`,
+      `                    if agent._try_activate_fallback(reason=classified.reason):
+                        active_system_prompt = _sync_failover_system_message(
+                            agent, api_messages, active_system_prompt)
+                        retry_count = 0
+                        compression_attempts = 0
+                        _retry.primary_recovery_attempted = False
+                        continue
+                    # Terminal — flush buffered retry/fallback trace.
+`,
+    );
+  return patchCompanyFallbackSafety(patched, "loop");
+}
+
+/**
+ * Replace only model-visible Hermes identity text with the desktop product
+ * identity. Internal compatibility names (HERMES_HOME, the `hermes` CLI, and
+ * the `hermes-agent` Skill name) intentionally remain unchanged.
+ *
+ * @returns {string} Agent source with JingYu-facing identity prompts.
+ */
+export function patchJingYuAgentIdentitySource(source) {
+  const normalized = source
+    .replace(/\r\n/g, "\n")
+    .replace(/\n# JINGYU_DESKTOP_AGENT_IDENTITY_PROMPTS\n?$/, "\n");
+
+  const replacements = [
+    [
+      "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
+      "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+    ],
+    [
+      "You are an Agent, an intelligent AI assistant created by Nous Research.",
+      "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+    ],
+    ["This offline build of Hermes One", "This offline build of JingYu Agent"],
+    [
+      "You run on Hermes Agent (by Nous Research).",
+      "You run on JingYu Agent, the JingYuAI desktop assistant.",
+    ],
+    [
+      "Hermes itself — configuring, setting up, using, extending, or troubleshooting",
+      "JingYu Agent itself — configuring, setting up, using, extending, or troubleshooting",
+    ],
+    [
+      "the documentation at https://hermes-agent.nousresearch.com/docs is your authoritative reference",
+      "the installed JingYu Agent guidance is your authoritative reference",
+    ],
+    [
+      "You are running in the Hermes terminal UI (TUI).",
+      "You are running in the JingYu Agent terminal UI (TUI).",
+    ],
+    [
+      "You are chatting inside the Hermes desktop app —",
+      "You are chatting inside the JingYu Agent desktop app —",
+    ],
+    [
+      "You are in the Hermes WebUI, a browser-based chat interface.",
+      "You are in the JingYu Agent WebUI, a browser-based chat interface.",
+    ],
+    ["Active Hermes profile:", "Active JingYu Agent profile:"],
+    [
+      "or troubleshoot Hermes Agent itself — its CLI, config, models, providers, tools,",
+      "or troubleshoot JingYu Agent itself — its CLI, config, models, providers, tools,",
+    ],
+    [
+      "when Hermes has none; explicit Hermes YOLO uses a private unrestricted ",
+      "when the Agent has none; explicit unrestricted mode uses a private unrestricted ",
+    ],
+    [
+      "message that Hermes appends to the end of a tool result",
+      "message that JingYu Agent appends to the end of a tool result",
+    ],
+    [
+      "where Hermes itself is running. The host OS, home, and cwd ",
+      "where JingYu Agent itself is running. The host OS, home, and cwd ",
+    ],
+    [
+      "of the Hermes process are irrelevant; only the following ",
+      "of the JingYu Agent process are irrelevant; only the following ",
+    ],
+    ["on the machine where Hermes ", "on the machine where JingYu Agent "],
+    [
+      "You are Hermes, a helpful AI assistant.",
+      "You are JingYu Agent, a helpful AI assistant.",
+    ],
+    ["# Hermes Agent Persona", "# JingYu Agent Persona"],
+    [
+      "Edit this file to customize how Hermes communicates.",
+      "Edit this file to customize how JingYu Agent communicates.",
+    ],
+    ["the main Hermes agent.", "the main JingYu Agent."],
+    [
+      "Hermes agent. Focus on next steps, tool-use strategy, risks, and any ",
+      "JingYu Agent. Focus on next steps, tool-use strategy, risks, and any ",
+    ],
+    ["normal Hermes agent loop", "normal JingYu Agent loop"],
+    [
+      "profile-describer for the Hermes Agent kanban board",
+      "profile-describer for the JingYu Agent kanban board",
+    ],
+    [
+      'Never write "Hermes Agent profile"',
+      'Never write "JingYu Agent profile"',
+    ],
+    [
+      "Reveal and focus a pane in the Hermes desktop app when the user asks to ",
+      "Reveal and focus a pane in the JingYu Agent desktop app when the user asks to ",
+    ],
+    [
+      "Open something in the preview pane beside the chat in the Hermes desktop ",
+      "Open something in the preview pane beside the chat in the JingYu Agent desktop ",
+    ],
+    [
+      "Read what's currently shown in the in-app terminal pane of the Hermes ",
+      "Read what's currently shown in the in-app terminal pane of the JingYu Agent ",
+    ],
+    [
+      "the Hermes desktop GUI (the tabs mirroring terminal(background=true) runs).",
+      "the JingYu Agent desktop GUI (the tabs mirroring terminal(background=true) runs).",
+    ],
+  ];
+
+  let patched = normalized;
+  let changed = false;
+  for (const [from, to] of replacements) {
+    if (!patched.includes(from)) continue;
+    patched = patched.replaceAll(from, to);
+    changed = true;
+  }
+  return changed ? patched : normalized;
+}
 
 /** @returns {string} Gateway source with the desktop handler module registered. */
 export function patchGatewayServerSource(source) {
@@ -206,8 +608,31 @@ _os.system = _hermes_hidden_system
   return normalized.replace(anchor, injection);
 }
 
+/** Ship the RAG Skill through the editable, per-profile custom Skill catalog. */
+export function syncMarketReportStarterSkill(
+  starterRoot = path.join(projectRoot, "resources", "starter-skills"),
+) {
+  const source = path.join(
+    projectRoot,
+    "resources",
+    "hermes-agent-overlays",
+    "skills",
+    "research",
+    "market-report-rag",
+  );
+  const target = path.join(starterRoot, "market-report-rag");
+  fs.mkdirSync(starterRoot, { recursive: true });
+  fs.cpSync(source, target, {
+    recursive: true,
+    filter: (entry) =>
+      !["__pycache__", ".env"].includes(path.basename(entry)) &&
+      !entry.endsWith(".pyc"),
+  });
+  return target;
+}
+
 /**
- * @returns {{agentRoot: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, ttsToolPath: string, executeCodeToolPath: string, desktopMethods: string}}
+ * @returns {{agentRoot: string, runAgentPath: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, ttsToolPath: string, executeCodeToolPath: string, desktopMethods: string}}
  * Paths for the verified staged overlay.
  */
 export function applyOfflineRuntimeOverlays({
@@ -219,6 +644,7 @@ export function applyOfflineRuntimeOverlays({
   ),
   overlayRoot = path.join(projectRoot, "resources", "hermes-agent-overlays"),
 } = {}) {
+  syncMarketReportStarterSkill();
   const gatewayServerPath = path.join(agentRoot, "tui_gateway", "server.py");
   const dashboardServerPath = path.join(
     agentRoot,
@@ -231,6 +657,21 @@ export function applyOfflineRuntimeOverlays({
     agentRoot,
     "tools",
     "code_execution_tool.py",
+  );
+  const runAgentPath = path.join(agentRoot, "run_agent.py");
+  const chatCompletionHelpersPath = path.join(
+    agentRoot,
+    "agent",
+    "chat_completion_helpers.py",
+  );
+  const conversationLoopPath = path.join(
+    agentRoot,
+    "agent",
+    "conversation_loop.py",
+  );
+  const codexRuntimePath = path.join(agentRoot, "agent", "codex_runtime.py");
+  const identityPromptPaths = JINGYU_AGENT_PROMPT_RELATIVE_PATHS.map(
+    (relativePath) => path.join(agentRoot, relativePath),
   );
   if (!fs.existsSync(agentRoot)) {
     throw new Error(`Staged Hermes Agent runtime not found: ${agentRoot}`);
@@ -253,8 +694,33 @@ export function applyOfflineRuntimeOverlays({
   if (!fs.existsSync(executeCodeToolPath)) {
     throw new Error(`Execute Code tool not found: ${executeCodeToolPath}`);
   }
+  if (!fs.existsSync(runAgentPath)) {
+    throw new Error(`Agent entrypoint not found: ${runAgentPath}`);
+  }
+  if (!fs.existsSync(chatCompletionHelpersPath)) {
+    throw new Error(
+      `Agent chat completion helpers not found: ${chatCompletionHelpersPath}`,
+    );
+  }
+  if (!fs.existsSync(conversationLoopPath)) {
+    throw new Error(
+      `Agent conversation loop not found: ${conversationLoopPath}`,
+    );
+  }
 
   fs.cpSync(overlayRoot, agentRoot, { recursive: true, force: true });
+  const runtimeProviderPath = path.join(
+    agentRoot,
+    "hermes_cli",
+    "runtime_provider.py",
+  );
+  fs.writeFileSync(
+    runtimeProviderPath,
+    patchDesktopProtocolRoutingSource(
+      fs.readFileSync(runtimeProviderPath, "utf8"),
+    ),
+    "utf8",
+  );
   const patched = patchDesktopSkillToolsetSource(
     patchGatewayServerSource(fs.readFileSync(gatewayServerPath, "utf8")),
   );
@@ -281,6 +747,40 @@ export function applyOfflineRuntimeOverlays({
     ),
     "utf8",
   );
+  fs.writeFileSync(
+    runAgentPath,
+    patchCompanyResponsesUserAgentSource(fs.readFileSync(runAgentPath, "utf8")),
+    "utf8",
+  );
+  fs.writeFileSync(
+    chatCompletionHelpersPath,
+    patchCompanyResponsesFallbackSource(
+      fs.readFileSync(chatCompletionHelpersPath, "utf8"),
+    ),
+    "utf8",
+  );
+  fs.writeFileSync(
+    conversationLoopPath,
+    patchCompanyResponsesFallbackLoopSource(
+      fs.readFileSync(conversationLoopPath, "utf8"),
+    ),
+    "utf8",
+  );
+  fs.writeFileSync(
+    codexRuntimePath,
+    patchCompanyCodexRetries(fs.readFileSync(codexRuntimePath, "utf8")),
+    "utf8",
+  );
+  for (const identityPromptPath of identityPromptPaths) {
+    if (!fs.existsSync(identityPromptPath)) continue;
+    fs.writeFileSync(
+      identityPromptPath,
+      patchJingYuAgentIdentitySource(
+        fs.readFileSync(identityPromptPath, "utf8"),
+      ),
+      "utf8",
+    );
+  }
 
   const desktopMethods = path.join(
     agentRoot,
@@ -303,6 +803,7 @@ export function applyOfflineRuntimeOverlays({
 
   return {
     agentRoot,
+    runAgentPath,
     gatewayServerPath,
     dashboardServerPath,
     dashboardCliPath,

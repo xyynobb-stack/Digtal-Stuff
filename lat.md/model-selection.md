@@ -20,9 +20,25 @@ A **Configure** button is pinned at the bottom of the provider rail (below the s
 
 ## Employee phone model allowlist
 
-Phone-provisioned local users see only the OpenAI-chat models granted by the latest employee lookup response.
+Phone-provisioned local users see only conversational models granted by the latest employee lookup response, including Chat Completions and Responses models.
 
 The main process persists the grant through [[src/main/employee-model-access.ts#writeEmployeeModelAccess]] and applies it to `list-models`; unrelated rows remain stored but are not returned. [[src/renderer/src/screens/Chat/hooks/useModelConfig.ts#useModelConfig]] also suppresses Ollama Cloud discovery merging while the grant is active, preventing live models from bypassing the allowlist. Remote and SSH catalogs, and local installs without a phone grant, retain their normal behavior.
+
+The company endpoint has two fixed internal named routes sharing a credential: `company-platform` uses `chat_completions`, and `company-platform-responses` uses `codex_responses`. Per-route model lists are refreshed on provisioning, including empty lists, and model-library rows retain their protocol. No model selection flips a shared provider's protocol or rewrites the global default. The existing serialized picker queue and session-owned pending switch carry the concrete provider identity.
+
+Both cold creation and switching resolve model membership within the selected endpoint before URL-only matching. Persisted custom identities likewise recover by model plus URL, avoiding Chat/Responses confusion on resume. Successful live switches clear obsolete cold-build pending picks; running turns still reject mutation. Development preparation and packaged overlays install the same resolver, and protocol acknowledgements reflect the live client.
+
+### Mixed employee protocols
+
+Verify that employee import includes both supported conversation protocols, prefers Chat Completions when both are advertised, and excludes compact-only or image-only endpoints.
+
+### Protocol-safe session routing
+
+Verify that shared-URL models resolve to their own protocol route during cold creation, queued selection, live switching and identity recovery without mutating another session or the global default.
+
+### Delayed cross-protocol switch
+
+Verify that a delayed switch acknowledgement cannot submit a prompt using the obsolete protocol after the user selects another model, in both Chat-to-Responses and Responses-to-Chat directions.
 
 ## Full identity, not just the model name
 

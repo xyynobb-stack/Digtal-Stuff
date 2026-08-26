@@ -4,15 +4,59 @@ The first-run screen where the user picks an AI provider and enters credentials 
 
 ## Employee phone provisioning
 
-The setup and Providers screens provision an employee by phone, import every returned OpenAI-chat model, and activate Kimi-2.6 when available without exposing the administrator token to the renderer.
+The setup and Providers screens provision an employee by phone, import supported Chat Completions and Responses models, and activate Kimi-2.6 when available without exposing the administrator token to the renderer.
 
-The employee-facing Providers screen is intentionally limited to the phone input, automatic provisioning action, error feedback, and a deduplicated list of configured employees. Each successful record shows the phone, API `real_name`, and returned OpenAI-chat model names. Account login, active-model management, provider keys, credential pools, OAuth, auxiliary tasks, and registry controls are not rendered there.
+The employee-facing Providers screen is intentionally limited to the phone input, automatic provisioning action, error feedback, and a deduplicated list of configured employees. Each successful record shows the phone, API `real_name`, and supported conversational model names. Account login, active-model management, provider keys, credential pools, OAuth, auxiliary tasks, and registry controls are not rendered there.
 
 Provisioning also writes the API `real_name` to the active local profile's display name through `setProfileName`; the stable profile id is unchanged. First-run Setup applies the same behavior to the default profile. The renderer stores the display metadata locally so it survives reloads, migrates legacy `username` metadata as a display fallback, and keeps former phone-only entries visible with a reconfiguration prompt. New lookup responses never fall back to the API username.
 
 Each successful lookup replaces `employee-model-access.json` with the returned chat-model ids and company endpoint. [[src/main/employee-model-access.ts#filterModelsForEmployeeAccess]] filters renderer-facing local model reads without deleting the underlying model library, so reconfiguring another phone immediately replaces the visible grant.
 
 The provider list is data-driven from `PROVIDERS.setup` in [[src/renderer/src/constants.ts]]. Each entry carries an `envKey`, `configProvider`, `baseUrl`, and `needsKey`; selecting a card drives which form fields show (API key, or the Local server/base-URL flow).
+
+## Company gateway fallback
+
+Employee profiles can use AIHub Terra as a request-local backup when the company gateway is unavailable, without changing the saved model or other sessions.
+
+The route is `https://aihub.dog/v1/responses`, model `gpt-5.6-terra`, protocol `codex_responses`. [[src/main/agent-config-providers.ts#mirrorCompanyFallbackProvider]] enables it only when the profile has both `CUSTOM_PROVIDER_COMPANY_PLATFORM_KEY` and `AIHUB_API_KEY`. The latter is stored in the local `.env`, never in tracked source or YAML. Provisioning optionally accepts `fallback_api_key` from the employee lookup response; an existing profile key is also accepted. `scripts/configure-aihub-key.mjs` imports it from a local, ignored environment file without printing credentials. Release installations need their own key provisioning; the developer's key is not embedded in installers.
+
+[[src/main/agent-config-providers.ts#upsertAgentManagedFallback]] preserves other fallback entries, recognizes the managed entry after Python removes YAML comments, handles indentless lists, and reports unsupported nonempty flow lists without writing duplicate keys. Local Dashboard/gateway startup mirrors the route synchronously before spawning Python, avoiding reliance on renderer model-list timing. No fallback transition writes the selected/default model to disk.
+
+### Trigger policy and first response budget
+
+The company endpoint receives a 30-second first-event budget shared across a quick retry; healthy streaming is not limited to 30 seconds of total generation time.
+
+Both company Chat Completions and Responses routes are covered. [[resources/hermes-agent-overlays/agent/desktop_fallback.py#should_switch]] immediately selects the backup after the first-response deadline, HTTP 429/502/503/504, or an unavailable model. HTTP 500 and connection errors allow one short retry. Truly empty output bypasses repeated empty retries. Eligible authentication failures follow the classification below. Generic request-format errors, context overflow, TLS verification, policy refusals, tool failures and user cancellation do not trigger transparent switching. An SSE opening/progress event counts as a response: this is not a 30-second promise of visible answer text. Existing idle/total watchdogs still apply after the first event.
+
+The managed AIHub candidate is skipped for unrelated providers. It is tried within the current Agent using the existing provider-swap machinery, with the full conversation/tool-result context re-serialized for Responses; completed tools are not replayed. The Agent emits an actual backup-model notice. Primary restoration on a later turn follows the existing cooldown policy, rather than alternating providers within a tool workflow.
+
+### Authentication and permission classification
+
+HTTP 401 can use the independently credentialed backup; HTTP 403 requires explicit model-access or disabled-account evidence. Safety refusal always takes precedence over an authentication signal.
+
+[[resources/hermes-agent-overlays/agent/desktop_fallback.py#record_error]] reads error `code`, `type`, and `message`, including nested error objects, JSON strings and response JSON. Exact permission/account codes are preferred; narrow English and Chinese descriptions are the fallback for generic gateway envelopes. Generic Forbidden, permission_denied, region/IP blocks and HTML interception pages are not sufficient to enable 403 failover. No network probe or LLM classifier is used.
+
+Only the status and sanitized classification remain on the current Agent and are reset before the next request. Eligible auth transitions log a category and display an authentication/permission notice, not the upstream body or credentials. Both the retry decision and final provider-activation gate use the same result. HTTP-200 content-filter and truncated content-filter branches explicitly retain their policy signal so legacy no-reason calls cannot bypass the exclusion. Other providers and request-cancellation behavior are unchanged.
+
+### Request cancellation and runtime distribution
+
+The old request must finish closing before a backup request starts, preventing concurrent workers from writing to one session or overwriting its client state.
+
+[[resources/hermes-agent-overlays/agent/desktop_fallback.py#abort_for_fallback]] sets a request-local cancellation flag, aborts only its worker-owned socket and joins the worker. If it does not exit, the turn reports a bounded failure instead of starting another provider; subsequent calls are guarded until that worker exits. A partial visible answer is not transparently mixed with another provider's answer. Protocol-independent conversation-loop changes do not add a second scheduler or global model-switch state.
+
+`scripts/patch-company-fallback-safety.mjs` adds the watchdog and policy gates to the vendored runtime. `scripts/prepare-dev-agent.mjs` installs the same helper and patches in development; the release workflow applies the overlay before packaging. The staged Python helper is included alongside the patched modules, so no runtime-only import is missing in the installer.
+
+### Offline policy and cancellation tests
+
+Offline tests verify 30-second budgets, immediate versus retryable errors, excluded errors, partial output, secret scope, and safe worker shutdown without calling paid model APIs.
+
+`tests/skills/test_company_fallback.py` exercises actual background-worker polling with shortened test deadlines, verifies that a first SSE event permits a longer response, and checks fail-closed behavior for a worker that cannot terminate. TypeScript tests cover config idempotency, Python-style YAML rewrites, missing credentials, secret-free YAML and development/packaging patch application. These are local regression tests, not a live outage test of the external gateways.
+
+### Authentication and permission classification tests
+
+Offline fixtures verify eligible 401/403 errors, safety precedence, ambiguous Forbidden and HTML rejection, request isolation, and the unchanged backup-key, partial-output and cancellation guards.
+
+Tests use the runtime's existing error classifier plus the desktop policy and final activation gate. Packaging checks ensure the new error capture and both legacy refusal guards are applied idempotently to development and release runtimes. No live credentials or paid requests are required.
 
 ## JingYuAI is the first-priority provider
 
@@ -99,6 +143,12 @@ To add one, mirror the Hermes One entries: a card in `PROVIDERS.setup` + `PROVID
 ## Agent config sync for named providers
 
 Named OpenAI-compatible providers sync both ways between the desktop and the agent's config.yaml — a CLI-added provider appears in the desktop UI, and a desktop-added one is visible to `hermes model` / `--provider <slug>`.
+
+### Company Responses request identity
+
+The employee GPT Responses route replaces the OpenAI Python SDK User-Agent with `JingYu-Desktop`, because the company gateway stalls SDK-identified requests even when the same body succeeds from a neutral HTTP client.
+
+The override runs in the Agent client-header lifecycle only when the resolved provider is `company-platform-responses` and `api_mode` is `codex_responses`. It is applied after generic header merging, preserves other headers, and ships through development and packaged-runtime preparation. The `company-platform` chat route shares the URL but cannot inherit the override, so DeepSeek and unrelated providers retain their existing request behavior.
 
 The agent reads two user-config shapes (`hermes-agent/hermes_cli/providers.py`): the `providers:` dict (`{slug: {name, base_url, key_env, transport}}`, resolved by `resolve_user_provider`) and the legacy `custom_providers:` list. [[src/main/agent-config-providers.ts]] is the bridge: it parses and text-edits those blocks with offset/line splicing (like `config.ts`), so user comments and unrelated keys survive round-trips.
 

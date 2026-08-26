@@ -12,6 +12,7 @@ import type { Mock } from "vitest";
 import type { DashboardRpcEvent } from "../dashboardGatewayClient";
 import {
   ensureDashboardRuntimeSession,
+  dashboardRouteMatches,
   shouldAcceptSessionReadinessSnapshot,
   submitDashboardPromptWithRecovery,
   useDashboardChatTransport,
@@ -22,6 +23,19 @@ import type { ActiveTurn, ChatMessage, UsageState } from "../types";
 type SetUsageMock = Mock<(value: SetStateAction<UsageState | null>) => void>;
 
 describe("dashboard prompt display text", () => {
+  it("does not accept an acknowledged route with the wrong wire protocol", () => {
+    const route = {
+      model: "gpt-luna",
+      provider: "company-platform-responses",
+      route_id: "same",
+    };
+    expect(
+      dashboardRouteMatches(
+        { ...route, api_mode: "codex_responses" },
+        { ...route, api_mode: "chat_completions" },
+      ),
+    ).toBe(false);
+  });
   it("keeps the user-visible text on both the initial and recovered submit", async () => {
     const request = vi
       .fn()
@@ -1842,6 +1856,67 @@ describe("useDashboardChatTransport recovery", () => {
       },
     ]);
   });
+
+  // @lat: [[model-selection#Employee phone model allowlist#Delayed cross-protocol switch]]
+  it.each([
+    ["deepseek-v4-flash", "gpt-5.6-luna"],
+    ["gpt-5.6-luna", "deepseek-v4-flash"],
+  ])(
+    "waits for the latest route when %s to %s races a switch acknowledgement",
+    async (first, latest) => {
+      let release!: () => void;
+      let observed!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        observed = resolve;
+      });
+      const identity = (model: string) => ({
+        model,
+        provider: model.startsWith("gpt")
+          ? "company-platform-responses"
+          : "company-platform",
+        api_mode: model.startsWith("gpt")
+          ? "codex_responses"
+          : "chat_completions",
+        route_id: `route:${model}`,
+      });
+      let live = identity("unselected");
+      const submitted: (typeof live)[] = [];
+      dashboardMock.request.mockImplementation(async (method, params) => {
+        if (method === "session.create")
+          return { session_id: "live", stored_session_id: "stored" };
+        if (method === "model.resolve") return identity(params.model);
+        if (method === "model.identity") return live;
+        if (method === "session.model.set") {
+          if (params.model === first) {
+            observed();
+            await blocked;
+          }
+          live = identity(params.model);
+          return live;
+        }
+        if (method === "prompt.submit") submitted.push(live);
+        return {};
+      });
+      const api: HarnessApi = {};
+      render(<Harness api={api} />);
+      let sending!: Promise<boolean>;
+      await act(async () => {
+        api.selectModelIntent!("custom", first, "http://company.example/v1");
+        sending = api.send!("use latest protocol");
+        await started;
+        api.selectModelIntent!("custom", latest, "http://company.example/v1");
+      });
+      expect(submitted).toHaveLength(0);
+      release();
+      await act(async () => {
+        await sending;
+      });
+      expect(submitted).toEqual([identity(latest)]);
+    },
+  );
 
   it("discards an in-flight dashboard client after the connection mode changes", async () => {
     let releaseFirstConnect: (() => void) | null = null;

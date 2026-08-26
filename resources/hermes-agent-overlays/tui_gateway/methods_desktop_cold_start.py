@@ -141,6 +141,12 @@ def _local_snapshot(ctx):
     }
 
 
+def _configured_api_mode(config):
+    """Accept both legacy api_mode and the runtime's migrated transport field."""
+    mode = str(config.get("api_mode") or config.get("transport") or "").strip()
+    return {"openai_chat": "chat_completions", "openai_responses": "codex_responses"}.get(mode, mode)
+
+
 def _resolve_model_route(ctx, requested, model, base_url):
     """Resolve a user selection to one concrete, catalog-independent route."""
     requested = str(requested or "").strip()
@@ -160,7 +166,7 @@ def _resolve_model_route(ctx, requested, model, base_url):
                     or config.get("api_url")
                     or ""
                 ).strip(),
-                "api_mode": str(config.get("api_mode") or "").strip(),
+                "api_mode": _configured_api_mode(config),
             }
         )
 
@@ -178,6 +184,19 @@ def _resolve_model_route(ctx, requested, model, base_url):
     resolved_url = str(base_url or "").strip()
     model_matches = []
     resolved_api_mode = ""
+    # One endpoint can expose multiple fixed protocols. Prefer its explicit
+    # model membership over URL-only matching; otherwise the first provider
+    # entry wins and Responses models inherit Chat Completions (or vice versa).
+    endpoint_models = [
+        (slug, config)
+        for slug, config in candidates
+        if normalized_url
+        and str(config.get("base_url") or config.get("api_url") or "")
+        .strip().rstrip("/").lower() == normalized_url
+        and model in _configured_models(config.get("models"))
+    ]
+    if endpoint_models:
+        candidates = endpoint_models
     for slug, config in candidates:
         configured_url = str(
             config.get("base_url") or config.get("api_url") or ""
@@ -185,7 +204,7 @@ def _resolve_model_route(ctx, requested, model, base_url):
         models = _configured_models(config.get("models"))
         if model and model in models:
             model_matches.append(
-                (slug, configured_url, str(config.get("api_mode") or "").strip())
+                (slug, configured_url, _configured_api_mode(config))
             )
         if (
             normalized_url
@@ -193,7 +212,7 @@ def _resolve_model_route(ctx, requested, model, base_url):
         ):
             resolved = slug
             resolved_url = configured_url or resolved_url
-            resolved_api_mode = str(config.get("api_mode") or "").strip()
+            resolved_api_mode = _configured_api_mode(config)
             break
     if resolved == requested and not normalized_url and len(model_matches) == 1:
         resolved, resolved_url, resolved_api_mode = model_matches[0]
@@ -688,10 +707,18 @@ def model_identity(rid, params: dict) -> dict:
         effective_api_mode = str(
             getattr(agent, "api_mode", "") or effective_api_mode
         )
+    # Runtime billing class "custom" is not a concrete route. Recover using
+    # both endpoint and actual model, so same-URL protocols remain distinct.
+    effective_provider = str(info.get("provider") or "")
+    if effective_provider == "custom" or effective_provider.startswith("custom:"):
+        resolved = _desktop_resolve_model_route(
+            _model_picker_context(agent), "custom", info.get("model"), base_url
+        )
+        effective_provider = str(resolved.get("provider") or effective_provider)
     identity = _desktop_route_identity(
         {
             "model": str(info.get("model") or ""),
-            "provider": str(info.get("provider") or ""),
+            "provider": effective_provider,
             "base_url": base_url,
             "requested_provider": str(override.get("requested_provider") or ""),
             "api_mode": effective_api_mode,
@@ -861,6 +888,9 @@ def session_model_set(rid, params: dict) -> dict:
                 pin_session_override=True,
                 persist_override=False,
             )
+            # A successful newer switch supersedes an old resume/build pick.
+            # Clear only after success, preserving the old route on failure.
+            session.pop("pending_model_switch", None)
             session.setdefault("model_override", {})[
                 "requested_provider"
             ] = requested_provider or None
@@ -878,7 +908,12 @@ def session_model_set(rid, params: dict) -> dict:
                 "provider": str(effective.get("provider") or route_provider),
                 "requested_provider": requested_provider,
                 "base_url": str(effective.get("base_url") or route_base_url),
-                "api_mode": str(effective.get("api_mode") or ""),
+                # Acknowledgement describes the actual live client, not merely
+                # the intended override. The renderer must reject a mismatch.
+                "api_mode": str(
+                    getattr(agent, "api_mode", "")
+                    or effective.get("api_mode") or ""
+                ),
             }
         )
         session.setdefault("model_override", {})["route_id"] = effective_identity[

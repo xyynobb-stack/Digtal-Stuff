@@ -11,9 +11,16 @@ import {
   patchDashboardColdStartSource,
 } from "./patch-dashboard-cold-start.mjs";
 import {
+  JINGYU_AGENT_PROMPT_RELATIVE_PATHS,
+  patchCompanyResponsesFallbackSource,
+  patchCompanyResponsesFallbackLoopSource,
+  patchCompanyResponsesUserAgentSource,
   patchDesktopSkillToolsetSource,
+  patchDesktopProtocolRoutingSource,
   patchExecuteCodeWindowsChildSource,
+  patchJingYuAgentIdentitySource,
 } from "./apply-offline-runtime-overlays.mjs";
+import { patchCompanyCodexRetries } from "./patch-company-fallback-safety.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const outputRoot = path.join(projectRoot, "build", "offline-runtime");
@@ -74,6 +81,15 @@ if (fs.existsSync(agentOverlayRoot)) {
   fs.cpSync(agentOverlayRoot, path.join(outputRoot, "hermes-agent"), {
     recursive: true,
   });
+}
+for (const relativePath of JINGYU_AGENT_PROMPT_RELATIVE_PATHS) {
+  const promptPath = path.join(outputRoot, "hermes-agent", relativePath);
+  if (!fs.existsSync(promptPath)) continue;
+  fs.writeFileSync(
+    promptPath,
+    patchJingYuAgentIdentitySource(fs.readFileSync(promptPath, "utf8")),
+    "utf8",
+  );
 }
 verifyDashboardWebDist(
   path.join(outputRoot, "hermes-agent", "hermes_cli", "web_dist"),
@@ -228,12 +244,34 @@ if (!gatewayServer.includes("A slash worker can therefore report")) {
 }
 gatewayServer = patchDesktopSkillToolsetSource(gatewayServer);
 fs.writeFileSync(gatewayServerPath, gatewayServer, "utf8");
+const desktopRuntimeProviderPath = path.join(
+  path.dirname(gatewayServerPath),
+  "..",
+  "hermes_cli",
+  "runtime_provider.py",
+);
+fs.writeFileSync(
+  desktopRuntimeProviderPath,
+  patchDesktopProtocolRoutingSource(
+    fs.readFileSync(desktopRuntimeProviderPath, "utf8"),
+  ),
+  "utf8",
+);
 
 // Desktop chat sends a model-facing skill-selection envelope. Keep that
 // control text out of state.db so the renderer can hydrate one clean user
 // bubble and session titles remain based on what the employee actually typed.
 const runAgentPath = path.join(outputRoot, "hermes-agent", "run_agent.py");
 let runAgent = fs.readFileSync(runAgentPath, "utf8").replace(/\r\n/g, "\n");
+runAgent = patchCompanyResponsesUserAgentSource(runAgent);
+for (const [name, patch] of [
+  ["chat_completion_helpers.py", patchCompanyResponsesFallbackSource],
+  ["conversation_loop.py", patchCompanyResponsesFallbackLoopSource],
+  ["codex_runtime.py", patchCompanyCodexRetries],
+]) {
+  const target = path.join(outputRoot, "hermes-agent", "agent", name);
+  fs.writeFileSync(target, patch(fs.readFileSync(target, "utf8")), "utf8");
+}
 const skillSelectionBlock = `        if selection:
             set_task_skill_allowlist(
                 effective_task_id,

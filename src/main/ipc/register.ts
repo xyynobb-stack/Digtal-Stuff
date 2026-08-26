@@ -262,12 +262,16 @@ import {
 } from "../models";
 import {
   filterModelsForEmployeeAccess,
+  EMPLOYEE_MODEL_ROUTES,
   normalizeEmployeeChatModels,
   readEmployeeModelAccess,
   writeEmployeeModelAccess,
   type EmployeeAvailableModelPayload,
 } from "../employee-model-access";
-import { upsertAgentUserProvider } from "../agent-config-providers";
+import {
+  mirrorCompanyFallbackProvider,
+  upsertAgentUserProvider,
+} from "../agent-config-providers";
 import { validateChatReadiness } from "../validation";
 import {
   runConfigHealthCheck,
@@ -1053,6 +1057,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         return true;
       }
       setEnvValue(key, value, profile);
+      if (key === "AIHUB_API_KEY") mirrorCompanyFallbackProvider(profile);
       // Restart gateway so it picks up the new API key.
       // The earlier condition had a precedence bug —
       //   `(isGatewayRunning() && _API_KEY) || _TOKEN || HF_TOKEN`
@@ -1093,6 +1098,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       throw new Error(`员工查询失败（HTTP ${response.status}）。`);
     const employee = (await response.json()) as {
       api_key?: unknown;
+      fallback_api_key?: unknown;
       real_name?: unknown;
       available_models?: EmployeeAvailableModelPayload[];
     };
@@ -1107,19 +1113,47 @@ export function registerIpcHandlers(context: IpcContext): void {
     const baseUrl = "http://183.230.227.39:18600/v1";
     const envKey = "CUSTOM_PROVIDER_COMPANY_PLATFORM_KEY";
     setEnvValue(envKey, apiKey);
-    upsertAgentUserProvider(undefined, {
-      name: "Company Platform",
-      baseUrl,
-      keyEnv: envKey,
-    });
+    for (const route of EMPLOYEE_MODEL_ROUTES) {
+      upsertAgentUserProvider(undefined, {
+        name: route.name,
+        slug: route.slug,
+        baseUrl,
+        keyEnv: envKey,
+        apiMode: route.apiMode,
+        models: available
+          .filter((entry) => entry.apiMode === route.apiMode)
+          .map((entry) => entry.model),
+      });
+    }
+    // The backup credential is deliberately not compiled into the desktop.
+    // Production can return it with the employee grant; development and
+    // managed installations may inject AIHUB_API_KEY into the profile env.
+    const existingEnv = readEnv();
+    const fallbackApiKey =
+      (typeof employee.fallback_api_key === "string"
+        ? employee.fallback_api_key.trim()
+        : "") ||
+      String(
+        existingEnv.AIHUB_API_KEY || process.env.AIHUB_API_KEY || "",
+      ).trim();
+    let fallbackConfigured = false;
+    if (fallbackApiKey) {
+      const fallbackEnvKey = "AIHUB_API_KEY";
+      setEnvValue(fallbackEnvKey, fallbackApiKey);
+      fallbackConfigured = mirrorCompanyFallbackProvider();
+    }
     for (const entry of available) {
+      const route = EMPLOYEE_MODEL_ROUTES.find(
+        (route) => route.apiMode === entry.apiMode,
+      )!;
       const savedModel = addModel(
         entry.name,
         "custom",
         entry.model,
         baseUrl,
         entry.contextLength,
-        "Company Platform",
+        route.name,
+        entry.apiMode,
       );
 
       // 模型 ID 已存在时，addModel 会保留旧名称；
@@ -1136,13 +1170,22 @@ export function registerIpcHandlers(context: IpcContext): void {
       baseUrl,
       available.map((entry) => entry.model),
     );
-    setModelConfig("custom", model, baseUrl);
+    const selected = available.find((entry) => entry.model === model)!;
+    setModelConfig(
+      "custom",
+      model,
+      baseUrl,
+      undefined,
+      selected.contextLength ?? null,
+      selected.apiMode,
+    );
     if (isGatewayRunning()) restartGateway();
     return {
       ok: true,
       realName:
         typeof employee.real_name === "string" ? employee.real_name.trim() : "",
       models: available.map((entry) => entry.name),
+      fallbackConfigured,
     };
   });
 

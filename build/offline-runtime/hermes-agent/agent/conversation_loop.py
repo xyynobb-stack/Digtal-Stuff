@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import logging
+from agent import desktop_fallback as _desktop_fb
+# JINGYU_COMPANY_FALLBACK_SAFETY_LOOP_V2
 import os
 import random
 import re
@@ -2368,6 +2370,7 @@ def run_conversation(
                         _use_streaming = False
 
                 def _perform_api_call(next_api_kwargs):
+                    _desktop_fb.begin_request(agent, retry_count)
                     if agent.api_mode == "codex_responses":
                         next_api_kwargs = agent._get_transport().preflight_kwargs(
                             next_api_kwargs,
@@ -2797,6 +2800,7 @@ def run_conversation(
                 # exception-based ``content_policy_blocked`` recovery: try a
                 # configured fallback once, otherwise return the refusal.
                 if finish_reason == "content_filter":
+                    agent._desktop_fallback_policy_blocked = True
                     _refusal_transport = agent._get_transport()
                     if agent.api_mode == "anthropic_messages":
                         _refusal_result = _refusal_transport.normalize_response(
@@ -2835,7 +2839,7 @@ def run_conversation(
                     # Deterministic for the unchanged prompt — never retry.
                     # Try a configured fallback once (a different model may not
                     # refuse); otherwise surface the refusal terminally.
-                    if agent._has_pending_fallback():
+                    if agent._has_pending_fallback() and not _desktop_fb.is_company(agent):
                         agent._buffer_status(
                             "⚠️ Model declined to respond (safety refusal) — trying fallback..."
                         )
@@ -2996,8 +3000,11 @@ def run_conversation(
                         _cf_terminated = getattr(
                             response, "_content_filter_terminated", False
                         )
+                        if _cf_terminated:
+                            agent._desktop_fallback_policy_blocked = True
                         if (
                             _cf_terminated
+                            and not _desktop_fb.is_company(agent)
                             and agent._fallback_index < len(agent._fallback_chain)
                         ):
                             agent._vprint(
@@ -3502,6 +3509,29 @@ def run_conversation(
                 break
 
             except Exception as api_error:
+                if isinstance(api_error, _desktop_fb.RequestStillRunning):
+                    if thinking_spinner:
+                        thinking_spinner.stop("")
+                        thinking_spinner = None
+                    agent._emit_status(str(api_error))
+                    agent._persist_session(messages, conversation_history)
+                    return {"final_response": str(api_error), "messages": messages,
+                            "api_calls": api_call_count, "completed": False,
+                            "failed": True, "error": str(api_error)}
+                _desktop_fb.record_error(agent, api_error)
+                if _desktop_fb.is_company(agent) and _desktop_fb.visible_text(agent):
+                    # Never retry a partially delivered answer and later fall back
+                    # after the per-attempt delivery tracker has been cleared.
+                    if thinking_spinner:
+                        thinking_spinner.stop("")
+                        thinking_spinner = None
+                    partial = agent._strip_think_blocks(agent._current_streamed_assistant_text)
+                    notice = "回复中途连接异常；为避免重复或混合不同模型的内容，未自动切换备用模型。请重试。"
+                    messages.append({"role": "assistant", "content": partial + "\n\n" + notice})
+                    agent._persist_session(messages, conversation_history)
+                    return {"final_response": partial + "\n\n" + notice, "messages": messages,
+                            "api_calls": api_call_count, "completed": False,
+                            "failed": True, "error": notice}
                 # Stop spinner silently — retry status is buffered and
                 # only flushed when every retry+fallback is exhausted.
                 if thinking_spinner:
@@ -4408,8 +4438,9 @@ def run_conversation(
                 if _is_zai_coding_overload:
                     max_retries = max(max_retries, zai_coding_overload_retry_ceiling())
                 _should_fallback = (
-                    is_rate_limited
-                    or (_is_transport_failure and retry_count >= 2)
+                    _desktop_fb.should_switch(agent, classified, api_error, retry_count)
+                    if _desktop_fb.has_backup(agent)
+                    else is_rate_limited or (_is_transport_failure and retry_count >= 2)
                 )
                 if _should_fallback and agent._fallback_index < len(agent._fallback_chain):
                     # Don't eagerly fallback if credential pool rotation may
@@ -4428,7 +4459,13 @@ def run_conversation(
                         )
                     )
                     if not pool_may_recover:
-                        if _is_upstream:
+                        if _desktop_fb.is_company(agent) and getattr(agent, "_desktop_fallback_http_status", None) in {401, 403}:
+                            # Do not echo upstream bodies: they can contain secrets.
+                            _auth_kind = agent._desktop_fallback_auth_kind
+                            logger.warning("Company fallback: status=%s category=%s",
+                                           agent._desktop_fallback_http_status, _auth_kind)
+                            agent._buffer_status("主线路鉴权或模型/账户权限异常，正在尝试备用线路。")
+                        elif _is_upstream:
                             _upstream_name = (classified.error_context or {}).get(
                                 "upstream_provider", "aggregator"
                             )
@@ -4471,6 +4508,7 @@ def run_conversation(
                 # + provider-specific troubleshooting guidance unchanged.
                 if (
                     classified.is_auth
+                    and not _desktop_fb.is_company(agent)
                     and not _retry.auth_failover_attempted
                     and agent._fallback_index < len(agent._fallback_chain)
                 ):
@@ -5036,14 +5074,14 @@ def run_conversation(
                     # exists; otherwise "trying fallback..." is a lie and the
                     # session looks like it's recovering when it's about to
                     # abort silently (#35314, #17446).
-                    if agent._has_pending_fallback():
+                    if agent._has_pending_fallback() and (not _desktop_fb.is_company(agent) or _desktop_fb.allowed(agent, classified.reason)):
                         if classified.reason == FailoverReason.content_policy_blocked:
                             agent._buffer_status("⚠️ Provider safety filter blocked this request — trying fallback...")
                         elif classified.reason == FailoverReason.ssl_cert_verification:
                             agent._buffer_status("⚠️ TLS certificate verification failed — trying fallback...")
                         else:
                             agent._buffer_status(f"⚠️ Non-retryable error (HTTP {status_code}) — trying fallback...")
-                    if agent._try_activate_fallback():
+                    if agent._try_activate_fallback(reason=classified.reason):
                         active_system_prompt = _sync_failover_system_message(
                             agent, api_messages, active_system_prompt)
                         retry_count = 0
@@ -5266,7 +5304,7 @@ def run_conversation(
                     # Try fallback before giving up entirely
                     if agent._has_pending_fallback():
                         agent._buffer_status(f"⚠️ Max retries ({max_retries}) exhausted — trying fallback...")
-                    if agent._try_activate_fallback():
+                    if agent._try_activate_fallback(reason=classified.reason):
                         active_system_prompt = _sync_failover_system_message(
                             agent, api_messages, active_system_prompt)
                         retry_count = 0
@@ -5465,6 +5503,8 @@ def run_conversation(
                             except (TypeError, ValueError):
                                 pass
                 wait_time = _retry_after if _retry_after else jittered_backoff(retry_count, base_delay=2.0, max_delay=60.0)
+                if _desktop_fb.has_backup(agent) and classified.reason in {FailoverReason.timeout, FailoverReason.server_error}:
+                    wait_time = min(wait_time, 1.0)
                 _backoff_policy = None
                 if (is_rate_limited or _is_zai_coding_overload) and not _retry_after:
                     wait_time, _backoff_policy = adaptive_rate_limit_backoff(
@@ -6660,6 +6700,8 @@ def run_conversation(
                         _has_structured
                         and agent._thinking_prefill_retries >= 2
                     )
+                    if _truly_empty and not _has_structured and _desktop_fb.has_backup(agent):
+                        agent._empty_content_retries = 3  # Empty output goes straight to backup, not three more primary calls.
                     if _truly_empty and (not _has_structured or _prefill_exhausted) and agent._empty_content_retries < 3:
                         agent._empty_content_retries += 1
                         logger.warning(
@@ -7203,3 +7245,7 @@ def run_conversation(
 
 
 __all__ = ["run_conversation"]
+
+# JINGYU_COMPANY_FALLBACK_FINAL_LOOP
+
+# JINGYU_COMPANY_AUTH_FALLBACK_V1

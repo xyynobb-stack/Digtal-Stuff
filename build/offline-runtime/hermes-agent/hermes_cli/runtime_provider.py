@@ -871,7 +871,7 @@ def find_custom_provider_identity(base_url: str) -> Optional[str]:
     return None
 
 
-def find_custom_provider_identity_by_model(model: str) -> Optional[str]:
+def find_custom_provider_identity_by_model(model: str, base_url: Optional[str] = None) -> Optional[str]:
     """Map a model id back to the ``custom:<name>`` entry that serves it.
 
     Returns the ``custom:<normalized-name>`` slug of the first ``providers:``
@@ -895,6 +895,10 @@ def find_custom_provider_identity_by_model(model: str) -> Optional[str]:
         return None
 
     def _entry_serves_model(entry: Dict[str, Any]) -> bool:
+        if base_url:
+            entry_url = entry.get("api") or entry.get("url") or entry.get("base_url") or ""
+            if _normalize_base_url_for_match(entry_url) != _normalize_base_url_for_match(base_url):
+                return False
         for key in ("model", "default_model"):
             value = entry.get(key)
             if isinstance(value, str) and value.strip().lower() == target:
@@ -980,6 +984,13 @@ def canonical_custom_identity(
     ``None`` (caller keeps whatever it had — bare ``"custom"`` only as a last
     resort, e.g. a genuine ad-hoc endpoint with no config entry).
     """
+    # HERMES_DESKTOP_MODEL_PROTOCOL_ROUTES: one URL can serve multiple protocols.
+    # Preserve the session's model-specific named route before URL-only recovery.
+    if base_url and model:
+        identity = find_custom_provider_identity_by_model(model, base_url=base_url)
+        if identity:
+            return identity
+
     # 1. Reverse-lookup by endpoint URL.
     if base_url:
         identity = find_custom_provider_identity(base_url)

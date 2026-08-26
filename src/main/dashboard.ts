@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
 import { randomBytes } from "crypto";
+import { mirrorCompanyFallbackProvider } from "./agent-config-providers";
 import {
   closeSync,
   existsSync,
@@ -685,6 +686,15 @@ export async function startDashboard(
       : compat.detail;
 
   const resolvedProfile = resolveProfile(profile);
+  // Finish the synchronous config update before the Python process can read
+  // its initial model/fallback snapshot; no extra async startup race.
+  try {
+    mirrorCompanyFallbackProvider(resolvedProfile);
+  } catch {
+    console.warn(
+      "[dashboard] Could not configure the optional company fallback",
+    );
+  }
   const key = profileKey(profile);
   const token = randomBytes(24).toString("hex");
   const port = await getFreePort();

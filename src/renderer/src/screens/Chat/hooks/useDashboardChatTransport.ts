@@ -858,6 +858,15 @@ export function dashboardRouteMatches(
   expected: SessionModelIdentity | null | undefined,
   live: SessionModelIdentity | null | undefined,
 ): boolean {
+  // Protocol is part of the runtime identity, not a separately mutable toggle.
+  // Older servers may omit it; when both advertise it, never accept a mismatch.
+  if (
+    expected?.api_mode &&
+    live?.api_mode &&
+    expected.api_mode !== live.api_mode
+  ) {
+    return false;
+  }
   const expectedRouteId = (expected?.route_id || "").trim();
   const liveRouteId = (live?.route_id || "").trim();
   if (expectedRouteId || liveRouteId) {

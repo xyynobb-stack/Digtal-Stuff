@@ -887,6 +887,25 @@ function installBundledLookupToken(): void {
 }
 
 const COMPANY_SOUL_RULES_MARKER = "<!-- AGENT_WINDOWS_PYTHON_RULES -->";
+const STOCK_SOUL_IDENTITY_REPLACEMENTS = [
+  [
+    "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
+    "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+  ],
+  [
+    "You are an Agent, an intelligent AI assistant created by Nous Research.",
+    "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+  ],
+  ["This offline build of Hermes One", "This offline build of JingYu Agent"],
+] as const;
+
+/** Replace only exact legacy stock identity text inside a user's SOUL prompt. */
+export function migrateStockSoulIdentity(content: string): string {
+  return STOCK_SOUL_IDENTITY_REPLACEMENTS.reduce(
+    (updated, [from, to]) => updated.replaceAll(from, to),
+    content,
+  );
+}
 
 /**
  * Install the package's company-wide tool preference exactly once without
@@ -899,19 +918,20 @@ function installBundledSoulRules(): void {
   const bundledRules = join(BUNDLED_RUNTIME_ROOT, "employee-default-soul.md");
   const targetSoul = join(HERMES_HOME, "SOUL.md");
   try {
-    if (!existsSync(bundledRules)) return;
-    const rules = readFileSync(bundledRules, "utf-8").trim();
-    if (!rules) return;
     const existing = existsSync(targetSoul)
       ? readFileSync(targetSoul, "utf-8")
       : "";
-    if (existing.includes(COMPANY_SOUL_RULES_MARKER)) return;
+    const migrated = migrateStockSoulIdentity(existing);
+    const rules = existsSync(bundledRules)
+      ? readFileSync(bundledRules, "utf-8").trim()
+      : "";
+    const next =
+      !rules || migrated.includes(COMPANY_SOUL_RULES_MARKER)
+        ? migrated
+        : `${migrated.trimEnd()}${migrated.trimEnd() ? "\n\n" : ""}${rules}\n`;
+    if (next === existing) return;
     mkdirSync(HERMES_HOME, { recursive: true });
-    writeFileSync(
-      targetSoul,
-      `${existing.trimEnd()}${existing.trimEnd() ? "\n\n" : ""}${rules}\n`,
-      "utf-8",
-    );
+    writeFileSync(targetSoul, next, "utf-8");
   } catch {
     // The agent still starts with its normal identity if this best-effort
     // company-rule installation cannot write the user's Hermes home.

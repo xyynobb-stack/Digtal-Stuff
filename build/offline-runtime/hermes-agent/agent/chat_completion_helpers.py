@@ -18,6 +18,8 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+from agent import desktop_fallback as _desktop_fb
+# JINGYU_COMPANY_FALLBACK_SAFETY_HELPERS_V2
 import math
 import os
 import re
@@ -891,6 +893,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
         agent._codex_stream_last_event_ts = None
         agent._codex_stream_last_progress_ts = None
 
+    _desktop_deadline = getattr(agent, "_desktop_first_response_deadline", None)
     _call_start = time.time()
     agent._touch_activity("waiting for non-streaming API response")
 
@@ -900,6 +903,12 @@ def interruptible_api_call(agent, api_kwargs: dict):
     while t.is_alive():
         t.join(timeout=0.3)
         _poll_count += 1
+        _desktop_received = (
+            result["response"] is not None
+            or (_codex_watchdog_enabled and getattr(agent, "_codex_stream_last_event_ts", None) is not None)
+        )
+        if t.is_alive() and _desktop_fb.expired(_desktop_deadline, _desktop_received):
+            _desktop_fb.abort_for_fallback(agent, t, _close_request_client_once, _request_cancelled)
 
         # Every ~30s: touch activity for the gateway inactivity monitor AND
         # rewrite the live spinner/status line so CLI/TUI/Desktop users see
@@ -1704,6 +1713,8 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
     auth resolution and client construction — no duplicated provider→key
     mappings.
     """
+    if _desktop_fb.is_company(agent) and not _desktop_fb.allowed(agent, reason):
+        return False
     if reason in {FailoverReason.rate_limit, FailoverReason.billing, FailoverReason.upstream_rate_limit}:
         # Only start cooldown when leaving the primary provider.  If we're
         # already on a fallback and chain-switching, the primary wasn't the
@@ -1732,6 +1743,8 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         return False
     fb = agent._fallback_chain[agent._fallback_index]
     agent._fallback_index += 1
+    if _desktop_fb.is_managed(fb) and not _desktop_fb.is_company(agent):
+        return agent._try_activate_fallback(reason)  # Never send other providers' data to AIHub.
     fb_key = _fallback_entry_key(fb)
     unavailable = getattr(agent, "_unavailable_fallback_keys", None)
     if unavailable is None:
@@ -1822,9 +1835,16 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
 
         # Determine api_mode from provider / base URL / model
         fb_api_mode = "chat_completions"
+        _explicit_fb_api_mode = str(fb.get("api_mode") or "").strip()
+        if _explicit_fb_api_mode in {
+            "chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse"
+        }:
+            fb_api_mode = _explicit_fb_api_mode
         fb_base_url = str(fb_client.base_url)
         _fb_is_azure = agent._is_azure_openai_url(fb_base_url)
-        if fb_provider == "openai-codex":
+        if _explicit_fb_api_mode in {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse"}:
+            pass
+        elif fb_provider == "openai-codex":
             fb_api_mode = "codex_responses"
         elif fb_provider in {"nous", "nous-portal", "nousresearch"}:
             # Portal is dual-wire: anthropic/* must land on /v1/messages.
@@ -1881,6 +1901,7 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         if hasattr(agent, "_transport_cache"):
             agent._transport_cache.clear()
         agent._fallback_activated = True
+
 
         # Rebind the credential pool to the fallback provider when the provider
         # changes.  Keeping the primary pool attached would make downstream
@@ -2059,6 +2080,8 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         # short-circuit the freshly activated fallback before it gets a
         # single stream attempt.
         _reset_stale_streak(agent)
+        if _desktop_fb.is_managed(fb):
+            agent._emit_status("主线路暂不可用，已切换至 AIHub / gpt-5.6-terra 备用线路。")
         return True
     except Exception as e:
         if fb_provider == "nous":
@@ -3678,7 +3701,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
     def _call():
         import httpx as _httpx
 
-        _max_stream_retries = env_int("HERMES_STREAM_RETRIES", 2)
+        _max_stream_retries = 0 if _desktop_fb.has_backup(agent) else env_int("HERMES_STREAM_RETRIES", 2)
 
         try:
             for _stream_attempt in range(_max_stream_retries + 1):
@@ -4067,6 +4090,8 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         if _reasoning_floor is not None:
             _stream_stale_timeout = max(_stream_stale_timeout, _reasoning_floor)
 
+    _desktop_deadline = getattr(agent, "_desktop_first_response_deadline", None)
+    _desktop_initial_chunk_time = last_chunk_time["t"]
     t = threading.Thread(target=_context_thread_target(_call), daemon=True)
     t.start()
     _last_heartbeat = time.time()
@@ -4082,6 +4107,10 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         # activity on each chunk, but the gap between API call start
         # and first chunk can exceed the gateway timeout — especially
         # when the stale-stream timeout is disabled (local providers).
+        _desktop_received = last_chunk_time["t"] != _desktop_initial_chunk_time or result["response"] is not None
+        if t.is_alive() and _desktop_fb.expired(_desktop_deadline, _desktop_received):
+            _cancel_current_stream_attempt("desktop_first_response_timeout")
+            _desktop_fb.abort_for_fallback(agent, t, _close_request_client_once, _request_cancelled)
         _hb_now = time.time()
         if _hb_now - _last_heartbeat >= _HEARTBEAT_INTERVAL:
             _last_heartbeat = _hb_now
@@ -4313,3 +4342,5 @@ __all__ = [
     "cleanup_task_resources",
     "interruptible_streaming_api_call",
 ]
+
+# JINGYU_COMPANY_FALLBACK_FINAL_HELPERS

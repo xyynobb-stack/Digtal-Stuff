@@ -80,6 +80,14 @@ Windows packages replace the base Python installation's SQLite DLL with a pinned
 
 Before a missing or invalid version is installed, Runtime preparation stops managed gateway/dashboard PID files across profiles and scans the old managed root for bundled Python process trees. It prepares a private `.staging-*` sibling, validates the staged structure, renames it to its final immutable directory, and only then writes final `pyvenv.cfg`/`.pth` relocation paths. Activation requires the base Python executable, venv and CLI launchers, exact final paths, build marker, and a successful Python probe before `active-runtime.json` is switched; staging paths can never survive into an active venv. A failed preparation leaves the prior active version untouched. [[src/renderer/src/screens/RuntimeFailure/RuntimeFailure.tsx#RuntimeFailure]] surfaces the initialization error as “运行时升级失败/文件被占用” with a retry action instead of treating it as a missing install and showing Welcome. Packaged managed runtimes cannot enter the generic network installer, so a failed health check retries managed preparation rather than deleting the immutable Agent directory. Development installs retain the existing `%LOCALAPPDATA%\\hermes` discovery behavior.
 
+### Model-visible Agent identity
+
+The desktop brands the Agent as JingYu Agent in model-visible identity and platform hints without renaming Hermes-compatible runtime identifiers.
+
+`patchJingYuAgentIdentitySource` in `scripts/apply-offline-runtime-overlays.mjs` updates the fallback identity, help guidance, platform hints, profile context, default and Docker SOUL templates, doctor-created SOUL, MoA aggregation, profile-description prompts, and model-visible desktop tool descriptions. `scripts/prepare-dev-agent.mjs` applies the same idempotent overlay to development startup, including the active profile SOUL, while `scripts/prepare-offline-runtime.mjs` applies it before the packaged Runtime archive is created.
+
+Packaged startup migrates only exact recognized legacy identity sentences in an existing SOUL file, preserving every other user-authored instruction. The actual request body, model route, request headers, tool arguments, CLI names, environment variables, and internal `hermes-agent` Skill name are unchanged.
+
 Ordinary no-tool chat completion treats the gateway's persisted final response as the only assistant bubble for that turn. Completion removes any extra assistant bubbles split by late reasoning events while retaining the separate Thought row, so mislabeled reasoning deltas cannot survive beside the canonical answer.
 
 The bundled Agent declares exact-pinned `openpyxl`, `pandas`, and `markitdown[xlsx]` packages in its core `pyproject.toml` dependencies. Windows stable/beta and macOS packaging recreate the virtual environment and run `pip install -e .`, so one dependency declaration supplies the XLSX runtime across release paths without separate workflow install commands.

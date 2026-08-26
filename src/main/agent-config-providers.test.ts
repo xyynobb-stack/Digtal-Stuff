@@ -44,6 +44,44 @@ describe("agent-config providers (config.yaml bridge)", () => {
     return readFileSync(configPath(), "utf-8");
   }
 
+  it("keeps explicit protocol routes separate even with a shared key and URL", async () => {
+    const m = await mod();
+    const common = {
+      baseUrl: "http://company.example/v1",
+      keyEnv: "COMPANY_TEST_KEY",
+    };
+    m.upsertAgentUserProvider(undefined, {
+      ...common,
+      name: "Company Platform",
+      slug: "company-platform",
+      apiMode: "chat_completions",
+      models: ["deepseek"],
+    });
+    m.upsertAgentUserProvider(undefined, {
+      ...common,
+      name: "Company Platform Responses",
+      slug: "company-platform-responses",
+      apiMode: "codex_responses",
+      models: ["gpt-luna", "gpt-terra"],
+    });
+    const first = readConfig();
+    expect(m.listAgentUserProviders()).toHaveLength(2);
+    expect(first).toContain('api_mode: "chat_completions"');
+    expect(first).toContain('api_mode: "codex_responses"');
+    expect(first).toContain('models: ["gpt-luna","gpt-terra"]');
+    m.upsertAgentUserProvider(undefined, {
+      ...common,
+      name: "Company Platform Responses",
+      slug: "company-platform-responses",
+      apiMode: "codex_responses",
+      models: [],
+    });
+    expect(m.listAgentUserProviders()).toHaveLength(2);
+    expect(readConfig()).toContain('models: ["deepseek"]');
+    expect(readConfig()).toContain("models: []");
+    expect(readConfig()).not.toContain('"gpt-luna"');
+  });
+
   // @lat: [[provider-setup#Provider setup#Agent config sync for named providers#Parses the agent's providers dict]]
   it("parses providers: entries with base_url aliases and key_env", async () => {
     writeConfig(
@@ -152,6 +190,125 @@ describe("agent-config providers (config.yaml bridge)", () => {
     ]);
   });
 
+  it("adds and idempotently updates the desktop-managed fallback", async () => {
+    writeConfig(
+      [
+        "model:",
+        "  provider: company-platform-responses",
+        "fallback_providers: []",
+        "telemetry: false",
+        "",
+      ].join("\n"),
+    );
+    const m = await mod();
+    const input = {
+      provider: "custom:aihub-responses",
+      model: "gpt-5.6-terra",
+      baseUrl: "https://aihub.dog/v1",
+      keyEnv: "AIHUB_API_KEY",
+      apiMode: "codex_responses",
+    };
+    m.upsertAgentManagedFallback("default", input);
+    m.upsertAgentManagedFallback("default", input);
+    const content = readConfig();
+    expect(
+      content.match(/JINGYU_DESKTOP_MANAGED_FALLBACK_BEGIN/g),
+    ).toHaveLength(1);
+    expect(content).toContain('provider: "custom:aihub-responses"');
+    expect(content).toContain('model: "gpt-5.6-terra"');
+    expect(content).toContain('api_mode: "codex_responses"');
+    expect(content).toContain("telemetry: false");
+  });
+
+  it("preserves user fallbacks when appending the managed fallback", async () => {
+    writeConfig(
+      [
+        "fallback_providers:",
+        "  - provider: openrouter",
+        "    model: existing-model",
+        "logging:",
+        "  level: info",
+        "",
+      ].join("\n"),
+    );
+    const m = await mod();
+    m.upsertAgentManagedFallback("default", {
+      provider: "custom:aihub-responses",
+      model: "gpt-5.6-terra",
+      baseUrl: "https://aihub.dog/v1",
+      keyEnv: "AIHUB_API_KEY",
+      apiMode: "codex_responses",
+    });
+    const content = readConfig();
+    expect(content).toContain("model: existing-model");
+    expect(content).toContain('key_env: "AIHUB_API_KEY"');
+    expect(content).toContain("logging:\n  level: info");
+  });
+
+  it("recovers the fallback after Python removes comments and uses an indentless list", async () => {
+    writeConfig(
+      [
+        "fallback_providers:",
+        "- provider: custom:aihub-responses",
+        "  model: gpt-5.6-terra",
+        "  base_url: https://aihub.dog/v1",
+        "  key_env: AIHUB_API_KEY",
+        "- provider: existing",
+        "  model: keep-me",
+        "logging:",
+        "  level: info",
+        "",
+      ].join("\n"),
+    );
+    const m = await mod();
+    const input = {
+      provider: "custom:aihub-responses",
+      model: "gpt-5.6-terra",
+      baseUrl: "https://aihub.dog/v1",
+      keyEnv: "AIHUB_API_KEY",
+      apiMode: "codex_responses",
+    };
+    expect(m.upsertAgentManagedFallback("default", input)).toBe(true);
+    m.upsertAgentManagedFallback("default", input);
+    const content = readConfig();
+    expect(content.match(/key_env:.*AIHUB_API_KEY/g)).toHaveLength(1);
+    expect(content).toContain("- provider: existing\n  model: keep-me");
+    expect(content).toContain("logging:\n  level: info");
+  });
+
+  it("does not falsely report success for an unsupported inline fallback list", async () => {
+    writeConfig("fallback_providers: [{provider: existing, model: keep}]\n");
+    const m = await mod();
+    expect(
+      m.upsertAgentManagedFallback("default", {
+        provider: "custom:aihub-responses",
+        model: "gpt-5.6-terra",
+        baseUrl: "https://aihub.dog/v1",
+        keyEnv: "AIHUB_API_KEY",
+        apiMode: "codex_responses",
+      }),
+    ).toBe(false);
+    expect(readConfig()).toContain("model: keep");
+  });
+
+  it("only mirrors the AIHub route for a profile with both local credentials", async () => {
+    const m = await mod();
+    writeConfig("providers: {}\nfallback_providers: []\n");
+    const envFile = join(mockState.hermesHome, ".env");
+    writeFileSync(envFile, "AIHUB_API_KEY=fake-backup-key\n");
+    expect(m.mirrorCompanyFallbackProvider()).toBe(false);
+    writeFileSync(
+      envFile,
+      "AIHUB_API_KEY=fake-backup-key\nCUSTOM_PROVIDER_COMPANY_PLATFORM_KEY=fake-primary-key\n",
+    );
+    expect(m.mirrorCompanyFallbackProvider()).toBe(true);
+    const first = readConfig();
+    expect(m.mirrorCompanyFallbackProvider()).toBe(true);
+    expect(readConfig()).toBe(first);
+    expect(first).not.toContain("fake-backup-key");
+    expect(first).not.toContain("fake-primary-key");
+  });
+
   it("never appends a duplicate key over an unparseable flow dict", async () => {
     const before = [
       'providers: { keep: { base_url: "https://keep.example/v1" } }',
@@ -205,6 +362,38 @@ describe("agent-config providers (config.yaml bridge)", () => {
     expect(content).toContain("gateway:");
     expect(m.listAgentUserProviders("default")).toHaveLength(1);
   });
+
+  it.each([
+    "    models:\n      - old-model\n",
+    "    models:\n    - old-model\n",
+    "    models:\n      old-model:\n        context_length: 1000\n",
+  ])(
+    "replaces Agent-rewritten model blocks without leaving old children: %s",
+    async (models) => {
+      writeConfig(
+        'providers:\n  company-platform:\n    name: "Company Platform"\n' +
+          models +
+          '    key_env: "SHARED_KEY"\n  other:\n    name: "Keep"\n',
+      );
+      const m = await mod();
+      m.upsertAgentUserProvider("default", {
+        slug: "company-platform",
+        name: "Company Platform",
+        baseUrl: "https://company.example/v1",
+        keyEnv: "SHARED_KEY",
+        apiMode: "chat_completions",
+        models: ["deepseek-v4-flash"],
+      });
+      const content = readConfig();
+      expect(content).toContain(
+        '    models: ["deepseek-v4-flash"]\n    key_env: "SHARED_KEY"',
+      );
+      expect(content).not.toContain("old-model");
+      expect(content).not.toContain("context_length");
+      expect(content).toContain('  other:\n    name: "Keep"');
+      expect(m.listAgentUserProviders("default")).toHaveLength(2);
+    },
+  );
 
   it("matches an existing terminal entry by key_env even when slugs differ", async () => {
     writeConfig(

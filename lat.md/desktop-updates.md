@@ -16,6 +16,8 @@ Stable and beta workflows build Windows x64 NSIS installers; only the stable cha
 
 `.github/workflows/release.yml` runs on pushes to `release`, reads `package.json`, builds the Windows installer, and publishes a normal GitHub Release with `latest.yml`, the setup executable, and its blockmap.
 
+Stable pushes must advance the version in both `package.json` and the root package entries of `package-lock.json`: the workflow skips builds when the matching `v<version>` tag already exists. Runtime fallback code ships with the overlays, but AIHub credentials are provisioned separately per installed profile, as described in [[provider-setup#Company gateway fallback]].
+
 Before building the bundled Dashboard, both workflows apply the repository-owned Agent overlays to the committed offline runtime and verify the cold-start model/session RPCs. This keeps packaged behavior aligned with overlay sources without rebuilding the environment-specific runtime snapshot.
 
 `.github/workflows/beta-release.yml` runs on pushes to `beta` or manual dispatch, stamps a `-beta.<run>` prerelease version, and publishes the equivalent Windows artifacts with `beta.yml`.

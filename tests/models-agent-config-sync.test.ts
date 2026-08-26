@@ -43,6 +43,45 @@ afterEach(() => {
 
 // @lat: [[provider-setup#Provider setup#Agent config sync for named providers#Model library merges custom_providers on every read]]
 describe("agent-config model sync", () => {
+  it("refreshes a model protocol without duplicating it or changing another model", async () => {
+    const models = await freshModels();
+    const url = "http://company.example/v1";
+    const old = models.addModel(
+      "GPT",
+      "custom",
+      "gpt-luna",
+      url,
+      undefined,
+      "Company Platform",
+    );
+    models.addModel(
+      "DeepSeek",
+      "custom",
+      "deepseek",
+      url,
+      undefined,
+      "Company Platform",
+      "chat_completions",
+    );
+    const updated = models.addModel(
+      "GPT",
+      "custom",
+      "gpt-luna",
+      url,
+      undefined,
+      "Company Platform Responses",
+      "codex_responses",
+    );
+    expect(updated.id).toBe(old.id);
+    expect(updated.apiMode).toBe("codex_responses");
+    expect(updated.providerLabel).toBe("Company Platform Responses");
+    expect(
+      models.readModels().filter((entry) => entry.model === "gpt-luna"),
+    ).toHaveLength(1);
+    expect(
+      models.readModels().find((entry) => entry.model === "deepseek")?.apiMode,
+    ).toBe("chat_completions");
+  });
   it("merges custom_providers entries added after first seed", async () => {
     const models = await freshModels();
     // First read seeds the defaults with no custom providers configured.

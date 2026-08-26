@@ -9,6 +9,10 @@ import { tmpdir } from "os";
 // which breaks every test that dynamically imports the installer module.
 // Provide a minimal stub so the import resolves.
 vi.mock("electron", () => ({
+  app: {
+    isPackaged: false,
+    getPath: (): string => process.cwd(),
+  },
   BrowserWindow: class {
     static getAllWindows(): unknown[] {
       return [];
@@ -231,6 +235,26 @@ describe("Memory provider discovery", () => {
     const content = readFileSync(configPath, "utf-8");
     const match = content.match(/^\s*provider:\s*["']?(\w+)["']?\s*$/m);
     expect(match).toBeNull();
+  });
+});
+
+describe("stock SOUL identity migration", () => {
+  // @lat: [[main-process#Offline Windows runtime#Model-visible Agent identity]]
+  it("rebrands only recognized stock prompt text", async () => {
+    const { migrateStockSoulIdentity } = await import("../src/main/installer");
+    const custom = "Keep my custom personality and tone exactly as written.";
+    const legacy =
+      "You are an Agent, an intelligent AI assistant created by Nous Research.\n\n" +
+      "This offline build of Hermes One does not include Git Bash.\n\n" +
+      custom;
+
+    const migrated = migrateStockSoulIdentity(legacy);
+    expect(migrated).toContain(
+      "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+    );
+    expect(migrated).toContain("This offline build of JingYu Agent");
+    expect(migrated).toContain(custom);
+    expect(migrateStockSoulIdentity(migrated)).toBe(migrated);
   });
 });
 

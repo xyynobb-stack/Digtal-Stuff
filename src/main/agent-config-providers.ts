@@ -185,26 +185,43 @@ function yamlQuote(value: string): string {
 
 function renderEntry(
   indent: string,
-  input: { slug: string; name: string; baseUrl: string; keyEnv: string },
+  input: {
+    slug: string;
+    name: string;
+    baseUrl: string;
+    keyEnv: string;
+    apiMode?: string;
+    models?: string[];
+  },
 ): string {
   const sub = indent + "  ";
   return (
     `${indent}${input.slug}:\n` +
     `${sub}name: ${yamlQuote(input.name)}\n` +
     `${sub}base_url: ${yamlQuote(input.baseUrl)}\n` +
-    (input.keyEnv ? `${sub}key_env: ${yamlQuote(input.keyEnv)}\n` : "")
+    (input.keyEnv ? `${sub}key_env: ${yamlQuote(input.keyEnv)}\n` : "") +
+    (input.apiMode ? `${sub}api_mode: ${yamlQuote(input.apiMode)}\n` : "") +
+    (input.models ? `${sub}models: ${JSON.stringify(input.models)}\n` : "")
   );
 }
 
 /**
  * Create or update a `providers:` entry in config.yaml. An existing entry is
- * matched by `key_env`, then by slug — so a desktop re-save updates the
- * terminal-visible block in place instead of duplicating it. Updates patch
- * only the `name`/`base_url`/`key_env` values; other fields are preserved.
+ * matched by explicit slug, or otherwise by `key_env` then derived slug.
+ * Explicit slugs allow separate protocol routes to share credentials.
+ * Optional protocol/model fields are only updated when supplied; unrelated
+ * fields and comments are preserved.
  */
 export function upsertAgentUserProvider(
   profile: string | undefined,
-  input: { name: string; baseUrl: string; keyEnv: string; slug?: string },
+  input: {
+    name: string;
+    baseUrl: string;
+    keyEnv: string;
+    slug?: string;
+    apiMode?: string;
+    models?: string[];
+  },
 ): void {
   const name = (input.name || "").trim();
   const baseUrl = (input.baseUrl || "").trim();
@@ -213,7 +230,14 @@ export function upsertAgentUserProvider(
 
   const { file, content } = readConfig(profile);
   const block = findProvidersBlock(content);
-  const entry = { slug, name, baseUrl, keyEnv: input.keyEnv || "" };
+  const entry = {
+    slug,
+    name,
+    baseUrl,
+    keyEnv: input.keyEnv || "",
+    apiMode: input.apiMode,
+    models: input.models,
+  };
 
   if (!block) {
     // The agent's config scaffold writes an inline empty dict (`providers: {}`),
@@ -244,10 +268,12 @@ export function upsertAgentUserProvider(
     return;
   }
 
-  const existing =
-    block.entries.find(
-      (e) => input.keyEnv && e.fields.get("key_env")?.value === input.keyEnv,
-    ) ?? block.entries.find((e) => e.slug === slug);
+  // Explicit slugs identify independent routes even when credentials are shared.
+  const existing = input.slug
+    ? block.entries.find((e) => e.slug === slug)
+    : (block.entries.find(
+        (e) => input.keyEnv && e.fields.get("key_env")?.value === input.keyEnv,
+      ) ?? block.entries.find((e) => e.slug === slug));
 
   if (!existing) {
     const rendered = renderEntry(block.childIndent, entry);
@@ -270,23 +296,54 @@ export function upsertAgentUserProvider(
     ["name", name],
     [urlField, baseUrl],
     ...(entry.keyEnv ? [["key_env", entry.keyEnv] as [string, string]] : []),
+    ...(entry.apiMode ? [["api_mode", entry.apiMode] as [string, string]] : []),
+    ...(entry.models
+      ? [["models", JSON.stringify(entry.models)] as [string, string]]
+      : []),
   ];
   const patches: { start: number; end: number; text: string }[] = [];
   const fieldIndent = existing.fieldIndent || block.childIndent + "  ";
   for (const [key, value] of wanted) {
     const span = existing.fields.get(key);
+    const renderedValue = key === "models" ? value : yamlQuote(value);
     if (span) {
       if (span.value === value) continue;
+      if (key === "models") {
+        // The Agent may rewrite inline models as a block list/map. Replace
+        // the whole managed value, not just its empty header scalar, or the
+        // old children would remain under the new inline list (invalid YAML).
+        const firstNewline = content.indexOf("\n", span.valueStart);
+        let end = firstNewline < 0 ? content.length : firstNewline + 1;
+        let offset = end;
+        for (const line of content.slice(end).split(/(?<=\n)/)) {
+          const text = line.trim();
+          const indent = line.length - line.trimStart().length;
+          if (
+            text &&
+            indent <= fieldIndent.length &&
+            !(indent === fieldIndent.length && /^-\s/.test(text))
+          )
+            break;
+          offset += line.length;
+          if (text) end = offset;
+        }
+        patches.push({
+          start: span.valueStart,
+          end,
+          text: `${content[span.valueStart - 1] === ":" ? " " : ""}${renderedValue}\n`,
+        });
+        continue;
+      }
       patches.push({
         start: span.valueStart,
         end: span.valueEnd,
-        text: yamlQuote(value),
+        text: renderedValue,
       });
     } else {
       patches.push({
         start: existing.headerEnd,
         end: existing.headerEnd,
-        text: `${fieldIndent}${key}: ${yamlQuote(value)}\n`,
+        text: `${fieldIndent}${key}: ${renderedValue}\n`,
       });
     }
   }
@@ -297,6 +354,164 @@ export function upsertAgentUserProvider(
     next = next.slice(0, p.start) + p.text + next.slice(p.end);
   }
   safeWriteFile(file, next);
+}
+
+const DESKTOP_FALLBACK_BEGIN = "# JINGYU_DESKTOP_MANAGED_FALLBACK_BEGIN";
+const DESKTOP_FALLBACK_END = "# JINGYU_DESKTOP_MANAGED_FALLBACK_END";
+
+function renderManagedFallback(input: {
+  provider: string;
+  model: string;
+  baseUrl: string;
+  keyEnv: string;
+  apiMode: string;
+}): string {
+  return (
+    `  ${DESKTOP_FALLBACK_BEGIN}\n` +
+    `  - provider: ${yamlQuote(input.provider)}\n` +
+    `    model: ${yamlQuote(input.model)}\n` +
+    `    base_url: ${yamlQuote(input.baseUrl)}\n` +
+    `    key_env: ${yamlQuote(input.keyEnv)}\n` +
+    `    api_mode: ${yamlQuote(input.apiMode)}\n` +
+    `  ${DESKTOP_FALLBACK_END}\n`
+  );
+}
+
+/**
+ * Add or update the single desktop-managed provider fallback while preserving
+ * any fallbacks the terminal user configured themselves. The begin/end
+ * comments make repeated employee provisioning idempotent without parsing and
+ * rewriting the rest of config.yaml.
+ */
+export function upsertAgentManagedFallback(
+  profile: string | undefined,
+  input: {
+    provider: string;
+    model: string;
+    baseUrl: string;
+    keyEnv: string;
+    apiMode: string;
+  },
+): boolean {
+  if (
+    !input.provider.trim() ||
+    !input.model.trim() ||
+    !input.baseUrl.trim() ||
+    !input.keyEnv.trim() ||
+    !input.apiMode.trim()
+  )
+    return false;
+
+  const { file, content } = readConfig(profile);
+  const rendered = renderManagedFallback(input);
+  const managedPattern = new RegExp(
+    `^[ \\t]*${DESKTOP_FALLBACK_BEGIN}[\\s\\S]*?^[ \\t]*${DESKTOP_FALLBACK_END}\\r?\\n?`,
+    "m",
+  );
+  const managed = content.match(managedPattern);
+  if (managed?.index !== undefined) {
+    const indent = content
+      .slice(managed.index, managed.index + managed[0].length)
+      .match(/^[ \t]*/)?.[0];
+    if (indent !== "  " && indent !== "") return false;
+    const replacement =
+      indent === "" ? rendered.replace(/^ {2}/gm, "") : rendered;
+    const next =
+      content.slice(0, managed.index) +
+      replacement +
+      content.slice(managed.index + managed[0].length);
+    if (next !== content) safeWriteFile(file, next);
+    return true;
+  }
+
+  const inlineEmpty = content.match(
+    /^fallback_providers[^\S\r\n]*:[^\S\r\n]*\[[^\S\r\n]*\][^\S\r\n]*(#.*)?\r?\n?/m,
+  );
+  if (inlineEmpty?.index !== undefined) {
+    safeWriteFile(
+      file,
+      content.slice(0, inlineEmpty.index) +
+        `fallback_providers:\n${rendered}` +
+        content.slice(inlineEmpty.index + inlineEmpty[0].length),
+    );
+    return true;
+  }
+
+  const header = content.match(
+    /^fallback_providers[^\S\r\n]*:[^\S\r\n]*(#.*)?\r?\n/m,
+  );
+  if (header?.index !== undefined) {
+    const bodyStart = header.index + header[0].length;
+    let bodyEnd = bodyStart;
+    for (const line of content.slice(bodyStart).split(/(?<=\n)/)) {
+      const plain = line.replace(/\r?\n$/, "");
+      if (plain.trim() && !/^[ \t#-]/.test(plain)) break;
+      bodyEnd += line.length;
+    }
+    const body = content.slice(bodyStart, bodyEnd);
+    // PyYAML may remove comments and serialize an indentless list. Recognize
+    // the owned entry by its credential reference as well as marker comments.
+    const items = [...body.matchAll(/^([ \t]*)-\s+/gm)];
+    const listIndent = items[0]?.[1] ?? "  ";
+    const replacement = rendered.replace(/^ {2}/gm, listIndent);
+    for (let index = 0; index < items.length; index++) {
+      const start = items[index].index!;
+      const end = items[index + 1]?.index ?? body.length;
+      const item = body.slice(start, end);
+      const keyEnv = item.match(
+        /(?:^|\n)\s*(?:-\s*)?key_env\s*:\s*([^\r\n]+)/,
+      )?.[1];
+      if (keyEnv && stripScalar(keyEnv) === input.keyEnv) {
+        safeWriteFile(
+          file,
+          content.slice(0, bodyStart + start) +
+            replacement +
+            content.slice(bodyStart + end),
+        );
+        return true;
+      }
+    }
+    // Put the explicitly selected backup first; keep other user entries intact.
+    safeWriteFile(
+      file,
+      content.slice(0, bodyStart) + replacement + content.slice(bodyStart),
+    );
+    return true;
+  }
+
+  // A non-empty flow list cannot be safely edited textually without owning
+  // its formatting. Leave it untouched rather than creating a duplicate key.
+  if (/^fallback_providers[^\S\r\n]*:/m.test(content)) return false;
+  const separator = content === "" || content.endsWith("\n") ? "" : "\n";
+  safeWriteFile(file, `${content}${separator}fallback_providers:\n${rendered}`);
+  return true;
+}
+
+/** Mirror a locally provisioned backup without persisting any secret in YAML. */
+export function mirrorCompanyFallbackProvider(profile?: string): boolean {
+  const { envFile } = profilePaths(profile);
+  if (!existsSync(envFile)) return false;
+  const env = readFileSync(envFile, "utf-8");
+  if (!/^\s*AIHUB_API_KEY\s*=\s*\S+/m.test(env)) return false;
+  // Only employee profiles opt into this backup. No global OS-env key can
+  // silently enable sending another profile's data to a third-party gateway.
+  if (!/^\s*CUSTOM_PROVIDER_COMPANY_PLATFORM_KEY\s*=\s*\S+/m.test(env))
+    return false;
+  upsertAgentUserProvider(profile, {
+    name: "AIHub Responses Fallback",
+    slug: "aihub-responses",
+    baseUrl: "https://aihub.dog/v1",
+    keyEnv: "AIHUB_API_KEY",
+    apiMode: "codex_responses",
+    models: ["gpt-5.6-terra"],
+  });
+  return upsertAgentManagedFallback(profile, {
+    provider: "custom:aihub-responses",
+    model: "gpt-5.6-terra",
+    baseUrl: "https://aihub.dog/v1",
+    keyEnv: "AIHUB_API_KEY",
+    apiMode: "codex_responses",
+  });
 }
 
 /** Remove a `providers:` entry matched by key_env, or by slug derived from
@@ -341,6 +556,7 @@ const HERMESONE_BASE_URL = "https://inference.hermesone.org/v1";
  */
 export function mirrorFirstPartyAgentProviders(profile?: string): void {
   try {
+    mirrorCompanyFallbackProvider(profile);
     const { envFile } = profilePaths(profile);
     if (!existsSync(envFile)) return;
     const env = readFileSync(envFile, "utf-8");

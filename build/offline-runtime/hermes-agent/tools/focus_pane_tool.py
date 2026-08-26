@@ -40,7 +40,7 @@ def check_focus_pane_requirements() -> bool:
 FOCUS_PANE_SCHEMA = {
     "name": "focus_pane",
     "description": (
-        "Reveal and focus a pane in the Hermes desktop app when the user asks to "
+        "Reveal and focus a pane in the JingYu Agent desktop app when the user asks to "
         "see it — e.g. \"show me the terminal\", \"open the file browser\", \"show "
         "the diff\". Panes: chat (the conversation), files (project file browser), "
         "terminal (embedded shell), review (git diff), sessions (the session list). "

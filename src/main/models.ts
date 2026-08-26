@@ -454,6 +454,7 @@ export function addModel(
   baseUrl: string,
   contextLength?: number,
   providerLabel?: string,
+  apiMode?: string,
 ): SavedModel {
   const models = readModelsRaw();
 
@@ -473,11 +474,24 @@ export function addModel(
       m.provider === provider &&
       norm(m.baseUrl) === norm(baseUrl),
   );
-  if (existing)
+  if (existing) {
+    // Provisioning refreshes the complete route before publishing its allowlist.
+    // Keep omitted fields intact for existing callers.
+    if (
+      apiMode !== undefined &&
+      (existing.apiMode !== apiMode ||
+        (providerLabel !== undefined &&
+          existing.providerLabel !== providerLabel))
+    ) {
+      existing.apiMode = apiMode;
+      if (providerLabel !== undefined) existing.providerLabel = providerLabel;
+      writeModels(models);
+    }
     return {
       ...existing,
       ...(ctx !== undefined ? { contextLength: ctx } : {}),
     };
+  }
 
   const entry: SavedModelRow = {
     id: randomUUID(),
@@ -486,6 +500,7 @@ export function addModel(
     model,
     baseUrl: baseUrl || "",
     ...(providerLabel ? { providerLabel } : {}),
+    ...(apiMode !== undefined ? { apiMode } : {}),
     createdAt: Date.now(),
   };
   models.push(entry);

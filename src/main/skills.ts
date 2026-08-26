@@ -161,9 +161,41 @@ export function listInstalledSkills(profile?: string): InstalledSkill[] {
   );
 }
 
+/**
+ * Mark profile-local legacy imports that predate the `custom/` ownership
+ * boundary. A local skill is system-owned only when the bundled Agent contains
+ * the same category/directory entry; everything else must obey per-chat user
+ * activation even if an old import preserved a product-looking category.
+ */
+export function ensureLegacyUserSkillMarkers(profile?: string): void {
+  // Never infer ownership without the bundled inventory. During a first-run
+  // install the Agent repo may not exist yet; marking everything at that point
+  // would incorrectly hide genuine system skills behind per-chat activation.
+  if (!existsSync(join(HERMES_REPO, "skills"))) return;
+
+  for (const skill of listInstalledSkills(profile)) {
+    if (existsSync(join(skill.path, USER_ADDED_SKILL_MARKER))) continue;
+    const entry = basename(skill.path);
+    const bundledSkillFile = join(
+      HERMES_REPO,
+      "skills",
+      skill.category,
+      entry,
+      "SKILL.md",
+    );
+    if (existsSync(bundledSkillFile)) continue;
+    try {
+      markSkillAsUserAdded(skill.path);
+    } catch {
+      // Best effort: read-only profiles retain their current skills.
+    }
+  }
+}
+
 /** Return only user-added custom skills for the per-chat picker. */
 export function listUserAddedSkills(profile?: string): InstalledSkill[] {
   ensureStarterUserSkills(profile);
+  ensureLegacyUserSkillMarkers(profile);
   return listInstalledSkills(profile).filter(
     (skill) =>
       skill.category.toLowerCase() === "custom" ||

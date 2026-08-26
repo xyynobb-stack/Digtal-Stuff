@@ -149,7 +149,65 @@ export function patchTtsRequirementsSource(source) {
 }
 
 /**
- * @returns {{agentRoot: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, ttsToolPath: string, desktopMethods: string}}
+ * Make every ordinary process launched from an Execute Code sandbox inherit
+ * the Desktop's no-console policy on Windows. The outer sandbox process is
+ * already hidden, but model-authored subprocess/os.system calls otherwise
+ * create visible cmd.exe or PowerShell windows of their own.
+ *
+ * @returns {string} Execute Code source with a sandbox-local sitecustomize.
+ */
+export function patchExecuteCodeWindowsChildSource(source) {
+  const marker = "HERMES_DESKTOP_HIDE_CHILD_CONSOLES";
+  if (source.includes(marker)) return source;
+
+  const normalized = source.replace(/\r\n/g, "\n");
+  const anchor = `        _script_path = os.path.join(tmpdir, "script.py")`;
+  if (!normalized.includes(anchor)) {
+    throw new Error("Execute Code child-process patch marker was not found");
+  }
+
+  const injection = `${anchor}
+
+        # HERMES_DESKTOP_HIDE_CHILD_CONSOLES
+        # The sandbox itself uses CREATE_NO_WINDOW, but Windows does not pass
+        # that creation flag to grandchildren. sitecustomize is loaded before
+        # the model-authored script because tmpdir is first on PYTHONPATH.
+        if _IS_WINDOWS:
+            _sitecustomize_path = os.path.join(tmpdir, "sitecustomize.py")
+            with open(_sitecustomize_path, "w", encoding="utf-8") as _site_file:
+                _site_file.write(r'''import os as _os
+import subprocess as _subprocess
+
+_hermes_original_popen = _subprocess.Popen
+
+class _HermesHiddenPopen(_hermes_original_popen):
+    def __init__(self, *args, **kwargs):
+        _flags = int(kwargs.get("creationflags") or 0)
+        _flags &= ~int(getattr(_subprocess, "CREATE_NEW_CONSOLE", 0))
+        _flags |= int(getattr(_subprocess, "CREATE_NO_WINDOW", 0))
+        kwargs["creationflags"] = _flags
+
+        _startup = kwargs.get("startupinfo")
+        if _startup is None:
+            _startup = _subprocess.STARTUPINFO()
+        _startup.dwFlags |= _subprocess.STARTF_USESHOWWINDOW
+        _startup.wShowWindow = _subprocess.SW_HIDE
+        kwargs["startupinfo"] = _startup
+        super().__init__(*args, **kwargs)
+
+_subprocess.Popen = _HermesHiddenPopen
+
+def _hermes_hidden_system(command):
+    return _subprocess.call(command, shell=True)
+
+_os.system = _hermes_hidden_system
+''')`;
+
+  return normalized.replace(anchor, injection);
+}
+
+/**
+ * @returns {{agentRoot: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, ttsToolPath: string, executeCodeToolPath: string, desktopMethods: string}}
  * Paths for the verified staged overlay.
  */
 export function applyOfflineRuntimeOverlays({
@@ -169,6 +227,11 @@ export function applyOfflineRuntimeOverlays({
   );
   const dashboardCliPath = path.join(agentRoot, "hermes_cli", "main.py");
   const ttsToolPath = path.join(agentRoot, "tools", "tts_tool.py");
+  const executeCodeToolPath = path.join(
+    agentRoot,
+    "tools",
+    "code_execution_tool.py",
+  );
   if (!fs.existsSync(agentRoot)) {
     throw new Error(`Staged Hermes Agent runtime not found: ${agentRoot}`);
   }
@@ -186,6 +249,9 @@ export function applyOfflineRuntimeOverlays({
   }
   if (!fs.existsSync(ttsToolPath)) {
     throw new Error(`TTS tool not found: ${ttsToolPath}`);
+  }
+  if (!fs.existsSync(executeCodeToolPath)) {
+    throw new Error(`Execute Code tool not found: ${executeCodeToolPath}`);
   }
 
   fs.cpSync(overlayRoot, agentRoot, { recursive: true, force: true });
@@ -206,6 +272,13 @@ export function applyOfflineRuntimeOverlays({
   fs.writeFileSync(
     ttsToolPath,
     patchTtsRequirementsSource(fs.readFileSync(ttsToolPath, "utf8")),
+    "utf8",
+  );
+  fs.writeFileSync(
+    executeCodeToolPath,
+    patchExecuteCodeWindowsChildSource(
+      fs.readFileSync(executeCodeToolPath, "utf8"),
+    ),
     "utf8",
   );
 
@@ -234,6 +307,7 @@ export function applyOfflineRuntimeOverlays({
     dashboardServerPath,
     dashboardCliPath,
     ttsToolPath,
+    executeCodeToolPath,
     desktopMethods,
   };
 }

@@ -195,6 +195,48 @@ const LIVE_TOOL_CALL = (
 });
 
 describe("reconcileStreamedWithDb", () => {
+  // @lat: [[lat.md/rag-mvp#Tests#Final database content replaces streamed previews]]
+  it("replaces a prefix-matched streamed preview with canonical DB content", () => {
+    const sharedPrefix = "报告生成完成。".repeat(30);
+    const streamedContent = `${sharedPrefix}\n\n| 第4章 | 5大能力缺口、8项建议与`;
+    const dbContent = `${sharedPrefix}\n\n| 第4章 | 5大能力缺口、8项建议与取舍方案 |\n| 第5章 | 市场趋势 |`;
+    const merged = reconcileStreamedWithDb(
+      [STREAMED_AGENT(streamedContent, "streamed-final")],
+      [DB_AGENT(dbContent, 99)],
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: "streamed-final",
+      role: "agent",
+      content: dbContent,
+    });
+  });
+
+  // @lat: [[lat.md/rag-mvp#Tests#Live stream remains authoritative while the database lags]]
+  it("does not roll a live assistant bubble back to a lagging DB snapshot", () => {
+    const sharedPrefix = "正在生成市场报告。".repeat(30);
+    const streamedContent = `${sharedPrefix}第 3 波包含第 2 章到第 7 章。`;
+    const laggingDbContent = `${sharedPrefix}第 3 波包含第 2 章`;
+    const streamed = {
+      ...STREAMED_AGENT(streamedContent, "streamed-active"),
+      pending: true,
+    };
+
+    const merged = reconcileAfterDbRefresh(
+      [streamed],
+      [DB_AGENT(laggingDbContent, 100)],
+      { phase: "live" },
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: "streamed-active",
+      content: streamedContent,
+      pending: true,
+    });
+  });
+
   it("reconciles a persisted skill envelope with the one visible user bubble", () => {
     const streamed = [STREAMED_USER("你好", "user-visible")];
     const db = dbItemsToChatMessages([

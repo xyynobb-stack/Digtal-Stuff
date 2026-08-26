@@ -12,13 +12,13 @@ The temporary MVP has two remote operations: [[resources/hermes-agent-overlays/s
 
 The Skill is a Desktop-owned Hermes runtime overlay so it is discoverable as a bundled Skill and is not gated as a per-chat user custom Skill.
 
-The canonical files live under `resources/hermes-agent-overlays/skills/research/market-report-rag`. Offline runtime preparation and overlay application copy the whole tree into the staged Agent runtime. Bundled skill synchronization then installs or updates it in a profile using the existing manifest rules described by [[chat-commands#Slash command execution#Session Skill activation]].
+The canonical files live under `resources/hermes-agent-overlays/skills/research/market-report-rag`. Offline overlay application copies the tree into the staged Agent runtime. Before `npm run dev`, `syncDevMarketReportSkill` refreshes both the installed development Agent and default profile so a stale profile copy cannot shadow the canonical Skill. Ownership follows [[chat-commands#Slash command execution#Session Skill activation]].
 
 ## Configuration boundary
 
-Endpoint and test-schema defaults are non-secret, while an enabled database credential remains a runtime environment variable.
+Endpoint and test-schema defaults are non-secret, while an enabled database credential remains a runtime environment variable. The Skill's evidence boundary is fixed to `my_skill_kb`.
 
-[[resources/hermes-agent-overlays/skills/research/market-report-rag/scripts/rag_client.py#load_milvus_config]] defaults to database `default`, collection `my_skill_kb`, fields `embedding`/`text`/`source`, 1024 dimensions, and inner-product search while keeping every value overridable. `MILVUS_TOKEN` is passed only when configured.
+[[resources/hermes-agent-overlays/skills/research/market-report-rag/scripts/rag_client.py#load_milvus_config]] uses database `default`, fixed collection `my_skill_kb`, fields `embedding`/`text`/`source`, 1024 dimensions, and inner-product search. An alternate `MILVUS_COLLECTION` fails before embedding or network access. `MILVUS_TOKEN` is passed only when configured.
 
 Only `text` and `source` are requested as output fields. The stored 1024-dimensional vector is not returned to the Agent context.
 
@@ -42,17 +42,27 @@ The client is constructed inside the invocation and closed in `finally`. Search 
 
 ## Query and report orchestration
 
-The model rewrites user goals into evidence-oriented questions and generates chapter content; Python performs no LLM rewriting or prose generation, but a process-local state machine validates chapter transitions.
+The model rewrites user goals into evidence-oriented questions and generates chapter content; Python performs no LLM rewriting or prose generation, but a process-local state machine validates collection provenance and generation waves.
 
-For the full report, the source map in the Skill reference fixes what each section needs. The Agent first retrieves project, quality, closeout, personnel, capacity, tool, SOP, and interview evidence in a small batch. It builds sections 0.1 and 0.2, derives the capability matrix 0.3, and reuses that structured context for later sections.
+For the full report, the source map in the Skill reference fixes what each section needs. The Agent retrieves project, quality, closeout, personnel, capacity, tool, SOP, and interview evidence in a small batch from `my_skill_kb`. It builds 1.1 and 1.2 together, derives capability matrix 1.3, and reuses the whole chapter-1 foundation for chapters 2–7.
 
 A supplement retrieval happens only when a required evidence category is missing. It names the missing document, entity, time range, or field and is capped at two rounds. Generated report prose is never treated as retrieved evidence.
 
-[[resources/hermes-agent-overlays/tools/market_report_workflow_state.py#MarketReportWorkflowStore]] enforces one-section-at-a-time generation in the fixed order. Section 0.3 becomes an immutable capability matrix carried into every later section, and finalization fails until all sections are present.
+[[resources/hermes-agent-overlays/tools/market_report_workflow_state.py#MarketReportWorkflowStore]] enforces three atomic generation waves: 1.1+1.2, then 1.3, then all remaining units in chapters 2–7. Section 1.3 becomes immutable, and finalization fails until every unit is present.
+
+The RAG result's collection is required by `start`. The client rejects alternate collection configuration, and the state machine rejects both a wrong collection value and explicit references to known alternate project collections in evidence summaries or chapter content.
 
 The state tool rejects oversized chapter submissions rather than silently truncating them. The model must produce a more compact structured chapter and resubmit it, preserving whole evidence statements and source references.
 
 The composition prompt contains task, evidence, output goal and structure, and evidence constraints. It intentionally omits a separate detailed writing-style block so format and traceability remain stable without over-constraining prose.
+
+## Word report delivery
+
+A full report is delivered as a Word `.docx` file rather than pasted into chat as Markdown.
+
+After the chapter state machine finalizes the ordered report content, the Agent loads the bundled `docx` Skill and creates the document in the turn-scoped output directory described by [[context-folder#Linked working folder#Output destination]]. The chat response contains the resulting file path and a short completion message. Missing DOCX dependencies are reported explicitly and never trigger a silent Markdown fallback.
+
+The Word outline is immutable: seven chapters numbered 1–7, containing all 13 state-machine units. Chapter 1 is the evidence foundation. The DOCX Skill performs formatting only and cannot substitute a generic outline, rename sections, or create the file before workflow finalization succeeds.
 
 ## Concurrency decisions
 
@@ -60,7 +70,17 @@ RAG invocations share no mutable Python state. Chapter orchestration has bounded
 
 There is no module-global Milvus connection, output file, cache, lock, or mutable configuration. Each process reads an immutable environment snapshot, embeds one batch, opens one Milvus client, performs one search, and closes it. A failed search cannot leave a shared connection or partial result file behind.
 
-[[resources/hermes-agent-overlays/tools/market_report_workflow_state.py#MarketReportWorkflowStore]] serializes state transitions with an in-process reentrant lock. It keeps at most 128 task states and never writes a shared state file, so concurrent chats cannot overwrite each other and separate Agent processes cannot race on disk. State intentionally does not survive an Agent restart.
+[[resources/hermes-agent-overlays/tools/market_report_workflow_state.py#MarketReportWorkflowStore]] validates a whole wave before mutating state, then serializes its atomic commit with an in-process reentrant lock. It keeps at most 128 task states and never writes a shared state file, so concurrent chats cannot overwrite each other. State intentionally does not survive an Agent restart.
+
+## Final message reconciliation
+
+Live generation and final transcript repair use different content authorities so a lagging database snapshot cannot roll the visible response backward.
+
+While an active turn is running, the streamed Assistant and reasoning text remain authoritative; database polling may still add persisted tool rows, attachments, timestamps, and earlier completed rows, but it cannot replace or truncate the current live text or clear its pending state.
+
+After `chat-done`, the authority reverses. Long bubbles are matched by a normalized prefix to prevent DOM remounts, and the persisted Assistant content replaces a dropped stream tail while preserving the live React identity. User content is excluded because persisted user rows can contain hidden attachment transport wrappers.
+
+`chat-done` can arrive before the final SQLite update becomes visible. The renderer therefore performs a bounded settle poll and finishes only after a terminal Assistant `finish_reason` and its full transcript snapshot remain stable; each intermediate snapshot repairs late reasoning and answer content immediately.
 
 The wider Desktop has existing check-then-copy windows while provisioning custom or bundled Skills. This Skill avoids adding another profile-copy path by using the managed runtime overlay and relies on the existing atomic bundled manifest write. Concurrent first-time profile seeding remains an upstream lifecycle concern, not retrieval state shared by this implementation.
 
@@ -69,6 +89,8 @@ The wider Desktop has existing check-then-copy windows while provisioning custom
 Expected failures are machine-readable and must not turn into fabricated internal facts.
 
 Configuration, dependency, embedding, Milvus search, and response-shape failures return a JSON error code and a nonzero exit status. Tokens are never included in success output or error text. `--check-config` validates settings without importing `pymilvus` or contacting either service.
+
+A stalled or otherwise unexecuted tool call is a runtime failure, not an empty retrieval result. The Agent retries it once and then stops for user retry; it cannot advance chapter state, finalize, or create a DOCX. If the chapter workflow tool is absent from a live session, free-form report generation is forbidden and the Agent must be restarted or reconfigured.
 
 ## Tests
 
@@ -86,10 +108,30 @@ An explicitly empty URI, database, or collection stops the workflow before embed
 
 Multiple queries use one embedding batch and one Milvus search, the client always closes, normalized evidence is returned, and credentials are absent from output.
 
-### Chapter orchestration preserves dependencies
+### Wave orchestration preserves dependencies
 
-The workflow rejects out-of-order and duplicate sections, freezes 0.3 for dependent chapters, caps focused supplement retrieval at two rounds, and refuses finalization before all chapters exist.
+The workflow atomically accepts only the complete expected wave, freezes 1.3 for chapters 2–7, caps focused supplement retrieval at two rounds, and refuses finalization before all units exist.
 
-### Concurrent chapter updates are serialized
+### Concurrent wave updates are serialized
 
-Concurrent updates for the same task allow only the valid next transition, while different task identifiers retain independent chapter progress.
+Concurrent wave commits for the same task allow only one valid transition, while different task identifiers retain independent progress.
+
+### Alternate collection configuration fails closed
+
+The retrieval client fails before embedding or Milvus client construction when configuration names any collection other than `my_skill_kb`.
+
+### Report provenance rejects wrong collections
+
+Report state rejects mismatched provenance and explicit alternate-collection claims before committing any generated section.
+
+### Final database content replaces streamed previews
+
+A prefix-matched incomplete Assistant stream bubble keeps its React id but receives the full persisted content; user attachment wrappers remain hidden.
+
+### Live stream remains authoritative while the database lags
+
+During an active turn, a prefix-matched shorter database snapshot cannot replace the longer streamed Assistant text, remove its pending state, or collapse an in-progress reasoning row.
+
+### Completion waits for the persisted terminal transcript
+
+After `chat-done`, the renderer keeps polling through partial snapshots until the final Assistant finish marker and the complete reasoning-and-answer snapshot are stable, with a bounded timeout for legacy runtimes.

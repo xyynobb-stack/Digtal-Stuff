@@ -1434,7 +1434,7 @@ def parse_tool_calls(raw):
     return out
 
 rows = conn.execute(
-    "SELECT id, role, content, timestamp, tool_call_id, tool_calls, tool_name, "
+    "SELECT id, role, content, timestamp, finish_reason, tool_call_id, tool_calls, tool_name, "
     "reasoning, reasoning_content, reasoning_details "
     "FROM messages WHERE session_id = ? AND role IN ('user','assistant','tool') "
     "ORDER BY timestamp, id",
@@ -1453,7 +1453,9 @@ for r in rows:
         if reasoning_text:
             items.append({"kind":"reasoning","id":r["id"],"assistantId":r["id"],"text":reasoning_text,"timestamp":r["timestamp"]})
         if text:
-            items.append({"kind":"assistant","id":r["id"],"content":text,"timestamp":r["timestamp"]})
+            item = {"kind":"assistant","id":r["id"],"content":text,"timestamp":r["timestamp"]}
+            if r["finish_reason"]: item["finishReason"] = r["finish_reason"]
+            items.append(item)
         for tc in parse_tool_calls(r["tool_calls"]):
             items.append({"kind":"tool_call","id":r["id"],"assistantId":r["id"],"callId":tc["callId"],"name":tc["name"],"args":tc["args"],"timestamp":r["timestamp"]})
         continue

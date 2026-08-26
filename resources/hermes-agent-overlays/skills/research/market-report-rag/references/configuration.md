@@ -1,6 +1,6 @@
 # MVP Configuration
 
-Configure the retrieval client through environment variables so credentials and the unfinished collection schema are not committed to the Desktop repository.
+Configure endpoints and credentials through environment variables. This Skill's evidence boundary is the fixed `my_skill_kb` collection; setting another collection is a configuration error.
 
 ## Optional credential
 
@@ -26,7 +26,7 @@ MILVUS_METRIC_TYPE=IP
 EMBEDDING_DIMENSION=1024
 ```
 
-The Milvus administration page is `http://183.230.227.10:9867/#/databases/default/my_skill_kb/schema`; it is for inspection, not the Python client connection. Override the values above when services or the collection move. `EMBEDDING_API_KEY` is optional and, when set, is sent as a bearer token.
+The Milvus administration page is `http://183.230.227.10:9867/#/databases/default/my_skill_kb/schema`; it is for inspection, not the Python client connection. Endpoint and schema-field values may move with the service, but `MILVUS_COLLECTION` must remain exactly `my_skill_kb` for this Skill. `EMBEDDING_API_KEY` is optional and, when set, is sent as a bearer token.
 
 ## Collection schema values
 

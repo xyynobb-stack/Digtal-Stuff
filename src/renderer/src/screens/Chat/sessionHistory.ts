@@ -17,6 +17,7 @@ export interface DbHistoryItem {
   kind: "user" | "assistant" | "reasoning" | "tool_call" | "tool_result";
   id: number;
   content?: string;
+  finishReason?: string;
   error?: string;
   text?: string;
   callId?: string;
@@ -289,14 +290,20 @@ function consumeCanonicalToolMatch(
 }
 
 /**
- * Merge DB-only metadata (e.g. attachments) into a streamed message
- * while preserving the streamed message's React identity (id).
+ * Merge the canonical DB bubble into a streamed message while preserving the
+ * streamed message's React identity (id).
  * This prevents React from remounting the DOM node, which would
  * disrupt scroll position and cause visual reordering.
+ *
+ * The DB content must win at end-of-stream. Reconciliation intentionally keys
+ * long bubbles by their first 200 characters, so a dropped stream tail can
+ * match the complete persisted row. Keeping the streamed content in that case
+ * leaves a permanently truncated bubble even though state.db is complete.
  */
 function mergeDbMetadataIntoStreamed(
   streamed: ChatMessage,
   db: ChatMessage,
+  contentAuthority: "stream" | "database",
 ): ChatMessage {
   // Only bubble messages carry mergeable metadata.
   if ("kind" in streamed) return streamed;
@@ -306,17 +313,28 @@ function mergeDbMetadataIntoStreamed(
   // never had — adopt it so the hover time matches history after refresh.
   const timestamp =
     s.timestamp ?? (typeof d.timestamp === "number" ? d.timestamp : undefined);
+  const canonicalContent = d.content ?? s.content;
+  // Persisted user rows can contain private attachment transport wrappers
+  // (`<file>`, `[Attached file: ...]`, screenshot markers). The optimistic
+  // renderer bubble intentionally hides those, so canonical text replacement
+  // is limited to assistant output.
+  const needsCanonicalContent =
+    contentAuthority === "database" &&
+    s.role === "agent" &&
+    canonicalContent !== s.content;
   // Attachments from the DB that the stream didn't deliver.
   const needsAttachments =
     !!d.attachments &&
     d.attachments.length > 0 &&
     (!s.attachments || s.attachments.length === 0);
   if (
+    needsCanonicalContent ||
     needsAttachments ||
     (timestamp !== undefined && timestamp !== s.timestamp)
   ) {
     return {
       ...s,
+      ...(needsCanonicalContent ? { content: canonicalContent } : {}),
       ...(needsAttachments ? { attachments: d.attachments } : {}),
       ...(timestamp !== undefined ? { timestamp } : {}),
     };
@@ -751,6 +769,7 @@ export function reconcileAfterDbRefresh(
   db: ReadonlyArray<ChatMessage>,
   options: {
     activeTurn?: ActiveTurn | null;
+    phase?: "live" | "final";
   } = {},
 ): ChatMessage[] {
   if (options.activeTurn?.status === "failed") return [...current];
@@ -758,9 +777,13 @@ export function reconcileAfterDbRefresh(
   const failedUserIds = localErrorUserIds(current);
   const syncableCurrent = current.filter((m) => isDbSyncable(m, failedUserIds));
   const anchoredDb = dbWithActiveUserAnchor(db, current, options.activeTurn);
-  const reconciled = reconcileStreamedWithDb(syncableCurrent, anchoredDb);
+  const phase = options.phase ?? "final";
+  const reconciled = reconcileStreamedWithDb(syncableCurrent, anchoredDb, {
+    contentAuthority: phase === "live" ? "stream" : "database",
+    preserveLiveReasoning: phase === "live",
+  });
   const withLocalErrors = preserveLocalAssistantErrors(reconciled, current);
-  return clearPending(withLocalErrors);
+  return phase === "live" ? withLocalErrors : clearPending(withLocalErrors);
 }
 
 /**
@@ -789,7 +812,12 @@ export function reconcileAfterDbRefresh(
 export function reconcileStreamedWithDb(
   streamed: ReadonlyArray<ChatMessage>,
   db: ReadonlyArray<ChatMessage>,
+  options: {
+    contentAuthority?: "stream" | "database";
+    preserveLiveReasoning?: boolean;
+  } = {},
 ): ChatMessage[] {
+  const contentAuthority = options.contentAuthority ?? "database";
   streamed = compactOrphanDuplicateUserRuns(streamed, db);
 
   // Index streamed messages by their reconciliation key. Duplicate
@@ -817,7 +845,9 @@ export function reconcileStreamedWithDb(
       // doesn't remount the DOM node.  Carry over any DB-only metadata
       // (e.g. attachments that the stream didn't deliver) into the
       // streamed copy.
-      result.push(mergeDbMetadataIntoStreamed(streamedMatch, dbMsg));
+      result.push(
+        mergeDbMetadataIntoStreamed(streamedMatch, dbMsg, contentAuthority),
+      );
     } else {
       const toolKey = toolNameMatchKey(dbMsg);
       if (toolKey && !isSyntheticLiveToolMessage(dbMsg)) {
@@ -915,8 +945,11 @@ export function reconcileStreamedWithDb(
   // landing *below* any agent content the gateway streamed after the user
   // answered (the reverse of what the user saw live). Re-anchor each card
   // immediately after the streamed message that preceded it.
+  const deduped = dedupeMessageIds(merged);
   return repositionClarifyCards(
-    dropLossyStreamedReasoning(dedupeMessageIds(merged)),
+    options.preserveLiveReasoning
+      ? deduped
+      : dropLossyStreamedReasoning(deduped),
     streamed,
   );
 }

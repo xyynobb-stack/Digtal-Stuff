@@ -14,7 +14,8 @@ from embedding_client import EmbeddingError, embed_texts, load_embedding_config
 
 DEFAULT_MILVUS_URI = "http://183.230.227.10:19530"
 DEFAULT_MILVUS_DATABASE = "default"
-DEFAULT_MILVUS_COLLECTION = "my_skill_kb"
+REQUIRED_MILVUS_COLLECTION = "my_skill_kb"
+DEFAULT_MILVUS_COLLECTION = REQUIRED_MILVUS_COLLECTION
 DEFAULT_MILVUS_VECTOR_FIELD = "embedding"
 DEFAULT_MILVUS_TEXT_FIELD = "text"
 DEFAULT_MILVUS_SOURCE_FIELD = "source"
@@ -47,17 +48,26 @@ class MilvusConfig:
 
 # @lat: [[lat.md/rag-mvp#Configuration boundary]]
 def load_milvus_config(env: Mapping[str, str] | None = None) -> MilvusConfig:
-    """Resolve the unfinished Milvus schema without guessing its collection name."""
+    """Resolve the MVP schema and reject any alternate evidence collection."""
 
     values = os.environ if env is None else env
     uri = values.get("MILVUS_URI", DEFAULT_MILVUS_URI).strip()
     token = values.get("MILVUS_TOKEN", "").strip()
     database = values.get("MILVUS_DATABASE", DEFAULT_MILVUS_DATABASE).strip()
-    collection = values.get("MILVUS_COLLECTION", DEFAULT_MILVUS_COLLECTION).strip()
-    if not uri or not database or not collection:
+    configured_collection = values.get(
+        "MILVUS_COLLECTION", REQUIRED_MILVUS_COLLECTION
+    ).strip()
+    collection = REQUIRED_MILVUS_COLLECTION
+    if not uri or not database or not configured_collection:
         raise RagClientError(
             "CONFIGURATION_ERROR",
             "MILVUS_URI, MILVUS_DATABASE, and MILVUS_COLLECTION cannot be empty.",
+        )
+    if configured_collection != REQUIRED_MILVUS_COLLECTION:
+        raise RagClientError(
+            "COLLECTION_MISMATCH",
+            "MILVUS_COLLECTION must be my_skill_kb for this Skill; alternate "
+            f"collection {configured_collection!r} is not allowed.",
         )
     try:
         timeout_seconds = float(values.get("RAG_REQUEST_TIMEOUT_SECONDS", "30"))

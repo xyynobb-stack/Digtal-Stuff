@@ -28,7 +28,7 @@ rag_client = importlib.import_module("rag_client")
 VALID_ENV = {
     "MILVUS_URI": "http://milvus.example:19530",
     "MILVUS_TOKEN": "test-token",
-    "MILVUS_COLLECTION": "knowledge_chunks",
+    "MILVUS_COLLECTION": "my_skill_kb",
     "MILVUS_TEXT_FIELD": "content",
     "MILVUS_SOURCE_FIELD": "document_id",
     "EMBEDDING_API_URL": "http://embedding.example/v1/embeddings",
@@ -155,6 +155,27 @@ class RagClientTests(unittest.TestCase):
         self.assertEqual(config.source_field, "source")
         self.assertEqual(config.metric_type, "IP")
         self.assertEqual(config.token, "")
+
+    # @lat: [[lat.md/rag-mvp#Tests#Alternate collection configuration fails closed]]
+    def test_alternate_collection_is_rejected_before_embedding(self):
+        called = {"embedder": False, "factory": False}
+
+        def embedder(*_args, **_kwargs):
+            called["embedder"] = True
+            return [[1.0]]
+
+        def factory(**_kwargs):
+            called["factory"] = True
+            return FakeMilvusClient()
+
+        env = dict(VALID_ENV)
+        env["MILVUS_COLLECTION"] = "project_embeddings"
+        with self.assertRaisesRegex(rag_client.RagClientError, "my_skill_kb"):
+            rag_client.retrieve(
+                ["query"], env=env, embedder=embedder, client_factory=factory
+            )
+
+        self.assertEqual(called, {"embedder": False, "factory": False})
 
     def test_empty_token_is_not_passed_to_client(self):
         instances = []

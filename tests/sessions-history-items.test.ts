@@ -165,6 +165,23 @@ describe("expandRowsToHistory", () => {
     expect(items[1]).toMatchObject({ kind: "assistant", content: "hello!" });
   });
 
+  it("carries the database finish reason on assistant history rows", () => {
+    const items = expandRowsToHistory([
+      row({
+        id: 2,
+        role: "assistant",
+        content: "complete",
+        timestamp: 2,
+        finish_reason: "stop",
+      }),
+    ]);
+    expect(items[0]).toMatchObject({
+      kind: "assistant",
+      content: "complete",
+      finishReason: "stop",
+    });
+  });
+
   it("emits reasoning *before* the assistant bubble", () => {
     const items = expandRowsToHistory([
       row({ id: 1, role: "user", content: "?", timestamp: 1 }),

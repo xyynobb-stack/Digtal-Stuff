@@ -144,7 +144,7 @@ The approval responses `/approve` and `/deny` (the `RENDERER_NATIVE_SLASH` set) 
 
 ## Session Skill activation
 
-Bundled/system Skills are available in every conversation by default, while locally imported Skills live under `skills/custom` and require per-chat activation.
+Bundled/system Skills are available in every conversation by default, while locally imported Skills require per-chat activation even when an older import preserved a product-looking category.
 
 The Desktop/TUI gateway must therefore keep the `skills` toolset when it converts platform defaults into an explicit toolset list. `patchDesktopSkillToolsetSource` in `scripts/apply-offline-runtime-overlays.mjs` enforces this for packaged runtimes, and `ensureDevAgentSkillToolset` in `scripts/prepare-dev-agent.mjs` applies the same rule before `npm run dev`; otherwise `skill_view` and the system Skill index disappear together and the model may incorrectly scan files as a fallback. Offline packaging also rejects a staged gateway that lacks either implicit `skills` selection marker, preventing a stale unpatched runtime from entering an installer.
 
@@ -152,7 +152,7 @@ Discover broadcasts a refresh after an add, so its list and the Capabilities Ski
 
 [[src/renderer/src/screens/Chat/SessionSkillPicker.tsx#SessionSkillPicker]] lets the user enable imported custom Skills for one chat. The selection remains until deselected. [[src/renderer/src/screens/Chat/hooks/useChatActions.ts#useChatActions]] sends an envelope on each ordinary turn; an empty selection means no custom Skills are enabled. The packaged runtime binds it to the active task, filters only custom entries from `skills_list`, and rejects `skill_view` only for unselected custom Skills. Bundled/system Skills bypass this allowlist and remain available. The allowlist is cleared after the turn and never changes the installed library; slash commands are unchanged.
 
-The picker intentionally lists only custom/employee-added Skills, not bundled Skills copied into the profile. [[src/main/skills.ts#importLocalSkill]] ignores an uploaded file's frontmatter category for storage and always installs it below `skills/custom`; [[src/main/skills.ts#listUserAddedSkills]] uses that category boundary and also recognizes the legacy user-added marker for imports created by older desktop builds. The complete installed library remains visible in Discover and Skills management.
+The picker intentionally lists only custom/employee-added Skills, not bundled Skills copied into the profile. [[src/main/skills.ts#importLocalSkill]] always installs uploads below `skills/custom`. Once the bundled Skill inventory exists, [[src/main/skills.ts#ensureLegacyUserSkillMarkers]] marks a profile-local legacy entry as user-owned when there is no matching category/name, before the Gateway builds its first Skill snapshot. The complete library remains visible in Discover and Skills management.
 
 [[src/main/hermes.ts#buildGatewayEnv]] enables desktop custom-Skill gating for the Gateway. In that mode [[build/offline-runtime/hermes-agent/agent/prompt_builder.py#build_skills_system_prompt]] omits custom entries from the global Agent skill index but retains bundled/system entries. The runtime Skill tools use the same `custom` category boundary, plus the legacy import marker, so system Skills remain callable while unselected user imports are blocked. The picker shows an enabled label and clear-all action so persisted selections are visible and reversible.
 

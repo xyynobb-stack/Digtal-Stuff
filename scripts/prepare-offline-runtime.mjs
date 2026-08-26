@@ -10,7 +10,10 @@ import {
   patchDashboardCliColdStartSource,
   patchDashboardColdStartSource,
 } from "./patch-dashboard-cold-start.mjs";
-import { patchDesktopSkillToolsetSource } from "./apply-offline-runtime-overlays.mjs";
+import {
+  patchDesktopSkillToolsetSource,
+  patchExecuteCodeWindowsChildSource,
+} from "./apply-offline-runtime-overlays.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const outputRoot = path.join(projectRoot, "build", "offline-runtime");
@@ -98,6 +101,19 @@ fs.writeFileSync(
   "utf8",
 );
 patchCronOutputDirectories(path.join(outputRoot, "hermes-agent"));
+const executeCodeToolPath = path.join(
+  outputRoot,
+  "hermes-agent",
+  "tools",
+  "code_execution_tool.py",
+);
+fs.writeFileSync(
+  executeCodeToolPath,
+  patchExecuteCodeWindowsChildSource(
+    fs.readFileSync(executeCodeToolPath, "utf8"),
+  ),
+  "utf8",
+);
 
 // Package the builder's profile-local user content separately from the
 // managed Agent runtime. The desktop merges these directories into a new

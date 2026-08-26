@@ -23,6 +23,7 @@ import { setupUpdater } from "./updater";
 import { initializeBundledRuntime } from "../installer";
 import { recordColdStartTiming } from "../cold-start-timing";
 import { initializeRuntimeAndWarmLocalDashboard } from "../runtime-dashboard-warmup";
+import { ensureLegacyUserSkillMarkers } from "../skills";
 
 const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "JingYuAI";
 const OPEN_DEVTOOLS_ON_START =
@@ -55,6 +56,9 @@ export function startMainProcess(): void {
   app.whenReady().then(() => {
     recordColdStartTiming({ stage: "desktop.ready" });
     electronApp.setAppUserModelId("com.jingyuai.desktop");
+    // Run before the gateway is warmed so strict session Skill discovery sees
+    // legacy profile imports as user-owned on its first prompt snapshot.
+    ensureLegacyUserSkillMarkers();
 
     app.on("browser-window-created", (_, window) => {
       optimizer.watchWindowShortcuts(window);

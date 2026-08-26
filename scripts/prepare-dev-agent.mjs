@@ -2,7 +2,10 @@ import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { patchDesktopSkillToolsetSource } from "./apply-offline-runtime-overlays.mjs";
+import {
+  patchDesktopSkillToolsetSource,
+  patchExecuteCodeWindowsChildSource,
+} from "./apply-offline-runtime-overlays.mjs";
 import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
 
 const hermesHome =
@@ -31,6 +34,17 @@ export function ensureDevAgentSkillToolset(agentRoot) {
   return true;
 }
 
+/** Keep Execute Code grandchildren hidden in local Windows development. */
+export function ensureDevExecuteCodeChildrenHidden(agentRoot) {
+  const toolPath = path.join(agentRoot, "tools", "code_execution_tool.py");
+  if (!fs.existsSync(toolPath)) return false;
+
+  const source = fs.readFileSync(toolPath, "utf8");
+  const patched = patchExecuteCodeWindowsChildSource(source);
+  if (patched !== source) fs.writeFileSync(toolPath, patched, "utf8");
+  return true;
+}
+
 /** Copy Desktop-owned report workflow tools into the installed development Agent. */
 export function syncDevMarketReportWorkflowTools(
   agentRoot,
@@ -50,11 +64,39 @@ export function syncDevMarketReportWorkflowTools(
   return true;
 }
 
+/** Keep the development Agent and its default profile on the canonical Skill. */
+export function syncDevMarketReportSkill(
+  agentRoot,
+  profileSkillsRoot = path.join(hermesHome, "skills"),
+  overlayRoot = path.join(projectRoot, "resources", "hermes-agent-overlays"),
+) {
+  const source = path.join(
+    overlayRoot,
+    "skills",
+    "research",
+    "market-report-rag",
+  );
+  if (!fs.existsSync(path.join(source, "SKILL.md"))) {
+    throw new Error(`Market report Skill is missing: ${source}`);
+  }
+  const targets = [
+    path.join(agentRoot, "skills", "research", "market-report-rag"),
+    path.join(profileSkillsRoot, "research", "market-report-rag"),
+  ];
+  for (const target of targets) {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.cpSync(source, target, { recursive: true, force: true });
+  }
+  return true;
+}
+
 export function prepareDevAgent() {
   const agentRoot = path.join(hermesHome, "hermes-agent");
   patchCronOutputDirectories(agentRoot);
   ensureDevAgentSkillToolset(agentRoot);
+  ensureDevExecuteCodeChildrenHidden(agentRoot);
   syncDevMarketReportWorkflowTools(agentRoot);
+  syncDevMarketReportSkill(agentRoot);
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";

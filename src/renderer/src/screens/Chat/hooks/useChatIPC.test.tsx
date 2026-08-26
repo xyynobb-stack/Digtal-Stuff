@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRef, useState } from "react";
-import { useChatIPC } from "./useChatIPC";
+import { settleFinalDbTranscript, useChatIPC } from "./useChatIPC";
 import type { ActiveTurn, ChatMessage, UsageState } from "../types";
 
 type Callback<T extends unknown[]> = (...args: T) => void;
@@ -24,7 +24,12 @@ function installHermesApi(callbacks: ChatIpcCallbacks): {
     if (sessionId === "old-session") {
       return [
         { kind: "user", id: 1, content: "old prompt" },
-        { kind: "assistant", id: 2, content: "old answer" },
+        {
+          kind: "assistant",
+          id: 2,
+          content: "old answer",
+          finishReason: "stop",
+        },
       ];
     }
     return [];
@@ -137,5 +142,53 @@ describe("useChatIPC session scoping", () => {
     expect(screen.getByTestId("ids")).toHaveTextContent(
       JSON.stringify(["db-1", "db-2"]),
     );
+  });
+});
+
+describe("final DB transcript settling", () => {
+  // @lat: [[lat.md/rag-mvp#Tests#Completion waits for the persisted terminal transcript]]
+  it("keeps polling past chat-done until complete reasoning and answer are stable", async () => {
+    let clock = 0;
+    const snapshots = [
+      [
+        { kind: "user" as const, id: 1, content: "prompt" },
+        { kind: "reasoning" as const, id: 2, text: "partial thought" },
+        { kind: "assistant" as const, id: 2, content: "partial answer" },
+      ],
+      [
+        { kind: "user" as const, id: 1, content: "prompt" },
+        { kind: "reasoning" as const, id: 2, text: "complete thought" },
+        {
+          kind: "assistant" as const,
+          id: 2,
+          content: "complete answer",
+          finishReason: "stop",
+        },
+      ],
+    ];
+    let reads = 0;
+    let latest = snapshots[0];
+
+    const settled = await settleFinalDbTranscript(
+      async () => snapshots[Math.min(reads++, snapshots.length - 1)],
+      (items) => {
+        latest = items as typeof latest;
+      },
+      () => true,
+      {
+        maxAttempts: 5,
+        pollIntervalMs: 10,
+        minSettleMs: 20,
+        stableReads: 2,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+        now: () => clock,
+      },
+    );
+
+    expect(settled).toBe(true);
+    expect(reads).toBe(3);
+    expect(latest).toEqual(snapshots[1]);
   });
 });

@@ -1,4 +1,10 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,7 +28,11 @@ vi.mock("./utils", () => ({
       : mocks.home,
 }));
 
-import { ensureStarterUserSkills, listUserAddedSkills } from "./skills";
+import {
+  ensureLegacyUserSkillMarkers,
+  ensureStarterUserSkills,
+  listUserAddedSkills,
+} from "./skills";
 
 describe("starter user skills", () => {
   beforeEach(() => {
@@ -54,5 +64,65 @@ describe("starter user skills", () => {
     writeFileSync(hrFile, "user-owned content", "utf-8");
     ensureStarterUserSkills();
     expect(readFileSync(hrFile, "utf-8")).toBe("user-owned content");
+  });
+
+  it("gates legacy profile skills that are absent from the bundled runtime", () => {
+    // @lat: [[chat-commands#Slash command execution#Session Skill activation]]
+    const localResearch = join(mocks.home, "skills", "research");
+    const bundledResearch = join(
+      mocks.home,
+      "hermes-agent",
+      "skills",
+      "research",
+    );
+    const legacy = join(localResearch, "internal-milvus-data");
+    const system = join(localResearch, "market-report-rag");
+    mkdirSync(legacy, { recursive: true });
+    mkdirSync(system, { recursive: true });
+    mkdirSync(join(bundledResearch, "market-report-rag"), { recursive: true });
+    writeFileSync(
+      join(legacy, "SKILL.md"),
+      "---\nname: internal-milvus-data\ndescription: legacy\n---\n",
+      "utf8",
+    );
+    for (const path of [
+      join(system, "SKILL.md"),
+      join(bundledResearch, "market-report-rag", "SKILL.md"),
+    ]) {
+      writeFileSync(
+        path,
+        "---\nname: market-report-rag\ndescription: system\n---\n",
+        "utf8",
+      );
+    }
+
+    ensureLegacyUserSkillMarkers();
+
+    expect(existsSync(join(legacy, ".hermes-desktop-user-added"))).toBe(true);
+    expect(existsSync(join(system, ".hermes-desktop-user-added"))).toBe(false);
+    expect(listUserAddedSkills().map((skill) => skill.name)).toContain(
+      "internal-milvus-data",
+    );
+  });
+
+  it("does not infer legacy skill ownership before the bundled inventory exists", () => {
+    const localSkill = join(
+      mocks.home,
+      "skills",
+      "research",
+      "market-report-rag",
+    );
+    mkdirSync(localSkill, { recursive: true });
+    writeFileSync(
+      join(localSkill, "SKILL.md"),
+      "---\nname: market-report-rag\ndescription: local copy\n---\n",
+      "utf8",
+    );
+
+    ensureLegacyUserSkillMarkers();
+
+    expect(
+      existsSync(join(localSkill, ".hermes-desktop-user-added")),
+    ).toBe(false);
   });
 });

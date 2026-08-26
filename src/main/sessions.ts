@@ -66,6 +66,7 @@ export type HistoryItem =
       id: number;
       content: string;
       timestamp: number;
+      finishReason?: string;
       error?: string;
       attachments?: Attachment[];
     }
@@ -545,6 +546,7 @@ export interface RawMessageRow {
   reasoning: string | null;
   reasoning_content: string | null;
   reasoning_details: string | null;
+  finish_reason?: string | null;
 }
 
 /**
@@ -589,6 +591,7 @@ export function expandRowsToHistory(rows: RawMessageRow[]): HistoryItem[] {
           id: r.id,
           content: decoded.text,
           timestamp: r.timestamp,
+          ...(r.finish_reason ? { finishReason: r.finish_reason } : {}),
           ...(decoded.attachments.length > 0
             ? { attachments: decoded.attachments }
             : {}),
@@ -673,7 +676,7 @@ export function getSessionMessages(sessionId: string): HistoryItem[] {
 
   const rows = db
     .prepare(
-      `SELECT id, role, content, timestamp,
+      `SELECT id, role, content, timestamp, finish_reason,
               tool_call_id, tool_calls, tool_name,
               reasoning, reasoning_content, reasoning_details
        FROM messages

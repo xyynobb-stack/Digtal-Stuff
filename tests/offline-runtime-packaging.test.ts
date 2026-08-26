@@ -16,10 +16,13 @@ import {
 } from "../scripts/patch-dashboard-cold-start.mjs";
 import {
   patchDesktopSkillToolsetSource,
+  patchExecuteCodeWindowsChildSource,
   patchTtsRequirementsSource,
 } from "../scripts/apply-offline-runtime-overlays.mjs";
 import {
+  ensureDevExecuteCodeChildrenHidden,
   ensureDevAgentSkillToolset,
+  syncDevMarketReportSkill,
   syncDevMarketReportWorkflowTools,
 } from "../scripts/prepare-dev-agent.mjs";
 import {
@@ -151,6 +154,45 @@ def _load_enabled_toolsets():
   });
 });
 
+describe("Execute Code Windows child-process overlay", () => {
+  // @lat: [[lat.md/main-process#Main Process#Offline Windows runtime#Execute Code descendants stay hidden on Windows]]
+  it("injects a sandbox-local no-console policy for subprocess and os.system", () => {
+    const source = `
+        _mode = _get_execution_mode()
+        _child_python = _resolve_child_python(_mode)
+        _child_cwd = _resolve_child_cwd(_mode, tmpdir, task_id=task_id or "")
+        _script_path = os.path.join(tmpdir, "script.py")
+
+        proc = subprocess.Popen(
+`;
+
+    const patched = patchExecuteCodeWindowsChildSource(source);
+
+    expect(patched).toContain("HERMES_DESKTOP_HIDE_CHILD_CONSOLES");
+    expect(patched).toContain("CREATE_NO_WINDOW");
+    expect(patched).toContain("CREATE_NEW_CONSOLE");
+    expect(patched).toContain("_os.system = _hermes_hidden_system");
+    expect(patchExecuteCodeWindowsChildSource(patched)).toBe(patched);
+  });
+
+  it("patches the installed development Agent before startup", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-dev-execute-code-"));
+    tempRoots.push(root);
+    const tool = join(root, "tools", "code_execution_tool.py");
+    mkdirSync(join(tool, ".."), { recursive: true });
+    writeFileSync(
+      tool,
+      '        _script_path = os.path.join(tmpdir, "script.py")\n',
+      "utf8",
+    );
+
+    expect(ensureDevExecuteCodeChildrenHidden(root)).toBe(true);
+    expect(readFileSync(tool, "utf8")).toContain(
+      "HERMES_DESKTOP_HIDE_CHILD_CONSOLES",
+    );
+  });
+});
+
 describe("market report workflow development overlay", () => {
   it("copies both state and registry adapter modules into the installed Agent", () => {
     const root = mkdtempSync(join(tmpdir(), "hermes-workflow-"));
@@ -173,6 +215,30 @@ describe("market report workflow development overlay", () => {
         "utf8",
       ),
     ).toBe("market_report_workflow_tool.py");
+  });
+
+  it("syncs the canonical Skill into the development Agent and profile", () => {
+    const root = mkdtempSync(join(tmpdir(), "hermes-report-skill-"));
+    tempRoots.push(root);
+    const overlay = join(root, "overlay");
+    const agent = join(root, "agent");
+    const profileSkills = join(root, "profile-skills");
+    const sourceSkill = join(
+      overlay,
+      "skills",
+      "research",
+      "market-report-rag",
+    );
+    mkdirSync(sourceSkill, { recursive: true });
+    writeFileSync(join(sourceSkill, "SKILL.md"), "canonical", "utf8");
+
+    expect(syncDevMarketReportSkill(agent, profileSkills, overlay)).toBe(true);
+    for (const target of [
+      join(agent, "skills", "research", "market-report-rag", "SKILL.md"),
+      join(profileSkills, "research", "market-report-rag", "SKILL.md"),
+    ]) {
+      expect(readFileSync(target, "utf8")).toBe("canonical");
+    }
   });
 });
 

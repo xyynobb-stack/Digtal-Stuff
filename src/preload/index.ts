@@ -918,6 +918,7 @@ const hermesAPI = {
       role: "user" | "assistant";
       content: string;
       timestamp: number;
+      finishReason?: string;
       attachments?: Attachment[];
     }>
   > => ipcRenderer.invoke("get-session-messages", sessionId),

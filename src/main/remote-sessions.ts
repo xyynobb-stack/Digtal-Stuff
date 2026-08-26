@@ -488,6 +488,7 @@ function normalizeMessageRow(row: RemoteRecord, index: number): RawMessageRow {
         : row.reasoning_details === undefined || row.reasoning_details === null
           ? null
           : JSON.stringify(row.reasoning_details),
+    finish_reason: nullableString(row.finish_reason),
   };
 }
 

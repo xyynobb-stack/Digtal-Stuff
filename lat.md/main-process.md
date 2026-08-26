@@ -84,6 +84,12 @@ Ordinary no-tool chat completion treats the gateway's persisted final response a
 
 The bundled Agent declares exact-pinned `openpyxl`, `pandas`, and `markitdown[xlsx]` packages in its core `pyproject.toml` dependencies. Windows stable/beta and macOS packaging recreate the virtual environment and run `pip install -e .`, so one dependency declaration supplies the XLSX runtime across release paths without separate workflow install commands.
 
+Execute Code applies the Windows no-console policy to the sandbox and its ordinary descendants. `patchExecuteCodeWindowsChildSource` in `scripts/apply-offline-runtime-overlays.mjs` injects a sandbox-local `sitecustomize.py` that adds `CREATE_NO_WINDOW` plus `SW_HIDE` to `subprocess.Popen` and therefore `run`/shell calls, removes an explicit `CREATE_NEW_CONSOLE`, and routes `os.system` through the same hidden path. Development startup patches the installed Agent, and offline staging applies the identical idempotent transform before packaging.
+
+### Execute Code descendants stay hidden on Windows
+
+Model-authored `subprocess`, shell, and `os.system` calls execute normally without opening transient CMD or PowerShell windows, while their captured stdout, stderr, exit status, timeout, and interruption behavior remain unchanged.
+
 Windows installers retain the stable `com.jingyuai.desktop` app id, product name, and per-user NSIS install location while the package version advances. Running a newer setup upgrades the existing JingYuAI installation in place and replaces its Electron application bundle instead of creating a side-by-side app.
 
 The internal test bundle stages `EMPLOYEE_LOOKUP_ADMIN_TOKEN` from the builder's Hermes environment into a Git-ignored generated file and installs the current bundled value into the user's `.env` on launch. [[src/main/employee-lookup-token.ts#mergeBundledEmployeeLookupToken]] replaces empty, stale, or duplicate entries left by older Hermes source checkouts so phone provisioning uses the credential shipped by the current package. The same offline marker disables the GitHub auto-update check; this is intentional for test packages and should be removed before a security-hardened release.

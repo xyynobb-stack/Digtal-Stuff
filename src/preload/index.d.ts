@@ -635,9 +635,10 @@ interface HermesAPI {
       | {
           kind: "assistant";
           id: number;
-          content: string;
-          timestamp: number;
-          error?: string;
+           content: string;
+           timestamp: number;
+           finishReason?: string;
+           error?: string;
           attachments?: Attachment[];
         }
       | {

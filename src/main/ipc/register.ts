@@ -73,6 +73,7 @@ import { recordColdStartTiming } from "../cold-start-timing";
 import {
   checkInstallStatus,
   initializeBundledRuntime,
+  installBundledProfileContent,
   verifyInstall,
   runInstall,
   inspectInstallTarget,
@@ -1130,12 +1131,12 @@ export function registerIpcHandlers(context: IpcContext): void {
     // managed installations may inject AIHUB_API_KEY into the profile env.
     const existingEnv = readEnv();
     const fallbackApiKey =
-      (typeof employee.fallback_api_key === "string"
-        ? employee.fallback_api_key.trim()
-        : "") ||
       String(
         existingEnv.AIHUB_API_KEY || process.env.AIHUB_API_KEY || "",
-      ).trim();
+      ).trim() ||
+      (typeof employee.fallback_api_key === "string"
+        ? employee.fallback_api_key.trim()
+        : "");
     let fallbackConfigured = false;
     if (fallbackApiKey) {
       const fallbackEnvKey = "AIHUB_API_KEY";
@@ -2356,11 +2357,15 @@ export function registerIpcHandlers(context: IpcContext): void {
   });
   ipcMain.handle(
     "create-profile",
-    (_event, name: string, cloneFrom: string | null) => {
+    async (_event, name: string, cloneFrom: string | null) => {
       const conn = getConnectionConfig();
       if (conn.mode === "ssh" && conn.ssh)
         return sshCreateProfile(conn.ssh, name, cloneFrom);
-      return createProfile(name, cloneFrom);
+      const result = createProfile(name, cloneFrom);
+      if (result.success && result.id) {
+        await installBundledProfileContent(result.id);
+      }
+      return result;
     },
   );
   ipcMain.handle("delete-profile", (_event, name: string) => {

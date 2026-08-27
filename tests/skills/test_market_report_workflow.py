@@ -8,7 +8,11 @@ TOOLS_DIR = Path(__file__).parents[2] / "resources" / "hermes-agent-overlays" / 
 sys.path.insert(0, str(TOOLS_DIR))
 
 from market_report_workflow_state import (  # noqa: E402
+    FINANCE_GENERATION_WAVES,
+    FINANCE_SECTION_ORDER,
     GENERATION_WAVES,
+    HR_GENERATION_WAVES,
+    HR_SECTION_ORDER,
     MarketReportWorkflowStore,
     SECTION_ORDER,
     WorkflowError,
@@ -163,6 +167,28 @@ class MarketReportWorkflowTests(unittest.TestCase):
                     {"section": "1.2", "content": "valid"},
                 ],
             )
+
+    def test_hr_and_finance_use_independent_dependency_wave_contracts(self):
+        cases = (
+            ("hr-task", "hr", HR_GENERATION_WAVES, HR_SECTION_ORDER),
+            ("finance-task", "finance", FINANCE_GENERATION_WAVES, FINANCE_SECTION_ORDER),
+        )
+        for task_id, report_type, waves, sections in cases:
+            store = MarketReportWorkflowStore()
+            started = store.execute(
+                task_id,
+                "start",
+                report_type=report_type,
+                report_goal=f"生成{report_type}报告",
+                retrieval_collection="my_skill_kb",
+            )
+            self.assertEqual(started["report_type"], report_type)
+            self.assertEqual(started["expected_sections"], list(waves[0]))
+            for wave in waves:
+                store.execute(task_id, "record_wave", sections=wave_payload(wave))
+            result = store.execute(task_id, "finalize")
+            positions = [result["report"].index(f"## {section}\n") for section in sections]
+            self.assertEqual(positions, sorted(positions))
 
 
 if __name__ == "__main__":

@@ -12,7 +12,6 @@ import {
   patchGatewayServerSource,
   patchDesktopProtocolRoutingSource,
   patchJingYuAgentIdentitySource,
-  syncMarketReportStarterSkill,
 } from "./apply-offline-runtime-overlays.mjs";
 import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
 import { patchCompanyCodexRetries } from "./patch-company-fallback-safety.mjs";
@@ -177,30 +176,30 @@ export function syncDevMarketReportWorkflowTools(
 export function syncDevMarketReportSkill(
   agentRoot,
   profileSkillsRoot = path.join(hermesHome, "skills"),
-  overlayRoot = path.join(projectRoot, "resources", "hermes-agent-overlays"),
+  starterRoot = path.join(projectRoot, "resources", "starter-skills"),
 ) {
-  const source = path.join(
-    overlayRoot,
-    "skills",
-    "research",
+  const names = [
     "market-report-rag",
-  );
-  if (!fs.existsSync(path.join(source, "SKILL.md"))) {
-    throw new Error(`Market report Skill is missing: ${source}`);
-  }
-  const targets = [
-    path.join(agentRoot, "skills", "research", "market-report-rag"),
-    path.join(profileSkillsRoot, "research", "market-report-rag"),
+    "hr-analysis-report-rag",
+    "finance-analysis-report-rag",
   ];
-  for (const target of targets) {
+  for (const name of names) {
+    const source = path.join(starterRoot, name);
+    if (!fs.existsSync(path.join(source, "SKILL.md"))) {
+      throw new Error(`Report Skill is missing: ${source}`);
+    }
+    const target = path.join(profileSkillsRoot, "custom", name);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.cpSync(source, target, { recursive: true, force: true });
   }
+  fs.rmSync(path.join(agentRoot, "skills", "research", "market-report-rag"), {
+    recursive: true,
+    force: true,
+  });
   return true;
 }
 
 export function prepareDevAgent() {
-  syncMarketReportStarterSkill();
   const agentRoot = path.join(hermesHome, "hermes-agent");
   syncDevDesktopModelRouting(agentRoot);
   patchCronOutputDirectories(agentRoot);

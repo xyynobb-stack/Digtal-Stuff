@@ -12,17 +12,17 @@ The Skills tab separates product-managed system skills from profile-local user s
 
 ## Starter user skills
 
-Each profile receives editable starter skills that cover common employee roles, conversational skill creation, and internal-knowledge market reports.
+Each packaged profile receives editable custom Skills for common employee roles, conversational skill creation, and three internal-knowledge reports.
 
-[[src/main/skills.ts#ensureStarterUserSkills]] copies `hr`, `project-manager`, `finance`, `skill-creator`, and `market-report-rag` from `resources/starter-skills` into the profile's `skills/custom` directory. Provisioning is idempotent and never overwrites an existing same-name directory.
+`scripts/prepare-offline-runtime.mjs` stages the repository-owned `resources/starter-skills` inventory into `preset-content/skills/custom`. [[src/main/installer.ts#installBundledProfileContent]] installs it during default-profile startup and named-profile creation; opening the picker performs no filesystem copy. Existing same-name directories always win.
 
 The Skill Creator starter guides a dialogue from trigger examples and scope through file creation and validation, defaulting new skills to the active profile's user-owned custom directory.
 
 ## Market report user Skill
 
-The market-report RAG Skill is included in the user-added catalog and per-chat picker for fresh installations and named profiles, without replacing an employee's existing custom instructions.
+Market, HR, and finance RAG report Skills are included in the user-added catalog and per-chat picker for fresh installations and named profiles, without replacing employee edits.
 
-`syncMarketReportStarterSkill` in `scripts/apply-offline-runtime-overlays.mjs` synchronizes the repository-owned RAG source into starter resources during development preparation and release overlay application, excluding Python caches and local env files. The existing profile provisioning path marks its custom copy as user-added. The legacy research runtime copy remains for compatibility; no user directories are deleted or moved.
+The fixed custom inventory contains `market-report-rag`, `hr-analysis-report-rag`, and `finance-analysis-report-rag`. Development preparation copies the same three directories into the default profile's `skills/custom`; packaged preparation removes the legacy system/research copy, so discovery and per-chat activation cannot resolve two different Skills with the same name.
 
 ## Writing templates entry
 

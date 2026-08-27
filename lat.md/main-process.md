@@ -64,6 +64,8 @@ The desktop starts its local Agent backend with `hermes serve` from a dedicated 
 
 `scripts/prepare-offline-runtime.mjs` stages the tested Python installation and Hermes Agent (including its virtual environment) in `build/offline-runtime`; the release pipeline converts it to the archive described below. The staging marker and Electron version form a stable digest used as `userData/hermes-runtime/versions/<version-digest>`, so every compatibility unit is immutable and a new package never overwrites Python files used by an older process.
 
+The relocated-runtime probe imports `numpy` and `pymilvus` through the packaged virtual-environment launcher as well as checking its executable path. A package with a missing RAG dependency is rejected before activation instead of falling through to a different PATH Python at report time.
+
 ### Single Runtime archive
 
 Windows installers carry one verified Runtime archive instead of asking NSIS to install tens of thousands of Python and Agent files individually.
@@ -126,11 +128,11 @@ Because Edge is the desktop's default TTS provider, stable and beta Windows work
 
 ## Packaged preset user content
 
-Windows and macOS offline builds can distribute builder-selected custom Skills and writing templates as immediately usable, editable content in every new installation.
+Offline builds distribute repository-selected custom Skills and reviewed writing templates as immediately usable, editable profile content.
 
-`scripts/prepare-offline-runtime.mjs` reads the Windows builder's default-profile `skills/custom` and `writing-templates` directories, accepts only Skill directories containing `SKILL.md` and template directories containing `metadata.json`, and stages them under `build/offline-runtime/preset-content`. Because GitHub's macOS runners cannot read the builder's local Hermes home, this generated snapshot must be committed before the macOS workflow is dispatched. The macOS preparation script rejects a missing or incomplete snapshot instead of silently publishing a package without the requested presets, then copies it into `build/offline-runtime-mac/preset-content`. Template and Skill files are copied byte-for-byte, so builders must review them for confidential data before committing or packaging.
+`scripts/prepare-offline-runtime.mjs` reads Skills only from the reviewed `resources/starter-skills` inventory and stages them under `build/offline-runtime/preset-content/skills/custom`; it no longer packages arbitrary custom Skills from the builder's local profile. Writing templates remain selected from the builder library and are staged separately. This makes the three report Skills deterministic across GitHub runners and local builds.
 
-Electron Builder maps either platform's offline runtime to `resources/hermes-runtime`. On every packaged startup, [[src/main/preset-content.ts#installPackagedPresetContent]] asynchronously merges each staged Skill into the default profile's `skills/custom` directory and each template into `writing-templates`; the Agent and desktop therefore read them from their normal writable profile paths rather than leaving them as inert package resources. Each entry is copied file-by-file into a private sibling staging directory and atomically renamed into place, avoiding Electron's Windows native crash path for synchronous recursive copies while ensuring an interrupted copy is never exposed as installed. Existing same-name Skill or template directories always win, so installation and later upgrades never replace user-owned edits. Both `npm run build:win` and `npm run build:offline-win` run the Windows offline preparation step before Electron Builder, preventing a local Windows package from silently reusing stale runtime or preset content.
+Electron Builder maps either platform's offline runtime to `resources/hermes-runtime`. [[src/main/installer.ts#installBundledProfileContent]] invokes [[src/main/preset-content.ts#installPackagedPresetContent]] for the default profile after runtime preparation and for each successfully created named profile. Each entry is copied into a private sibling staging directory and atomically renamed; existing same-name content wins. The Skill picker never triggers provisioning, eliminating a UI-open copy race.
 
 ## Offline macOS package builds
 

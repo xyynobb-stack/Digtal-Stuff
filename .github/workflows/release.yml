@@ -116,6 +116,7 @@ jobs:
         shell: pwsh
         env:
           EMPLOYEE_LOOKUP_ADMIN_TOKEN: ${{ secrets.EMPLOYEE_LOOKUP_ADMIN_TOKEN }}
+          AIHUB_API_KEY: ${{ secrets.AIHUB_API_KEY }}
         run: |
           $required = @(
             "build/offline-runtime/hermes-agent/run_agent.py",
@@ -142,10 +143,15 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:EMPLOYEE_LOOKUP_ADMIN_TOKEN)) {
             throw "EMPLOYEE_LOOKUP_ADMIN_TOKEN GitHub Secret is required"
           }
+          if ([string]::IsNullOrWhiteSpace($env:AIHUB_API_KEY)) {
+            throw "AIHUB_API_KEY GitHub Secret is required"
+          }
 
           $envFile = Join-Path $PWD "build/offline-runtime/employee-lookup.env"
           $content = "EMPLOYEE_LOOKUP_ADMIN_TOKEN=$($env:EMPLOYEE_LOOKUP_ADMIN_TOKEN)`n"
           [IO.File]::WriteAllText($envFile, $content, [Text.UTF8Encoding]::new($false))
+          $aihubEnvFile = Join-Path $PWD "build/offline-runtime/aihub-fallback.env"
+          [IO.File]::WriteAllText($aihubEnvFile, "AIHUB_API_KEY=$($env:AIHUB_API_KEY)`n", [Text.UTF8Encoding]::new($false))
           Write-Host "Verified bundled runtime: $([math]::Round($runtimeBytes / 1MB, 1)) MB"
           & "build/offline-runtime/python-runtime/python.exe" -c "import sqlite3; assert sqlite3.sqlite_version == '3.53.4', sqlite3.sqlite_version"
           if ($LASTEXITCODE -ne 0) { throw "Bundled SQLite version check failed" }
@@ -157,7 +163,7 @@ jobs:
           $basePython = Join-Path $PWD "build/offline-runtime/python-runtime/python.exe"
           $venvRoot = Join-Path $agentRoot "venv"
           $venvPython = Join-Path $venvRoot "Scripts/python.exe"
-          $ragRequirements = Join-Path $agentRoot "skills/research/market-report-rag/requirements.txt"
+          $ragRequirements = "build/offline-runtime/preset-content/skills/custom/market-report-rag/requirements.txt"
 
           & $basePython -m venv $venvRoot
           if ($LASTEXITCODE -ne 0) { throw "Could not create bundled Python venv" }

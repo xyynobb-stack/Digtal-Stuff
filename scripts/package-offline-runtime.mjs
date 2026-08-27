@@ -142,6 +142,7 @@ export async function verifyOfflineRuntimePackage(packageRoot) {
     "git/bin/bash.exe",
     "git/cmd/git.exe",
     "employee-lookup.env",
+    "aihub-fallback.env",
     RUNTIME_BUILD_MARKER_NAME,
   ];
   const missing = required.filter((entry) => !entries.has(entry));

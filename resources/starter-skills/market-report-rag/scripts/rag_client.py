@@ -19,7 +19,8 @@ DEFAULT_MILVUS_COLLECTION = REQUIRED_MILVUS_COLLECTION
 DEFAULT_MILVUS_VECTOR_FIELD = "embedding"
 DEFAULT_MILVUS_TEXT_FIELD = "text"
 DEFAULT_MILVUS_SOURCE_FIELD = "source"
-DEFAULT_MILVUS_METRIC_TYPE = "IP"
+DEFAULT_MILVUS_METRIC_TYPE = "COSINE"
+DEFAULT_MILVUS_VECTOR_DTYPE = "float16"
 
 
 class RagClientError(RuntimeError):
@@ -42,6 +43,7 @@ class MilvusConfig:
     source_field: str | None
     filter_expression: str
     metric_type: str | None
+    vector_dtype: str
     timeout_seconds: float
     default_top_k: int
 
@@ -110,6 +112,10 @@ def load_milvus_config(env: Mapping[str, str] | None = None) -> MilvusConfig:
             values.get("MILVUS_METRIC_TYPE", DEFAULT_MILVUS_METRIC_TYPE).strip()
             or None
         ),
+        vector_dtype=(
+            values.get("MILVUS_VECTOR_DTYPE", DEFAULT_MILVUS_VECTOR_DTYPE).strip()
+            or DEFAULT_MILVUS_VECTOR_DTYPE
+        ).lower(),
         timeout_seconds=timeout_seconds,
         default_top_k=default_top_k,
     )
@@ -124,6 +130,31 @@ def _load_milvus_client_factory() -> Callable[..., Any]:
             "pymilvus is not installed in the Hermes Python environment.",
         ) from exc
     return MilvusClient
+
+
+def _prepare_search_vectors(vectors: Sequence[Sequence[float]], config: MilvusConfig) -> Any:
+    """Encode query vectors with the exact dtype required by the Milvus field."""
+
+    if config.vector_dtype != "float16":
+        raise RagClientError(
+            "CONFIGURATION_ERROR",
+            "MILVUS_VECTOR_DTYPE must be float16 for my_skill_kb.embedding.",
+        )
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise RagClientError(
+            "DEPENDENCY_ERROR",
+            "numpy is required to encode Float16Vector query embeddings.",
+        ) from exc
+
+    encoded = [np.asarray(vector, dtype=np.float16) for vector in vectors]
+    if any(vector.ndim != 1 or vector.size != 1024 for vector in encoded):
+        raise RagClientError(
+            "EMBEDDING_DIMENSION_ERROR",
+            "my_skill_kb.embedding requires 1024-dimensional query vectors.",
+        )
+    return encoded
 
 
 def _json_safe(value: Any) -> Any:
@@ -187,6 +218,7 @@ def retrieve(
     embedding_config = load_embedding_config(env)
     factory = client_factory or _load_milvus_client_factory()
     vectors = embedder(cleaned, config=embedding_config)
+    search_vectors = _prepare_search_vectors(vectors, config)
     client = None
     try:
         client_kwargs: dict[str, Any] = {
@@ -201,7 +233,7 @@ def retrieve(
         )
         search_kwargs: dict[str, Any] = {
             "collection_name": config.collection,
-            "data": vectors,
+            "data": search_vectors,
             "limit": resolved_top_k,
             "timeout": config.timeout_seconds,
         }
@@ -249,6 +281,8 @@ def retrieve(
         "database": config.database,
         "collection": config.collection,
         "embedding_model": embedding_config.model,
+        "vector_dtype": config.vector_dtype,
+        "metric_type": config.metric_type,
         "top_k": resolved_top_k,
         "results": groups,
     }
@@ -290,6 +324,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "text_field": milvus_config.text_field,
                     "source_field": milvus_config.source_field,
                     "metric_type": milvus_config.metric_type,
+                    "vector_dtype": milvus_config.vector_dtype,
                     "token_configured": bool(milvus_config.token),
                 },
             }

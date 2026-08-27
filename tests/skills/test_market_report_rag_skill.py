@@ -6,6 +6,7 @@ import importlib
 import io
 import sys
 import unittest
+import numpy as np
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
@@ -14,9 +15,7 @@ from unittest.mock import patch
 SKILL_SCRIPTS = (
     Path(__file__).resolve().parents[2]
     / "resources"
-    / "hermes-agent-overlays"
-    / "skills"
-    / "research"
+    / "starter-skills"
     / "market-report-rag"
     / "scripts"
 )
@@ -153,7 +152,8 @@ class RagClientTests(unittest.TestCase):
         self.assertEqual(config.output_fields, ("text", "source"))
         self.assertEqual(config.text_field, "text")
         self.assertEqual(config.source_field, "source")
-        self.assertEqual(config.metric_type, "IP")
+        self.assertEqual(config.metric_type, "COSINE")
+        self.assertEqual(config.vector_dtype, "float16")
         self.assertEqual(config.token, "")
 
     # @lat: [[lat.md/rag-mvp#Tests#Alternate collection configuration fails closed]]
@@ -217,7 +217,7 @@ class RagClientTests(unittest.TestCase):
 
         def embedder(texts, **_kwargs):
             embed_calls.append(list(texts))
-            return [[1.0, 2.0], [3.0, 4.0]]
+            return [[1.0] * 1024, [2.0] * 1024]
 
         def factory(**kwargs):
             instance = FakeMilvusClient(**kwargs)
@@ -241,7 +241,10 @@ class RagClientTests(unittest.TestCase):
         self.assertEqual(search_call["limit"], 4)
         self.assertEqual(search_call["anns_field"], "embedding")
         self.assertEqual(search_call["output_fields"], ["text", "source"])
-        self.assertEqual(search_call["search_params"], {"metric_type": "IP"})
+        self.assertEqual(search_call["search_params"], {"metric_type": "COSINE"})
+        self.assertTrue(all(vector.dtype == np.float16 for vector in search_call["data"]))
+        self.assertTrue(all(vector.shape == (1024,) for vector in search_call["data"]))
+        self.assertEqual(result["vector_dtype"], "float16")
         self.assertEqual(instances[0].init_kwargs["db_name"], "default")
         self.assertEqual(result["results"][0]["hits"][0]["text"], "evidence-0")
         self.assertEqual(result["results"][1]["hits"][0]["source"], "doc-1")
@@ -257,7 +260,7 @@ class RagClientTests(unittest.TestCase):
             rag_client.retrieve(
                 ["query"],
                 env=VALID_ENV,
-                embedder=lambda *_args, **_kwargs: [[1.0]],
+                embedder=lambda *_args, **_kwargs: [[1.0] * 1024],
                 client_factory=lambda **_kwargs: instance,
             )
         self.assertTrue(instance.closed)
@@ -271,7 +274,7 @@ class RagClientTests(unittest.TestCase):
             rag_client.retrieve(
                 ["query"],
                 env=VALID_ENV,
-                embedder=lambda *_args, **_kwargs: [[1.0]],
+                embedder=lambda *_args, **_kwargs: [[1.0] * 1024],
                 client_factory=lambda **_kwargs: SecretEchoClient(),
             )
         self.assertNotIn(VALID_ENV["MILVUS_TOKEN"], str(raised.exception))

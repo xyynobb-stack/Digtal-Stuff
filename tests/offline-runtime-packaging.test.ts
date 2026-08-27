@@ -25,7 +25,6 @@ import {
   patchExecuteCodeWindowsChildSource,
   patchJingYuAgentIdentitySource,
   patchTtsRequirementsSource,
-  syncMarketReportStarterSkill,
 } from "../scripts/apply-offline-runtime-overlays.mjs";
 import {
   ensureDevCompanyResponsesUserAgent,
@@ -77,6 +76,7 @@ describe("single Runtime archive", () => {
       "git/bin/bash.exe",
       "git/cmd/git.exe",
       "employee-lookup.env",
+      "aihub-fallback.env",
       "desktop-runtime-build.json",
     ];
     for (const relative of required) {
@@ -386,32 +386,21 @@ describe("Execute Code Windows child-process overlay", () => {
 });
 
 describe("market report workflow development overlay", () => {
-  it("ships the same complete RAG source as an editable user starter without caches", () => {
-    const root = mkdtempSync(join(tmpdir(), "jingyuai-rag-starter-"));
-    tempRoots.push(root);
-    const target = syncMarketReportStarterSkill(root);
-    for (const file of [
-      "SKILL.md",
-      "requirements.txt",
-      "scripts/rag_client.py",
-      "scripts/embedding_client.py",
-      "references/configuration.md",
-      "references/report-workflow.md",
+  it("keeps all report Skills as repository-owned custom presets", () => {
+    const root = join(process.cwd(), "resources", "starter-skills");
+    for (const name of [
+      "market-report-rag",
+      "hr-analysis-report-rag",
+      "finance-analysis-report-rag",
     ]) {
-      expect(readFileSync(join(target, file), "utf8")).toBe(
-        readFileSync(
-          join(
-            process.cwd(),
-            "resources/hermes-agent-overlays/skills/research/market-report-rag",
-            file,
-          ),
-          "utf8",
-        ),
-      );
+      expect(existsSync(join(root, name, "SKILL.md"))).toBe(true);
+      expect(
+        existsSync(join(root, name, "references", "document-contract.md")),
+      ).toBe(true);
     }
-    expect(existsSync(join(target, "scripts", "__pycache__"))).toBe(false);
-    expect(existsSync(join(target, ".env"))).toBe(false);
-    expect(syncMarketReportStarterSkill(root)).toBe(target);
+    expect(
+      existsSync(join(root, "market-report-rag", "scripts", "rag_client.py")),
+    ).toBe(true);
   });
   it("patches model-aware session recovery idempotently for both runtime paths", () => {
     const source = readFileSync(
@@ -488,28 +477,36 @@ describe("market report workflow development overlay", () => {
     ).toBe("market_report_workflow_tool.py");
   });
 
-  it("syncs the canonical Skill into the development Agent and profile", () => {
+  it("syncs all report Skills into development custom profile only", () => {
     const root = mkdtempSync(join(tmpdir(), "hermes-report-skill-"));
     tempRoots.push(root);
-    const overlay = join(root, "overlay");
+    const starters = join(root, "starters");
     const agent = join(root, "agent");
     const profileSkills = join(root, "profile-skills");
-    const sourceSkill = join(
-      overlay,
-      "skills",
-      "research",
+    for (const name of [
       "market-report-rag",
-    );
-    mkdirSync(sourceSkill, { recursive: true });
-    writeFileSync(join(sourceSkill, "SKILL.md"), "canonical", "utf8");
-
-    expect(syncDevMarketReportSkill(agent, profileSkills, overlay)).toBe(true);
-    for (const target of [
-      join(agent, "skills", "research", "market-report-rag", "SKILL.md"),
-      join(profileSkills, "research", "market-report-rag", "SKILL.md"),
+      "hr-analysis-report-rag",
+      "finance-analysis-report-rag",
     ]) {
-      expect(readFileSync(target, "utf8")).toBe("canonical");
+      const sourceSkill = join(starters, name);
+      mkdirSync(sourceSkill, { recursive: true });
+      writeFileSync(join(sourceSkill, "SKILL.md"), `canonical-${name}`, "utf8");
     }
+    const legacy = join(agent, "skills", "research", "market-report-rag");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "SKILL.md"), "legacy", "utf8");
+
+    expect(syncDevMarketReportSkill(agent, profileSkills, starters)).toBe(true);
+    for (const name of [
+      "market-report-rag",
+      "hr-analysis-report-rag",
+      "finance-analysis-report-rag",
+    ]) {
+      expect(
+        readFileSync(join(profileSkills, "custom", name, "SKILL.md"), "utf8"),
+      ).toBe(`canonical-${name}`);
+    }
+    expect(existsSync(legacy)).toBe(false);
   });
 });
 

@@ -31,6 +31,7 @@ import { precacheSudoCredentials } from "./sudoCreds";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
 import { installPackagedPresetContent } from "./preset-content";
 import { mergeBundledEmployeeLookupToken } from "./employee-lookup-token";
+import { mergeBundledAihubKey } from "./managed-aihub-key";
 import {
   desktopRuntimeBuildIdentity,
   desktopRuntimeVersionName,
@@ -514,21 +515,28 @@ export function repairRelocatedRuntime(
   repairBundledPythonImportPath(runtimeRepo);
 }
 
-function probeRelocatedRuntime(runtimeRepo: string): void {
+export function probeRelocatedRuntime(runtimeRepo: string): void {
   const launcher =
     process.platform === "win32"
       ? join(runtimeRepo, "venv", "Scripts", "python.exe")
       : join(runtimeRepo, "venv", "bin", "python");
-  execFileSync(launcher, ["-c", "import sys; print(sys.executable)"], {
-    cwd: runtimeRepo,
-    encoding: "utf8",
-    timeout: 15_000,
-    windowsHide: true,
-    env: {
-      ...process.env,
-      PYTHONPATH: runtimeRepo,
+  execFileSync(
+    launcher,
+    [
+      "-c",
+      "import sys, numpy, pymilvus; assert tuple(map(int, pymilvus.__version__.split('.')[:2])) >= (2, 4); print(sys.executable)",
+    ],
+    {
+      cwd: runtimeRepo,
+      encoding: "utf8",
+      timeout: 15_000,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PYTHONPATH: runtimeRepo,
+      },
     },
-  });
+  );
 }
 
 function activateRuntime(
@@ -715,7 +723,7 @@ export function initializeBundledRuntime(): Promise<void> {
   if (!bundledRuntimePreparation) {
     recordColdStartTiming({ stage: "runtime.prepare_started" });
     const attempt = prepareBundledRuntime().then(async () => {
-      await installBundledPresetContent();
+      await installBundledProfileContent();
       installBundledLookupToken();
       installBundledSoulRules();
       configureBundledPortableGit();
@@ -853,15 +861,41 @@ export const HERMES_HOME =
   defaultHermesHome();
 
 /** Install builder-selected user Skills and writing templates on first use. */
-async function installBundledPresetContent(): Promise<void> {
+export async function installBundledProfileContent(
+  profile?: string,
+): Promise<void> {
   if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
+  const targetHome = profileHome(profile);
   try {
     await installPackagedPresetContent(
       join(BUNDLED_RUNTIME_ROOT, "preset-content"),
-      HERMES_HOME,
+      targetHome,
     );
   } catch {
     // Presets are optional; startup and existing user content remain usable.
+  }
+  installBundledAihubKey(targetHome);
+}
+
+function installBundledAihubKey(targetHome: string): void {
+  const bundledEnv = join(BUNDLED_RUNTIME_ROOT, "aihub-fallback.env");
+  const targetEnv = join(targetHome, ".env");
+  try {
+    if (!existsSync(bundledEnv)) return;
+    const existing = existsSync(targetEnv)
+      ? readFileSync(targetEnv, "utf-8")
+      : "";
+    const merged = mergeBundledAihubKey(
+      existing,
+      readFileSync(bundledEnv, "utf-8"),
+    );
+    mkdirSync(targetHome, { recursive: true });
+    if (merged !== existing) writeFileSync(targetEnv, merged, "utf-8");
+  } catch (error) {
+    console.warn(
+      "[installer] Could not install the bundled AIHub fallback key:",
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 

@@ -609,28 +609,6 @@ _os.system = _hermes_hidden_system
 }
 
 /** Ship the RAG Skill through the editable, per-profile custom Skill catalog. */
-export function syncMarketReportStarterSkill(
-  starterRoot = path.join(projectRoot, "resources", "starter-skills"),
-) {
-  const source = path.join(
-    projectRoot,
-    "resources",
-    "hermes-agent-overlays",
-    "skills",
-    "research",
-    "market-report-rag",
-  );
-  const target = path.join(starterRoot, "market-report-rag");
-  fs.mkdirSync(starterRoot, { recursive: true });
-  fs.cpSync(source, target, {
-    recursive: true,
-    filter: (entry) =>
-      !["__pycache__", ".env"].includes(path.basename(entry)) &&
-      !entry.endsWith(".pyc"),
-  });
-  return target;
-}
-
 /**
  * @returns {{agentRoot: string, runAgentPath: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, ttsToolPath: string, executeCodeToolPath: string, desktopMethods: string}}
  * Paths for the verified staged overlay.
@@ -644,7 +622,6 @@ export function applyOfflineRuntimeOverlays({
   ),
   overlayRoot = path.join(projectRoot, "resources", "hermes-agent-overlays"),
 } = {}) {
-  syncMarketReportStarterSkill();
   const gatewayServerPath = path.join(agentRoot, "tui_gateway", "server.py");
   const dashboardServerPath = path.join(
     agentRoot,

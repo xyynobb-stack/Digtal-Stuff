@@ -82,6 +82,19 @@ if (fs.existsSync(agentOverlayRoot)) {
     recursive: true,
   });
 }
+// Report Skills are profile-owned presets. Never expose a second system copy
+// from the vendored Agent, otherwise discovery and per-chat activation can
+// resolve different SKILL.md files with the same name.
+fs.rmSync(
+  path.join(
+    outputRoot,
+    "hermes-agent",
+    "skills",
+    "research",
+    "market-report-rag",
+  ),
+  { recursive: true, force: true },
+);
 for (const relativePath of JINGYU_AGENT_PROMPT_RELATIVE_PATHS) {
   const promptPath = path.join(outputRoot, "hermes-agent", relativePath);
   if (!fs.existsSync(promptPath)) continue;
@@ -137,10 +150,10 @@ fs.writeFileSync(
 const presetContentRoot = path.join(outputRoot, "preset-content");
 const presetSources = [
   {
-    source: path.join(hermesHome, "skills", "custom"),
+    source: path.join(projectRoot, "resources", "starter-skills"),
     target: path.join(presetContentRoot, "skills", "custom"),
     include: (entryPath) => fs.existsSync(path.join(entryPath, "SKILL.md")),
-    label: "user Skills",
+    label: "repository preset Skills",
   },
   {
     source: path.join(hermesHome, "writing-templates"),

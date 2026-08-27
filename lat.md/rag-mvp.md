@@ -1,28 +1,28 @@
-# Market Report RAG MVP
+# Analysis Report RAG MVP
 
-The Desktop-managed RAG Skill retrieves internal evidence for factual answers and a structured market report while the production RAG service is unfinished.
+Desktop-managed RAG Skills retrieve internal evidence for market, HR, and finance Word reports while the production RAG service is unfinished.
 
 ## Scope
 
 The Agent owns intent judgment, evidence-query planning, evidence selection, and final composition. It does not own document ingestion, chunking, index updates, vector calculation, or Milvus similarity computation.
 
-The temporary MVP has two remote operations: [[resources/hermes-agent-overlays/skills/research/market-report-rag/scripts/embedding_client.py#embed_texts|query embedding]] and [[resources/hermes-agent-overlays/skills/research/market-report-rag/scripts/rag_client.py#retrieve|Milvus search]]. A future RAG API should replace this direct composition without changing the report workflow.
+The temporary MVP has two remote operations: [[resources/starter-skills/market-report-rag/scripts/embedding_client.py#embed_texts|query embedding]] and [[resources/starter-skills/market-report-rag/scripts/rag_client.py#retrieve|Milvus search]]. A future RAG API should replace this direct composition without changing the report workflow.
 
 ## Skill deployment
 
-The Skill is a Desktop-owned Hermes runtime overlay so it is discoverable as a bundled Skill and is not gated as a per-chat user custom Skill.
+The three report Skills are repository-owned profile custom Skills, so employees can explicitly activate and edit them without a competing system copy.
 
-The canonical files live under `resources/hermes-agent-overlays/skills/research/market-report-rag`. Offline overlay application copies the tree into the staged Agent runtime. Before `npm run dev`, `syncDevMarketReportSkill` refreshes both the installed development Agent and default profile so a stale profile copy cannot shadow the canonical Skill. Ownership follows [[chat-commands#Slash command execution#Session Skill activation]].
+Canonical files live under `resources/starter-skills`. Packaged builds stage them in `preset-content/skills/custom`; [[src/main/installer.ts#installBundledProfileContent]] provisions default and named profiles without overwriting same-name user content. `npm run dev` synchronizes them only to the default profile custom directory and removes the obsolete `skills/research/market-report-rag` copy. Ownership follows [[chat-commands#Slash command execution#Session Skill activation]].
 
 ## Configuration boundary
 
 Endpoint and test-schema defaults are non-secret, while an enabled database credential remains a runtime environment variable. The Skill's evidence boundary is fixed to `my_skill_kb`.
 
-[[resources/hermes-agent-overlays/skills/research/market-report-rag/scripts/rag_client.py#load_milvus_config]] uses database `default`, fixed collection `my_skill_kb`, fields `embedding`/`text`/`source`, 1024 dimensions, and inner-product search. An alternate `MILVUS_COLLECTION` fails before embedding or network access. `MILVUS_TOKEN` is passed only when configured.
+[[resources/starter-skills/market-report-rag/scripts/rag_client.py#load_milvus_config]] uses database `default`, fixed collection `my_skill_kb`, fields `embedding`/`text`/`source`, and 1024 dimensions. The query vectors are encoded as NumPy `float16` to match `Float16Vector(1024)`, and search explicitly uses `COSINE` to match the AUTOINDEX schema. An alternate collection or vector dtype fails closed.
 
 Only `text` and `source` are requested as output fields. The stored 1024-dimensional vector is not returned to the Agent context.
 
-The repository does not store the supplied Milvus credential. The Python runtime needs `pymilvus`, declared by the Skill's `requirements.txt`; Windows release jobs and macOS runtime preparation install it, while a local prebuilt runtime needs administrator setup.
+The repository does not store the supplied Milvus credential. The Python runtime needs `pymilvus` and NumPy, declared by the Skill's `requirements.txt`; release jobs install them, and [[src/main/installer.ts#probeRelocatedRuntime]] rejects an installed runtime that cannot import both before it is activated.
 
 ## Runtime flow
 
@@ -44,11 +44,11 @@ The client is constructed inside the invocation and closed in `finally`. Search 
 
 The model rewrites user goals into evidence-oriented questions and generates chapter content; Python performs no LLM rewriting or prose generation, but a process-local state machine validates collection provenance and generation waves.
 
-For the full report, the source map in the Skill reference fixes what each section needs. The Agent retrieves project, quality, closeout, personnel, capacity, tool, SOP, and interview evidence in a small batch from `my_skill_kb`. It builds 1.1 and 1.2 together, derives capability matrix 1.3, and reuses the whole chapter-1 foundation for chapters 2–7.
+For a full report, each Skill's document contract fixes its sections and table headers. The market flow builds 1.1 and 1.2 together, derives 1.3, and reuses that foundation for chapters 2–7. HR builds 0.1 and 0.2, derives capacity baseline 0.3, then generates dependent sections together. Finance fixes its data boundary first, generates revenue and cost units together, then derives unit economics, risks, and actions.
 
 A supplement retrieval happens only when a required evidence category is missing. It names the missing document, entity, time range, or field and is capped at two rounds. Generated report prose is never treated as retrieved evidence.
 
-[[resources/hermes-agent-overlays/tools/market_report_workflow_state.py#MarketReportWorkflowStore]] enforces three atomic generation waves: 1.1+1.2, then 1.3, then all remaining units in chapters 2–7. Section 1.3 becomes immutable, and finalization fails until every unit is present.
+[[resources/hermes-agent-overlays/tools/market_report_workflow_state.py#MarketReportWorkflowStore]] selects a dependency-wave definition by `report_type` and atomically validates each wave. `analysis_report_workflow` handles all three families; `market_report_workflow` remains a compatibility alias whose default is market. Finalization fails until every required unit is present.
 
 The RAG result's collection is required by `start`. The client rejects alternate collection configuration, and the state machine rejects both a wrong collection value and explicit references to known alternate project collections in evidence summaries or chapter content.
 
@@ -62,7 +62,7 @@ A full report is delivered as a Word `.docx` file rather than pasted into chat a
 
 After the chapter state machine finalizes the ordered report content, the Agent loads the bundled `docx` Skill and creates the document in the turn-scoped output directory described by [[context-folder#Linked working folder#Output destination]]. The chat response contains the resulting file path and a short completion message. Missing DOCX dependencies are reported explicitly and never trigger a silent Markdown fallback.
 
-The Word outline is immutable: seven chapters numbered 1–7, containing all 13 state-machine units. Chapter 1 is the evidence foundation. The DOCX Skill performs formatting only and cannot substitute a generic outline, rename sections, or create the file before workflow finalization succeeds.
+The market Word outline is seven chapters with 15 fixed table contracts; chapter 2 tables include the mandatory company-name column. HR and finance use their own fixed document contracts and data-boundary statements. The DOCX Skill performs formatting only and cannot substitute a generic outline or create the file before workflow finalization succeeds.
 
 ## Concurrency decisions
 
@@ -82,7 +82,7 @@ After `chat-done`, the authority reverses. Long bubbles are matched by a normali
 
 `chat-done` can arrive before the final SQLite update becomes visible. The renderer therefore performs a bounded settle poll and finishes only after a terminal Assistant `finish_reason` and its full transcript snapshot remain stable; each intermediate snapshot repairs late reasoning and answer content immediately.
 
-The wider Desktop has existing check-then-copy windows while provisioning custom or bundled Skills. This Skill avoids adding another profile-copy path by using the managed runtime overlay and relies on the existing atomic bundled manifest write. Concurrent first-time profile seeding remains an upstream lifecycle concern, not retrieval state shared by this implementation.
+Profile seeding uses the packaged preset installer's staging-directory rename. Runtime preparation is shared once per process, named-profile creation awaits its own preset merge, and opening the Skill picker is read-only; retrieval state remains isolated from profile provisioning.
 
 ## Failure behavior
 

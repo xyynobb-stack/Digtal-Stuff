@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,11 +22,7 @@ vi.mock("./utils", () => ({
       : mocks.home,
 }));
 
-import {
-  ensureLegacyUserSkillMarkers,
-  ensureStarterUserSkills,
-  listUserAddedSkills,
-} from "./skills";
+import { ensureLegacyUserSkillMarkers, listUserAddedSkills } from "./skills";
 
 describe("starter user skills", () => {
   beforeEach(() => {
@@ -37,33 +33,30 @@ describe("starter user skills", () => {
     rmSync(mocks.home, { recursive: true, force: true });
   });
 
-  it("provisions editable skills including RAG without overwriting user changes", () => {
+  it("does not lazily copy packaged Skills when the picker is opened", () => {
     // @lat: [[discover#Starter user skills]]
-    const skills = listUserAddedSkills();
-
-    expect(skills.map((skill) => skill.name)).toEqual([
-      "finance",
-      "hr",
-      "market-report-rag",
-      "project-manager",
-      "skill-creator",
-    ]);
-    expect(skills.every((skill) => skill.category === "custom")).toBe(true);
-    expect(
-      skills.every((skill) =>
-        existsSync(join(skill.path, ".hermes-desktop-user-added")),
-      ),
-    ).toBe(true);
-
-    const hrFile = join(mocks.home, "skills", "custom", "hr", "SKILL.md");
-    writeFileSync(hrFile, "user-owned content", "utf-8");
-    ensureStarterUserSkills();
-    expect(readFileSync(hrFile, "utf-8")).toBe("user-owned content");
+    expect(listUserAddedSkills()).toEqual([]);
+    expect(existsSync(join(mocks.home, "skills", "custom"))).toBe(false);
   });
 
-  it("exposes the packaged RAG Skill in each profile's user picker and preserves edits", () => {
+  it("exposes an installed custom report Skill in each profile picker", () => {
     // @lat: [[discover#Market report user Skill]]
     for (const profile of [undefined, "employee-test"]) {
+      const root = profile ? join(mocks.home, "profiles", profile) : mocks.home;
+      const installed = join(root, "skills", "custom", "market-report-rag");
+      mkdirSync(join(installed, "references"), { recursive: true });
+      mkdirSync(join(installed, "scripts"), { recursive: true });
+      writeFileSync(
+        join(installed, "SKILL.md"),
+        "---\nname: market-report-rag\ndescription: report\n---\n",
+        "utf8",
+      );
+      writeFileSync(join(installed, "scripts", "rag_client.py"), "", "utf8");
+      writeFileSync(
+        join(installed, "references", "document-contract.md"),
+        "",
+        "utf8",
+      );
       const rag = listUserAddedSkills(profile).find(
         (skill) => skill.name === "market-report-rag",
       );
@@ -72,14 +65,8 @@ describe("starter user skills", () => {
         true,
       );
       expect(
-        existsSync(join(rag!.path, "references", "report-workflow.md")),
+        existsSync(join(rag!.path, "references", "document-contract.md")),
       ).toBe(true);
-      const skillFile = join(rag!.path, "SKILL.md");
-      writeFileSync(skillFile, "User customized report instructions", "utf8");
-      ensureStarterUserSkills(profile);
-      expect(readFileSync(skillFile, "utf8")).toBe(
-        "User customized report instructions",
-      );
     }
   });
 

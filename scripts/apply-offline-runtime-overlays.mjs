@@ -608,7 +608,45 @@ _os.system = _hermes_hidden_system
   return normalized.replace(anchor, injection);
 }
 
-/** Ship the RAG Skill through the editable, per-profile custom Skill catalog. */
+/**
+ * Synchronize repository-owned starter Skills into the staged Runtime preset.
+ *
+ * Release jobs patch a versioned Runtime checkout instead of rebuilding it
+ * from a developer profile, so they must refresh preset-content explicitly.
+ */
+export function syncRepositoryPresetSkills(
+  starterRoot = path.join(projectRoot, "resources", "starter-skills"),
+  presetSkillsRoot = path.join(
+    projectRoot,
+    "build",
+    "offline-runtime",
+    "preset-content",
+    "skills",
+    "custom",
+  ),
+) {
+  if (!fs.existsSync(starterRoot)) {
+    throw new Error(`Repository starter Skills not found: ${starterRoot}`);
+  }
+  fs.mkdirSync(presetSkillsRoot, { recursive: true });
+  const copied = [];
+  for (const entry of fs.readdirSync(starterRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const source = path.join(starterRoot, entry.name);
+    if (!fs.existsSync(path.join(source, "SKILL.md"))) continue;
+    const target = path.join(presetSkillsRoot, entry.name);
+    fs.rmSync(target, { recursive: true, force: true });
+    fs.cpSync(source, target, {
+      recursive: true,
+      filter: (candidate) =>
+        !["__pycache__", ".env"].includes(path.basename(candidate)) &&
+        !candidate.endsWith(".pyc"),
+    });
+    copied.push(entry.name);
+  }
+  return copied;
+}
+
 /**
  * @returns {{agentRoot: string, runAgentPath: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, ttsToolPath: string, executeCodeToolPath: string, desktopMethods: string}}
  * Paths for the verified staged overlay.
@@ -622,6 +660,7 @@ export function applyOfflineRuntimeOverlays({
   ),
   overlayRoot = path.join(projectRoot, "resources", "hermes-agent-overlays"),
 } = {}) {
+  syncRepositoryPresetSkills();
   const gatewayServerPath = path.join(agentRoot, "tui_gateway", "server.py");
   const dashboardServerPath = path.join(
     agentRoot,

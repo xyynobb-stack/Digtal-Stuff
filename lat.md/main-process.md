@@ -130,7 +130,7 @@ Because Edge is the desktop's default TTS provider, stable and beta Windows work
 
 Offline builds distribute repository-selected custom Skills and reviewed writing templates as immediately usable, editable profile content.
 
-`scripts/prepare-offline-runtime.mjs` reads Skills only from the reviewed `resources/starter-skills` inventory and stages them under `build/offline-runtime/preset-content/skills/custom`; it no longer packages arbitrary custom Skills from the builder's local profile. Writing templates remain selected from the builder library and are staged separately. This makes the three report Skills deterministic across GitHub runners and local builds.
+`scripts/prepare-offline-runtime.mjs` reads Skills only from the reviewed `resources/starter-skills` inventory and stages them under `build/offline-runtime/preset-content/skills/custom`; release jobs that patch the versioned Runtime call `syncRepositoryPresetSkills` from `scripts/apply-offline-runtime-overlays.mjs` to refresh the same preset before dependency installation. Neither path packages arbitrary custom Skills from the builder's local profile. Writing templates remain staged separately.
 
 Electron Builder maps either platform's offline runtime to `resources/hermes-runtime`. [[src/main/installer.ts#installBundledProfileContent]] invokes [[src/main/preset-content.ts#installPackagedPresetContent]] for the default profile after runtime preparation and for each successfully created named profile. Each entry is copied into a private sibling staging directory and atomically renamed; existing same-name content wins. The Skill picker never triggers provisioning, eliminating a UI-open copy race.
 

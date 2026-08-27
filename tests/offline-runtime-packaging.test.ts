@@ -25,6 +25,7 @@ import {
   patchExecuteCodeWindowsChildSource,
   patchJingYuAgentIdentitySource,
   patchTtsRequirementsSource,
+  syncRepositoryPresetSkills,
 } from "../scripts/apply-offline-runtime-overlays.mjs";
 import {
   ensureDevCompanyResponsesUserAgent,
@@ -386,6 +387,37 @@ describe("Execute Code Windows child-process overlay", () => {
 });
 
 describe("market report workflow development overlay", () => {
+  it("refreshes repository starter Skills in the staged Runtime preset", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-runtime-presets-"));
+    tempRoots.push(root);
+    const starters = join(root, "starters");
+    const presets = join(root, "presets");
+    const source = join(starters, "market-report-rag");
+    mkdirSync(join(source, "scripts"), { recursive: true });
+    writeFileSync(join(source, "SKILL.md"), "canonical", "utf8");
+    writeFileSync(join(source, "requirements.txt"), "pymilvus", "utf8");
+    mkdirSync(join(source, "scripts", "__pycache__"), { recursive: true });
+    writeFileSync(join(source, "scripts", "__pycache__", "rag.pyc"), "cache");
+    mkdirSync(join(presets, "market-report-rag"), { recursive: true });
+    writeFileSync(join(presets, "market-report-rag", "stale.txt"), "stale");
+
+    expect(syncRepositoryPresetSkills(starters, presets)).toEqual([
+      "market-report-rag",
+    ]);
+    expect(
+      readFileSync(
+        join(presets, "market-report-rag", "requirements.txt"),
+        "utf8",
+      ),
+    ).toBe("pymilvus");
+    expect(existsSync(join(presets, "market-report-rag", "stale.txt"))).toBe(
+      false,
+    );
+    expect(
+      existsSync(join(presets, "market-report-rag", "scripts", "__pycache__")),
+    ).toBe(false);
+  });
+
   it("keeps all report Skills as repository-owned custom presets", () => {
     const root = join(process.cwd(), "resources", "starter-skills");
     for (const name of [
@@ -402,6 +434,27 @@ describe("market report workflow development overlay", () => {
       existsSync(join(root, "market-report-rag", "scripts", "rag_client.py")),
     ).toBe(true);
   });
+
+  it("resolves the staged RAG requirements before changing directories", () => {
+    for (const workflow of ["release.yml", "beta-release.yml"]) {
+      const source = readFileSync(
+        join(process.cwd(), ".github", "workflows", workflow),
+        "utf8",
+      );
+      const requirements =
+        "build/offline-runtime/preset-content/skills/custom/market-report-rag/requirements.txt";
+      expect(source).toContain(
+        `$ragRequirements = (Resolve-Path "${requirements}").Path`,
+      );
+      expect(source).toContain(`"${requirements}"`);
+      const assignment = source.indexOf("$ragRequirements = (Resolve-Path");
+      expect(assignment).toBeGreaterThan(-1);
+      expect(assignment).toBeLessThan(
+        source.indexOf("Push-Location $agentRoot", assignment),
+      );
+    }
+  });
+
   it("patches model-aware session recovery idempotently for both runtime paths", () => {
     const source = readFileSync(
       join(

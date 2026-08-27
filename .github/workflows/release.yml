@@ -127,7 +127,8 @@ jobs:
             "build/offline-runtime/python-runtime/desktop-sqlite-runtime.json",
             "build/offline-runtime/git/bin/bash.exe",
             "build/offline-runtime/git/cmd/git.exe",
-            "build/offline-runtime/preset-content"
+            "build/offline-runtime/preset-content",
+            "build/offline-runtime/preset-content/skills/custom/market-report-rag/requirements.txt"
           )
           foreach ($path in $required) {
             if (-not (Test-Path -LiteralPath $path)) {
@@ -163,7 +164,7 @@ jobs:
           $basePython = Join-Path $PWD "build/offline-runtime/python-runtime/python.exe"
           $venvRoot = Join-Path $agentRoot "venv"
           $venvPython = Join-Path $venvRoot "Scripts/python.exe"
-          $ragRequirements = "build/offline-runtime/preset-content/skills/custom/market-report-rag/requirements.txt"
+          $ragRequirements = (Resolve-Path "build/offline-runtime/preset-content/skills/custom/market-report-rag/requirements.txt").Path
 
           & $basePython -m venv $venvRoot
           if ($LASTEXITCODE -ne 0) { throw "Could not create bundled Python venv" }

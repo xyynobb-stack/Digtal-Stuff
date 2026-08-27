@@ -44,7 +44,7 @@ The client is constructed inside the invocation and closed in `finally`. Search 
 
 The model rewrites user goals into evidence-oriented questions and generates chapter content; Python performs no LLM rewriting or prose generation, but a process-local state machine validates collection provenance and generation waves.
 
-For a full report, each Skill's document contract fixes its sections and table headers. The market flow builds 1.1 and 1.2 together, derives 1.3, and reuses that foundation for chapters 2–7. HR builds 0.1 and 0.2, derives capacity baseline 0.3, then generates dependent sections together. Finance fixes its data boundary first, generates revenue and cost units together, then derives unit economics, risks, and actions.
+For a full report, each Skill's document contract fixes its sections, evidence codes, table headers, missing-data behavior, and required analysis. The market flow builds 1.1 and 1.2 together, derives 1.3, and reuses that foundation for chapters 2–7. HR follows its authored sequence from 0.1 through chapter 4 so 0.3 and 0.2 remain authoritative dependencies. Finance computes boundary and costs before revenue, then unit economics, risks, and actions; finalization still renders chapters in document order.
 
 A supplement retrieval happens only when a required evidence category is missing. It names the missing document, entity, time range, or field and is capped at two rounds. Generated report prose is never treated as retrieved evidence.
 
@@ -111,6 +111,10 @@ Multiple queries use one embedding batch and one Milvus search, the client alway
 ### Wave orchestration preserves dependencies
 
 The workflow atomically accepts only the complete expected wave, freezes 1.3 for chapters 2–7, caps focused supplement retrieval at two rounds, and refuses finalization before all units exist.
+
+### HR and finance outlines remain authoritative
+
+HR and finance generation order, section evidence codes, dependencies, mandatory tables, excluded data, and missing-data labels match their maintained report contracts instead of inheriting a generic market-report structure.
 
 ### Concurrent wave updates are serialized
 

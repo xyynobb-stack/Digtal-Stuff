@@ -45,39 +45,50 @@ SECTION_SPECS: Mapping[str, Dict[str, Any]] = {
 
 HR_SECTION_ORDER = ("0.1", "0.2", "0.3", "1.1", "1.2", "2.1", "2.2", "3", "4")
 HR_GENERATION_WAVES = (
-    ("0.1", "0.2"),
+    ("0.1",),
+    ("0.2",),
     ("0.3",),
-    ("1.1", "1.2", "2.1", "2.2", "3", "4"),
+    ("1.1",),
+    ("1.2",),
+    ("2.1",),
+    ("2.2",),
+    ("3",),
+    ("4",),
 )
 HR_FOUNDATION = ("0.1", "0.2", "0.3")
 HR_SECTION_SPECS: Mapping[str, Dict[str, Any]] = {
-    "0.1": {"goal": "人员结构与岗位分布", "evidence": ["人员名册", "组织架构", "项目参与记录"], "depends_on": []},
-    "0.2": {"goal": "技能矩阵与岗位覆盖", "evidence": ["技能标签", "项目经历", "质检记录"], "depends_on": []},
-    "0.3": {"goal": "可交付产能基线", "evidence": ["工时", "产量", "出勤与排期"], "depends_on": ["0.1", "0.2"]},
-    "1.1": {"goal": "业务需求与人力需求测算", "evidence": ["项目计划", "岗位要求"], "depends_on": list(HR_FOUNDATION)},
-    "1.2": {"goal": "人员缺口、冗余与关键岗位风险", "evidence": ["岗位编制", "项目排期"], "depends_on": list(HR_FOUNDATION)},
-    "2.1": {"goal": "质量问题的岗位与流程归因", "evidence": ["质检", "返工", "badcase"], "depends_on": list(HR_FOUNDATION)},
-    "2.2": {"goal": "培训与成长路径", "evidence": ["技能差距", "培训记录"], "depends_on": list(HR_FOUNDATION)},
-    "3": {"goal": "组织与交付风险", "evidence": ["关键岗位", "人员波动", "项目依赖"], "depends_on": list(HR_FOUNDATION)},
-    "4": {"goal": "结论与行动计划", "evidence": ["业务负责人访谈"], "depends_on": list(HR_FOUNDATION)},
+    "0.1": {"goal": "按岗位统计人员结构、配比异常和用工形式风险", "evidence": ["B 工时/排班/所在项目", "E 人员技能与背景", "G 岗位职责/SOP"], "depends_on": []},
+    "0.2": {"goal": "以实际项目经历判定技能覆盖矩阵和单点能力", "evidence": ["A 项目标注数据", "B 工时/排班/所在项目", "E 人员技能与背景"], "depends_on": []},
+    "0.3": {"goal": "按标注品类建立产能与人效基线", "evidence": ["A 项目标注数据", "B 工时/排班", "D 项目交付量与周期"], "depends_on": []},
+    "1.1": {"goal": "按品类和项目时间轴测算所需人天与人数", "evidence": ["D 项目交付量与周期", "项目经理访谈", "销售访谈"], "depends_on": ["0.3"]},
+    "1.2": {"goal": "按月份和品类计算缺口、冗余及可培训转移能力", "evidence": ["本报告 0.2、0.3、1.1"], "depends_on": ["0.2", "0.3", "1.1"]},
+    "2.1": {"goal": "按错误类型归因质量问题并比较新人和老人收敛周期", "evidence": ["C 质检/返工记录", "A 项目标注数据", "F 培训与上手记录"], "depends_on": []},
+    "2.2": {"goal": "按品类分析上手周期、培训人天和成长路径", "evidence": ["F 培训与上手记录", "E 人员技能与背景", "G 岗位职责/SOP"], "depends_on": []},
+    "3": {"goal": "识别单点依赖、流失、弹性和知识流失风险", "evidence": ["本报告 0.2", "E 人员技能与背景", "H 外部行业资料", "组长访谈"], "depends_on": ["0.2"]},
+    "4": {"goal": "用三项经营判断和90天行动表收口", "evidence": ["本报告全篇"], "depends_on": list(HR_SECTION_ORDER[:-1])},
 }
 
 FINANCE_SECTION_ORDER = ("0", "1", "2.1", "2.2", "2.3", "3", "4", "5")
 FINANCE_GENERATION_WAVES = (
     ("0",),
-    ("1", "2.1", "2.2", "2.3"),
-    ("3", "4", "5"),
+    ("2.1",),
+    ("2.2",),
+    ("2.3",),
+    ("1",),
+    ("3",),
+    ("4",),
+    ("5",),
 )
 FINANCE_FOUNDATION = ("0", "1", "2.1", "2.2", "2.3")
 FINANCE_SECTION_SPECS: Mapping[str, Dict[str, Any]] = {
-    "0": {"goal": "口径、数据边界与估算声明", "evidence": ["合同", "结项", "工时与成本口径"], "depends_on": []},
-    "1": {"goal": "收入结构与可确认收入", "evidence": ["合同", "报价", "验收与结项"], "depends_on": ["0"]},
-    "2.1": {"goal": "直接人工成本", "evidence": ["工时", "人天成本", "人员投入"], "depends_on": ["0"]},
-    "2.2": {"goal": "质量与返工成本", "evidence": ["质检", "返工", "badcase"], "depends_on": ["0"]},
-    "2.3": {"goal": "工具与其他直接成本", "evidence": ["工具使用", "采购与外协"], "depends_on": ["0"]},
-    "3": {"goal": "项目单位经济性与盈亏平衡", "evidence": [], "depends_on": list(FINANCE_FOUNDATION)},
-    "4": {"goal": "财务与经营风险", "evidence": ["回款", "交付", "客户集中度"], "depends_on": list(FINANCE_FOUNDATION)},
-    "5": {"goal": "结论与经营行动计划", "evidence": ["业务负责人访谈"], "depends_on": list(FINANCE_FOUNDATION)},
+    "0": {"goal": "冻结成本纳入项、排除项和关键估算假设", "evidence": ["人天综合成本单一口径；无其他必需资料"], "depends_on": []},
+    "1": {"goal": "按客户和标注品类拆分收入结构与集中度", "evidence": ["D 项目交付量与周期", "E 报价区间与计价方式"], "depends_on": ["0"]},
+    "2.1": {"goal": "按品类分别计算标注与审核直接人力成本", "evidence": ["A 标注平台数据", "B 工时/排班", "人天综合成本"], "depends_on": ["0"]},
+    "2.2": {"goal": "计算返工人天、返工成本及其直接人力成本占比", "evidence": ["C 质检/返工记录", "A 标注平台数据", "B 工时/排班"], "depends_on": ["0"]},
+    "2.3": {"goal": "计算工具平台摊销和预标注模型投入产出", "evidence": ["F 工具与平台采购清单"], "depends_on": ["0"]},
+    "3": {"goal": "按统一品类生成单位经济模型、毛利排序和盈亏平衡测算", "evidence": ["本报告第1、2章"], "depends_on": list(FINANCE_FOUNDATION)},
+    "4": {"goal": "分析客户集中度、单价、低毛利和产能风险", "evidence": ["本报告第1至3章", "G 外部行业资料"], "depends_on": ["1", "2.1", "2.2", "2.3", "3"]},
+    "5": {"goal": "用三项经营判断和可验收行动表收口", "evidence": ["本报告全篇"], "depends_on": list(FINANCE_SECTION_ORDER[:-1])},
 }
 
 REPORT_DEFINITIONS: Mapping[str, Dict[str, Any]] = {

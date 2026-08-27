@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -548,6 +549,9 @@ describe("market report workflow development overlay", () => {
     const legacy = join(agent, "skills", "research", "market-report-rag");
     mkdirSync(legacy, { recursive: true });
     writeFileSync(join(legacy, "SKILL.md"), "legacy", "utf8");
+    const profileLegacy = join(profileSkills, "research", "market-report-rag");
+    mkdirSync(profileLegacy, { recursive: true });
+    writeFileSync(join(profileLegacy, "SKILL.md"), "profile legacy", "utf8");
 
     expect(syncDevMarketReportSkill(agent, profileSkills, starters)).toBe(true);
     for (const name of [
@@ -560,6 +564,15 @@ describe("market report workflow development overlay", () => {
       ).toBe(`canonical-${name}`);
     }
     expect(existsSync(legacy)).toBe(false);
+    expect(existsSync(profileLegacy)).toBe(false);
+    const backups = join(root, "skill-backups");
+    const backupName = readdirSync(backups).find((name) =>
+      name.startsWith("legacy-research-market-report-rag-"),
+    );
+    expect(backupName).toBeTruthy();
+    expect(readFileSync(join(backups, backupName!, "SKILL.md"), "utf8")).toBe(
+      "profile legacy",
+    );
   });
 });
 

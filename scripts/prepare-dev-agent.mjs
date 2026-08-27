@@ -1,6 +1,7 @@
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
   JINGYU_AGENT_PROMPT_RELATIVE_PATHS,
@@ -196,6 +197,25 @@ export function syncDevMarketReportSkill(
     recursive: true,
     force: true,
   });
+  const legacyProfileSkill = path.join(
+    profileSkillsRoot,
+    "research",
+    "market-report-rag",
+  );
+  if (fs.existsSync(legacyProfileSkill)) {
+    const backupRoot = path.join(
+      path.dirname(profileSkillsRoot),
+      "skill-backups",
+    );
+    fs.mkdirSync(backupRoot, { recursive: true });
+    fs.renameSync(
+      legacyProfileSkill,
+      path.join(
+        backupRoot,
+        `legacy-research-market-report-rag-${randomUUID()}`,
+      ),
+    );
+  }
   return true;
 }
 

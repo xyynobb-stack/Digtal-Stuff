@@ -22,7 +22,19 @@ The Skill Creator starter guides a dialogue from trigger examples and scope thro
 
 Market, HR, and finance RAG report Skills are included in the user-added catalog and per-chat picker for fresh installations and named profiles, without replacing employee edits.
 
-The fixed custom inventory contains `market-report-rag`, `hr-analysis-report-rag`, and `finance-analysis-report-rag`. Development preparation copies the same three directories into the default profile's `skills/custom`; packaged preparation removes the legacy system/research copy, so discovery and per-chat activation cannot resolve two different Skills with the same name.
+The fixed custom inventory contains `market-report-rag`, `hr-analysis-report-rag`, and `finance-analysis-report-rag`. Development preparation copies the same three directories into the default profile's `skills/custom`; packaged and development preparation move an obsolete profile `skills/research/market-report-rag` into `skill-backups`, so the bare name resolves only to the maintained custom Skill without discarding possible local edits.
+
+## Managed report Skill upgrades
+
+Product-maintained report Skills receive corrected contracts on application upgrades while their previous custom directories remain recoverable.
+
+[[src/main/preset-content.ts#installManagedReportSkills]] compares a packaged content revision, stages each changed report Skill, moves an existing same-name custom directory to `skill-backups`, and atomically activates the packaged version. A given revision is installed only once; all other starter and employee-created custom Skills retain the normal never-overwrite behavior.
+
+## Legacy report Skill migration
+
+An older product-owned research copy is preserved outside discovery roots when the maintained custom market report Skill exists, preventing both duplicate picker entries and ambiguous `skill_view` resolution.
+
+[[src/main/preset-content.ts#quarantineLegacyMarketReportSkill]] moves the exact legacy directory into the profile's `skill-backups` directory during packaged preset installation. Development preparation applies the same migration before the Agent starts; unrelated research Skills are untouched.
 
 ## Writing templates entry
 

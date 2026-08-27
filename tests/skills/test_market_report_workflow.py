@@ -10,9 +10,11 @@ sys.path.insert(0, str(TOOLS_DIR))
 from market_report_workflow_state import (  # noqa: E402
     FINANCE_GENERATION_WAVES,
     FINANCE_SECTION_ORDER,
+    FINANCE_SECTION_SPECS,
     GENERATION_WAVES,
     HR_GENERATION_WAVES,
     HR_SECTION_ORDER,
+    HR_SECTION_SPECS,
     MarketReportWorkflowStore,
     SECTION_ORDER,
     WorkflowError,
@@ -189,6 +191,33 @@ class MarketReportWorkflowTests(unittest.TestCase):
             result = store.execute(task_id, "finalize")
             positions = [result["report"].index(f"## {section}\n") for section in sections]
             self.assertEqual(positions, sorted(positions))
+
+    # @lat: [[lat.md/rag-mvp#Tests#HR and finance outlines remain authoritative]]
+    def test_hr_and_finance_follow_the_outline_generation_order_and_sources(self):
+        self.assertEqual(
+            HR_GENERATION_WAVES,
+            tuple((section,) for section in HR_SECTION_ORDER),
+        )
+        self.assertEqual(
+            FINANCE_GENERATION_WAVES,
+            (("0",), ("2.1",), ("2.2",), ("2.3",), ("1",), ("3",), ("4",), ("5",)),
+        )
+        self.assertEqual(
+            HR_SECTION_SPECS["0.1"]["evidence"],
+            ["B 工时/排班/所在项目", "E 人员技能与背景", "G 岗位职责/SOP"],
+        )
+        self.assertEqual(
+            HR_SECTION_SPECS["1.2"]["depends_on"],
+            ["0.2", "0.3", "1.1"],
+        )
+        self.assertEqual(
+            FINANCE_SECTION_SPECS["2.2"]["evidence"],
+            ["C 质检/返工记录", "A 标注平台数据", "B 工时/排班"],
+        )
+        self.assertEqual(
+            FINANCE_SECTION_SPECS["3"]["depends_on"],
+            ["0", "1", "2.1", "2.2", "2.3"],
+        )
 
 
 if __name__ == "__main__":

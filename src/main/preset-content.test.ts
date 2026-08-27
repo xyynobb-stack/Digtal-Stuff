@@ -1,7 +1,18 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { dirname, join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { installPackagedPresetContent } from "./preset-content";
+import {
+  installManagedReportSkills,
+  installPackagedPresetContent,
+  quarantineLegacyMarketReportSkill,
+} from "./preset-content";
 
 const testRoot = join(
   process.env.TEMP || "C:\\tmp",
@@ -116,5 +127,79 @@ describe("packaged preset user content", () => {
         ),
       ),
     ).toEqual(binary);
+  });
+
+  it("moves the obsolete research report Skill outside discovery roots", async () => {
+    // @lat: [[discover#Legacy report Skill migration]]
+    const canonical = join(
+      hermesHome,
+      "skills",
+      "custom",
+      "market-report-rag",
+      "SKILL.md",
+    );
+    const legacy = join(
+      hermesHome,
+      "skills",
+      "research",
+      "market-report-rag",
+      "SKILL.md",
+    );
+    writeFixture(canonical, "canonical custom report");
+    writeFixture(legacy, "legacy report with possible local edits");
+
+    const backup = await quarantineLegacyMarketReportSkill(hermesHome);
+
+    expect(backup).not.toBeNull();
+    expect(
+      existsSync(join(hermesHome, "skills", "research", "market-report-rag")),
+    ).toBe(false);
+    expect(readFileSync(canonical, "utf8")).toBe("canonical custom report");
+    expect(readFileSync(join(backup!, "SKILL.md"), "utf8")).toBe(
+      "legacy report with possible local edits",
+    );
+  });
+
+  it("refreshes maintained report Skills and backs up previous content", async () => {
+    // @lat: [[discover#Managed report Skill upgrades]]
+    const reportNames = [
+      "market-report-rag",
+      "hr-analysis-report-rag",
+      "finance-analysis-report-rag",
+    ];
+    for (const name of reportNames) {
+      writeFixture(
+        join(presetRoot, "skills", "custom", name, "SKILL.md"),
+        `new-${name}`,
+      );
+      writeFixture(
+        join(hermesHome, "skills", "custom", name, "SKILL.md"),
+        `old-${name}`,
+      );
+    }
+
+    await expect(
+      installManagedReportSkills(presetRoot, hermesHome),
+    ).resolves.toBe(3);
+
+    for (const name of reportNames) {
+      expect(
+        readFileSync(
+          join(hermesHome, "skills", "custom", name, "SKILL.md"),
+          "utf8",
+        ),
+      ).toBe(`new-${name}`);
+    }
+    const backups = readdirSync(join(hermesHome, "skill-backups"));
+    expect(
+      reportNames.every((name) =>
+        backups.some((entry) => entry.startsWith(`previous-custom-${name}-`)),
+      ),
+    ).toBe(true);
+
+    await expect(
+      installManagedReportSkills(presetRoot, hermesHome),
+    ).resolves.toBe(0);
+    expect(readdirSync(join(hermesHome, "skill-backups"))).toEqual(backups);
   });
 });

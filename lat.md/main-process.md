@@ -64,7 +64,13 @@ The desktop starts its local Agent backend with `hermes serve` from a dedicated 
 
 `scripts/prepare-offline-runtime.mjs` stages the tested Python installation and Hermes Agent (including its virtual environment) in `build/offline-runtime`; the release pipeline converts it to the archive described below. The staging marker and Electron version form a stable digest used as `userData/hermes-runtime/versions/<version-digest>`, so every compatibility unit is immutable and a new package never overwrites Python files used by an older process.
 
-The relocated-runtime probe imports `numpy` and `pymilvus` through the packaged virtual-environment launcher as well as checking its executable path. A package with a missing RAG dependency is rejected before activation instead of falling through to a different PATH Python at report time.
+The relocated-runtime activation probe starts the packaged virtual-environment launcher and imports only `sys`, proving that the interpreter and repaired executable path work without putting cold `numpy` or `pymilvus` DLL loading on the blocking first-launch path. Release workflows import both heavy dependencies before packaging, so a missing RAG dependency fails CI rather than an employee upgrade.
+
+### Lightweight activation probe
+
+Runtime activation remains independent of optional heavy RAG imports while release artifacts still prove those dependencies are bundled.
+
+[[src/main/installer.ts#probeRelocatedRuntime]] uses a bounded lightweight interpreter probe. Stable and beta workflows explicitly import `numpy` and `pymilvus`; no desktop startup path downloads or repairs Python packages from the network.
 
 ### Single Runtime archive
 
@@ -88,7 +94,7 @@ The desktop brands the Agent as JingYu Agent in model-visible identity and platf
 
 `patchJingYuAgentIdentitySource` in `scripts/apply-offline-runtime-overlays.mjs` updates the fallback identity, help guidance, platform hints, profile context, default and Docker SOUL templates, doctor-created SOUL, MoA aggregation, profile-description prompts, and model-visible desktop tool descriptions. `scripts/prepare-dev-agent.mjs` applies the same idempotent overlay to development startup, including the active profile SOUL, while `scripts/prepare-offline-runtime.mjs` applies it before the packaged Runtime archive is created.
 
-Packaged startup migrates only exact recognized legacy identity sentences in an existing SOUL file, preserving every other user-authored instruction. The actual request body, model route, request headers, tool arguments, CLI names, environment variables, and internal `hermes-agent` Skill name are unchanged.
+Packaged startup migrates only exact recognized legacy identity sentences in an existing SOUL file, preserving every other user-authored instruction. A separately marked SOUL rule makes progress updates, tool-call explanations, errors, and final answers use Simplified Chinese when the latest user message is Chinese; provider-native reasoning, code, commands, identifiers, and tool parameters remain untouched. The actual request body, model route, request headers, tool arguments, CLI names, environment variables, and internal `hermes-agent` Skill name are unchanged.
 
 Ordinary no-tool chat completion treats the gateway's persisted final response as the only assistant bubble for that turn. Completion removes any extra assistant bubbles split by late reasoning events while retaining the separate Thought row, so mislabeled reasoning deltas cannot survive beside the canonical answer.
 
@@ -104,7 +110,7 @@ Windows installers retain the stable `com.jingyuai.desktop` app id, product name
 
 The internal test bundle stages `EMPLOYEE_LOOKUP_ADMIN_TOKEN` from the builder's Hermes environment into a Git-ignored generated file and installs the current bundled value into the user's `.env` on launch. [[src/main/employee-lookup-token.ts#mergeBundledEmployeeLookupToken]] replaces empty, stale, or duplicate entries left by older Hermes source checkouts so phone provisioning uses the credential shipped by the current package. The same offline marker disables the GitHub auto-update check; this is intentional for test packages and should be removed before a security-hardened release.
 
-Offline builds also stage `resources/employee-default-soul.md`. On packaged startup, [[src/main/installer.ts#installBundledSoulRules]] appends that marked company rule to the user's `%LOCALAPPDATA%\\hermes\\SOUL.md` exactly once. This preserves user-written SOUL content while ensuring the bundled Windows runtime prefers Python's standard HTTP tools when Git Bash, curl, and wget are absent.
+Offline builds also stage `resources/employee-default-soul.md`. On packaged startup, [[src/main/installer.ts#installBundledSoulRules]] appends that marked company language rule exactly once to the default SOUL and existing named-profile SOUL files. Development startup applies the same rule to its active SOUL. This preserves user-written content and changes only model-authored, user-visible language—not native reasoning or executable/tool data.
 
 The offline runtime preparation also overlays the bundled browser navigation behavior: keyword input, blank/new-tab navigation, and Google/Bing/DuckDuckGo search URLs resolve to Baidu, while ordinary destination URLs remain unchanged. This keeps Chromium as the automation engine but makes Baidu the default search entry for the packaged Windows client. Overlays are part of the staged compatibility unit and are repaired only inside staging, never in a live version directory.
 

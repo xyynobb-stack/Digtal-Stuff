@@ -829,6 +829,7 @@ function Chat({
     setUsage,
     onDashboardUnavailable: handleDashboardUnavailable,
     onAgentInitializationChange: setAgentInitialization,
+    onSessionTitle: (_sessionId, title) => onTitleChange?.(runId, title),
     onResumedModelIdentity: handleResumedModelIdentity,
   });
 

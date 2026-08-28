@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Check, Puzzle, X } from "lucide-react";
 
 interface InstalledSkill {
   name: string;
+  displayName?: string;
   category: string;
   description: string;
 }
@@ -23,20 +24,20 @@ export function SessionSkillPicker({
   const [skills, setSkills] = useState<InstalledSkill[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function loadSkills(): Promise<void> {
+  const loadSkills = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
       setSkills(await window.hermesAPI.listUserAddedSkills(profile));
     } finally {
       setLoading(false);
     }
-  }
+  }, [profile]);
 
   useEffect(() => {
     const refresh = (): void => void loadSkills();
     window.addEventListener("hermes-skills-changed", refresh);
     return () => window.removeEventListener("hermes-skills-changed", refresh);
-  }, [profile]);
+  }, [loadSkills]);
 
   function toggle(name: string): void {
     onChange(
@@ -110,7 +111,7 @@ export function SessionSkillPicker({
                     onClick={() => toggle(skill.name)}
                   >
                     <span className="session-skill-option-copy">
-                      <strong>{skill.name}</strong>
+                      <strong>{skill.displayName || skill.name}</strong>
                       <small>{skill.description || skill.category}</small>
                     </span>
                     {selected && (

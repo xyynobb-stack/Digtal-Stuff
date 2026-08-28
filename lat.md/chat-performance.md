@@ -1,6 +1,6 @@
 # Chat message-list rendering performance
 
-Typing in the composer must stay fast no matter how long the conversation is. The transcript is not virtualized in JS, so the layout cost is bounded with CSS containment plus a single batched textarea measurement (issue #748).
+Typing in the composer must stay fast no matter how long the conversation is. The transcript is not virtualized in JS, so CSS containment, native textarea sizing, and unmounted collapsed details bound layout and DOM costs (issue #748).
 
 The symptom this guards against: in conversations with many messages, each keystroke took up to ~2.6s with an empty JS profile — the cost was entirely in Chromium's layout engine, recalculating the whole transcript on every keystroke. CPU and memory were normal; new sessions were instant.
 
@@ -36,9 +36,17 @@ The flex `gap` that previously spaced rows is replaced by per-row spacing: `.cha
 
 ## Textarea auto-resize avoids per-keystroke reflow
 
-The composer textarea auto-grows to its content. Reading `scrollHeight` to size it forces a layout flush, so it runs once per committed value in a `useLayoutEffect` keyed on the input string, not on every keystroke.
+The composer auto-grows through Chromium's native `field-sizing: content`, avoiding synchronous JavaScript measurements while retaining its bounded height.
 
-In [[src/renderer/src/screens/Chat/ChatInput.tsx]] every path that changes the value (typing, history recall, voice transcription, and the imperative `setText`/`appendText`) goes through `setInput`, so the layout effect is the single owner of resizing — the other paths only set the caret and focus. Combined with the row-level `content-visibility`, the one measurement per keystroke stays O(visible rows).
+Combined with the existing minimum height, 120px maximum, and internal overflow, native field sizing preserves the prior one-to-six-line behavior.
+
+No input path reads `scrollHeight` or writes an inline height. Typing, history recall, voice transcription, paste, and imperative `setText`/`appendText` update only the controlled value, allowing Chromium to batch the textarea's natural layout instead of a synchronous read forcing transcript layout on every character.
+
+## Collapsed history does not mount details
+
+Collapsed reasoning and tool activity retain only their compact summary controls; their long reasoning text, tool rows, arguments, outputs, and attachments are absent from the DOM until explicitly opened.
+
+[[src/renderer/src/screens/Chat/HistoryRow.tsx]] conditionally mounts each detail subtree from its local `open` state. Opening a tool group mounts its step headers, while each step's full payload remains unmounted until that step is also opened; closing either level removes the corresponding subtree again. This intentionally favors closed-state responsiveness over the old grid-height close animation.
 
 ## Slash command palette uses fixed-row virtualization
 

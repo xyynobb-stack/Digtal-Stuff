@@ -42,6 +42,10 @@ The native sidebar scrollbar is hidden to avoid layout shifts. [[src/renderer/sr
 
 普通 Dashboard 提交同时携带模型使用的 `text` 与仅供标题等展示元数据使用的 `display_text`。首次提交、会话恢复重试和忙时队列都保留两者；旧版客户端缺少 `display_text` 时，Gateway 仅在完整匹配已知 Desktop 私有信封后才提取 `[User message]`，避免误改用户自己输入的相似文本。
 
+Gateway 在异步标题写入会话数据库后发送 `session.title`；当前 Electron Renderer 按 stored session id 同时更新活动标签和侧边栏。切换会话后到达的旧事件会被丢弃，标题事件发生前已启动的缓存请求也不能用旧标题覆盖实时结果。
+
+定时数据库同步是断线和休眠后的最终一致性兜底。超过增量时间窗口的旧会话也会批量刷新 `title` 与 `message_count`，因此长报告即使错过实时事件，正式标题仍能在后续同步中替换临时标题。
+
 ## Project grouping
 
 Workspace-linked conversations are grouped under project rows so repository chats stay together without hiding ordinary chats.

@@ -1,6 +1,9 @@
 ---
 name: finance
 description: Support budgeting, forecasting, management reporting, variance analysis, unit economics, cash planning, and financial controls. Use when a user needs financial analysis, a model structure, an executive summary, or a finance workflow.
+metadata:
+  hermes:
+    display_name: 财务管理
 ---
 
 # Finance

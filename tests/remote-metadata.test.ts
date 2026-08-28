@@ -50,6 +50,6 @@ describe("remote Hermes metadata", () => {
     ).resolves.toBe("/opt/data");
     await expect(
       remoteGetHermesVersion({ remoteUrl: url, apiKey: "token" }),
-    ).resolves.toContain("Hermes Agent v0.16.0 (2026.6.5)");
+    ).resolves.toContain("JingYuAI Agent v0.16.0 (2026.6.5)");
   });
 });

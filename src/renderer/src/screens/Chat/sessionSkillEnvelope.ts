@@ -1,5 +1,7 @@
 const SESSION_SKILL_INSTRUCTION =
   "Built-in skills are always available to this chat. The listed names are the only user-added custom skills enabled for this chat. Load and follow each listed custom skill with the skill_view tool before answering. An empty list means no custom skills are enabled.";
+const LEGACY_SESSION_SKILL_INSTRUCTION =
+  "Only the listed skills are available to this chat. Load and follow each listed skill with the skill_view tool before answering. An empty list means no skills are available.";
 
 const SESSION_SKILL_PREFIX = "[Active session skills: ";
 const USER_MESSAGE_MARKER = "\n\n[User message]\n";
@@ -49,7 +51,11 @@ export function unwrapSessionSkillEnvelope(value: string): string {
   if (selectionEnd < 0) return value;
 
   const controlStart = selectionEnd + 2;
-  if (!value.startsWith(SESSION_SKILL_INSTRUCTION, controlStart)) return value;
+  const hasKnownInstruction = [
+    SESSION_SKILL_INSTRUCTION,
+    LEGACY_SESSION_SKILL_INSTRUCTION,
+  ].some((instruction) => value.startsWith(instruction, controlStart));
+  if (!hasKnownInstruction) return value;
   const marker = value.indexOf(USER_MESSAGE_MARKER, controlStart);
   if (marker < 0) return value;
 

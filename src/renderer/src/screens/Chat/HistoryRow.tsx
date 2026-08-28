@@ -15,6 +15,7 @@ import type {
 
 /* ── Reasoning ────────────────────────────────────────────────────────── */
 
+// @lat: [[chat-performance#Collapsed history does not mount details]]
 export const ReasoningRow = memo(function ReasoningRow({
   msg,
   active = false,
@@ -75,15 +76,13 @@ export const ReasoningRow = memo(function ReasoningRow({
             }`}
           />
         </button>
-        <div
-          className={`chat-tool-collapse${
-            open ? " chat-tool-collapse--open" : ""
-          }`}
-        >
-          <div className="chat-tool-collapse-inner">
-            <pre className="chat-history-pre">{msg.text}</pre>
+        {open && (
+          <div className="chat-tool-collapse">
+            <div className="chat-tool-collapse-inner">
+              <pre className="chat-history-pre">{msg.text}</pre>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -215,28 +214,28 @@ const ToolActivityItem = memo(function ToolActivityItem({
         </span>
         <span className="chat-tool-item-detail">{itemDetail(msg)}</span>
       </button>
-      <div
-        className={`chat-tool-collapse${open ? " chat-tool-collapse--open" : ""}`}
-      >
-        <div className="chat-tool-collapse-inner">
-          <div className="chat-tool-item-body">
-            {hasAttachments && (
-              <div className="chat-history-attachments">
-                {msg.attachments!.map((att: Attachment) => (
-                  <AttachmentChip key={att.id} attachment={att} />
-                ))}
-              </div>
-            )}
-            <pre
-              className={`chat-history-pre ${
-                call ? "chat-history-pre--code" : "chat-history-pre--scroll"
-              }`}
-            >
-              {call ? msg.args || "(no arguments)" : msg.content || "(empty)"}
-            </pre>
+      {open && (
+        <div className="chat-tool-collapse">
+          <div className="chat-tool-collapse-inner">
+            <div className="chat-tool-item-body">
+              {hasAttachments && (
+                <div className="chat-history-attachments">
+                  {msg.attachments!.map((att: Attachment) => (
+                    <AttachmentChip key={att.id} attachment={att} />
+                  ))}
+                </div>
+              )}
+              <pre
+                className={`chat-history-pre ${
+                  call ? "chat-history-pre--code" : "chat-history-pre--scroll"
+                }`}
+              >
+                {call ? msg.args || "(no arguments)" : msg.content || "(empty)"}
+              </pre>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 });
@@ -260,7 +259,6 @@ export const ToolActivityGroup = memo(function ToolActivityGroup({
   const detail = itemDetail(last);
   const title = toolActivityGroupTitle(items);
   const soloTool = singleToolName(items);
-  const orderedItems = orderToolActivityItems(items);
 
   return (
     <div
@@ -307,17 +305,17 @@ export const ToolActivityGroup = memo(function ToolActivityGroup({
             }`}
           />
         </button>
-        <div
-          className={`chat-tool-collapse${open ? " chat-tool-collapse--open" : ""}`}
-        >
-          <div className="chat-tool-collapse-inner">
-            <div className="chat-tool-group-items">
-              {orderedItems.map((it, index) => (
-                <ToolActivityItem key={`${it.id}-${index}`} msg={it} />
-              ))}
+        {open && (
+          <div className="chat-tool-collapse">
+            <div className="chat-tool-collapse-inner">
+              <div className="chat-tool-group-items">
+                {orderToolActivityItems(items).map((it, index) => (
+                  <ToolActivityItem key={`${it.id}-${index}`} msg={it} />
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -1138,12 +1138,26 @@ const hermesAPI = {
   listInstalledSkills: (
     profile?: string,
   ): Promise<
-    Array<{ name: string; category: string; description: string; path: string }>
+    Array<{
+      name: string;
+      displayName?: string;
+      category: string;
+      description: string;
+      path: string;
+      userAdded?: boolean;
+    }>
   > => ipcRenderer.invoke("list-installed-skills", profile),
   listUserAddedSkills: (
     profile?: string,
   ): Promise<
-    Array<{ name: string; category: string; description: string; path: string }>
+    Array<{
+      name: string;
+      displayName?: string;
+      category: string;
+      description: string;
+      path: string;
+      userAdded?: boolean;
+    }>
   > => ipcRenderer.invoke("list-user-added-skills", profile),
   listBundledSkills: (): Promise<
     Array<{

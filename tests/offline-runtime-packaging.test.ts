@@ -34,6 +34,7 @@ import {
   ensureDevExecuteCodeChildrenHidden,
   ensureDevAgentSkillToolset,
   ensureDevJingYuAgentIdentity,
+  ensureDevVisibleLanguageRules,
   syncDevMarketReportSkill,
   syncDevMarketReportWorkflowTools,
   syncDevDesktopModelRouting,
@@ -101,6 +102,32 @@ describe("single Runtime archive", () => {
     expect(
       readFileSync(join(packageRoot, "runtime-archive.json"), "utf8"),
     ).toContain(packaged.manifest.sha256);
+  });
+});
+
+describe("managed Runtime dependency verification", () => {
+  // @lat: [[main-process#Offline Windows runtime#Lightweight activation probe]]
+  it("keeps activation lightweight and validates RAG imports during release builds", () => {
+    const installer = readFileSync(
+      join(process.cwd(), "src/main/installer.ts"),
+      "utf8",
+    );
+    const probe = installer.match(
+      /export function probeRelocatedRuntime[\s\S]+?\n}\n\nfunction activateRuntime/,
+    )?.[0];
+    expect(probe).toContain("import sys; print(sys.executable)");
+    expect(probe).not.toContain("numpy");
+    expect(probe).not.toContain("pymilvus");
+
+    for (const workflow of ["release.yml", "beta-release.yml"]) {
+      const source = readFileSync(
+        join(process.cwd(), ".github/workflows", workflow),
+        "utf8",
+      );
+      expect(source).toContain(
+        "import hermes_cli, run_agent, edge_tts, numpy, pymilvus",
+      );
+    }
   });
 });
 
@@ -303,6 +330,18 @@ CLOSE = "the Hermes desktop GUI (the tabs mirroring terminal(background=true) ru
       "JingYu Agent",
     );
     expect(readFileSync(profileSoul, "utf8")).toContain("JingYu Agent");
+
+    const rulesPath = join(root, "employee-default-soul.md");
+    writeFileSync(
+      rulesPath,
+      "<!-- JINGYU_VISIBLE_LANGUAGE_RULES -->\n\n中文用户可见内容使用简体中文。\n",
+      "utf8",
+    );
+    expect(ensureDevVisibleLanguageRules(profileSoul, rulesPath)).toBe(true);
+    expect(ensureDevVisibleLanguageRules(profileSoul, rulesPath)).toBe(true);
+    expect(
+      readFileSync(profileSoul, "utf8").match(/JINGYU_VISIBLE_LANGUAGE_RULES/g),
+    ).toHaveLength(1);
   });
 });
 
@@ -531,7 +570,7 @@ describe("market report workflow development overlay", () => {
     ).toBe("market_report_workflow_tool.py");
   });
 
-  it("syncs all report Skills into development custom profile only", () => {
+  it("syncs maintained user Skills into the development custom profile", () => {
     const root = mkdtempSync(join(tmpdir(), "hermes-report-skill-"));
     tempRoots.push(root);
     const starters = join(root, "starters");
@@ -541,6 +580,7 @@ describe("market report workflow development overlay", () => {
       "market-report-rag",
       "hr-analysis-report-rag",
       "finance-analysis-report-rag",
+      "skill-creator",
     ]) {
       const sourceSkill = join(starters, name);
       mkdirSync(sourceSkill, { recursive: true });
@@ -558,6 +598,7 @@ describe("market report workflow development overlay", () => {
       "market-report-rag",
       "hr-analysis-report-rag",
       "finance-analysis-report-rag",
+      "skill-creator",
     ]) {
       expect(
         readFileSync(join(profileSkills, "custom", name, "SKILL.md"), "utf8"),

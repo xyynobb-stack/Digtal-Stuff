@@ -35,9 +35,13 @@ const itPython = python3Path ? it : it.skip;
 
 function assertPythonCompiles(script: string): void {
   // compile() only parses — nothing in the script is executed.
-  execFileSync(python3Path as string, ["-c", "import sys; compile(sys.stdin.read(), '<script>', 'exec')"], {
-    input: script,
-  });
+  execFileSync(
+    python3Path as string,
+    ["-c", "import sys; compile(sys.stdin.read(), '<script>', 'exec')"],
+    {
+      input: script,
+    },
+  );
 }
 
 describe("isValidDockerContainerName", () => {
@@ -67,7 +71,9 @@ describe("buildDockerLauncherScript", () => {
       "/opt/hermes/.venv/bin/hermes",
       "",
     );
-    expect(script).toContain("# managed by Hermes Desktop (docker:hermes-abc)");
+    expect(script).toContain(
+      "# managed by JingYuAI Desktop (docker:hermes-abc)",
+    );
     expect(script).toContain("container='hermes-abc'");
     expect(script).toContain("'/opt/hermes/.venv/bin/hermes' \"$@\"");
     expect(script).toContain("-e HOME=/opt/data -e HERMES_HOME=/opt/data");

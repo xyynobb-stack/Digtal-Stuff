@@ -95,7 +95,7 @@ describe("hermesone provisioning", () => {
       "Bearer session-token",
     );
     // The console key list shows this name so users know its origin.
-    expect(JSON.parse(String(init.body)).name).toMatch(/^Hermes Desktop /);
+    expect(JSON.parse(String(init.body)).name).toMatch(/^JingYuAI Desktop /);
 
     expect(state.envWrites).toEqual([
       { key: "HERMESONE_API_KEY", value: "hs-live-fresh", profile: "coder" },

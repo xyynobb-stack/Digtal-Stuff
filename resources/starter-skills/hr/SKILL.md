@@ -1,6 +1,9 @@
 ---
 name: hr
 description: Support human-resources work including recruiting, interviews, onboarding, performance reviews, employee relations, policies, and workforce planning. Use when a user asks for HR analysis, communications, plans, templates, or decisions.
+metadata:
+  hermes:
+    display_name: 人力资源
 ---
 
 # HR

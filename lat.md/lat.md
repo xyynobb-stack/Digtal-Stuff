@@ -5,7 +5,7 @@ This directory defines the high-level concepts, business logic, and architecture
 > **JingYuAI** is the desktop product identity. It remains compatible with the upstream **Hermes Agent** runtime and is **not affiliated with, endorsed by, or supported by Nous Research**.
 
 - [[chat-commands]] — how typed slash commands are routed through the gateway's `slash.exec`/`command.dispatch` pipeline instead of being sent as prompt text.
-- [[chat-performance]] — how chat rendering stays responsive through contained transcript rows, batched textarea resizing, and fixed-row slash-command virtualization.
+- [[chat-performance]] — how chat rendering stays responsive through contained transcript rows, native textarea sizing, unmounted collapsed details, and fixed-row slash-command virtualization.
 - [[chat-quick-actions]] — the empty chat screen's six Chinese workplace prompt starters, which populate the composer without sending a message.
 - [[model-context]] — the per-model context-window override that drives the context gauge and the agent's auto-compaction.
 - [[model-selection]] — the session-scoped in-chat model override that switches the model (and provider) for one conversation without touching the global default.

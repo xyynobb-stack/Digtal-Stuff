@@ -148,7 +148,9 @@ vi.mock("better-sqlite3", () => {
 
     all(
       ...args: unknown[]
-    ): SessionRow[] | Array<{ id: string; message_count: number }> {
+    ):
+      | SessionRow[]
+      | Array<{ id: string; message_count: number; title: string | null }> {
       if (this.sql.includes("FROM sessions s")) {
         const threshold = Number(args[0] ?? 0);
         return Array.from(this.store.sessions.values())
@@ -156,17 +158,22 @@ vi.mock("better-sqlite3", () => {
           .sort((a, b) => b.started_at - a.started_at);
       }
 
-      // Phase-2 refresh query introduced for issue #226:
-      //   SELECT id, message_count FROM sessions WHERE id IN (?, ?, …)
+      // Phase-2 refresh query introduced for issue #226 and extended for
+      // delayed auto-titles:
+      //   SELECT id, message_count, title FROM sessions WHERE id IN (?, ?, …)
       if (
-        this.sql.includes("SELECT id, message_count FROM sessions") &&
+        this.sql.includes("SELECT id, message_count, title FROM sessions") &&
         this.sql.includes("WHERE id IN")
       ) {
         const ids = args.map(String);
         return ids
           .map((id) => this.store.sessions.get(id))
           .filter((s): s is SessionRow => !!s)
-          .map((s) => ({ id: s.id, message_count: s.message_count }));
+          .map((s) => ({
+            id: s.id,
+            message_count: s.message_count,
+            title: s.title,
+          }));
       }
 
       // Context-folder batch read (issue #27). These tests never seed linked
@@ -459,9 +466,41 @@ describe("syncSessionCache", () => {
     expect(second).toHaveLength(1);
     expect(second[0].id).toBe("old-session");
     expect(second[0].messageCount).toBe(200);
-    // Title and other metadata are preserved (Phase 2 only touches the
-    // count field — no re-running of title generation).
+    // The existing title remains when the DB still has no generated title.
     expect(second[0].title).toContain("first");
+  });
+
+  it("refreshes a delayed title for an old session outside the lastSync window", () => {
+    const oldStart = Math.floor(Date.now() / 1000) - 86400;
+    seedDb([
+      {
+        id: "long-report",
+        started_at: oldStart,
+        message_count: 1,
+        firstUserMessage:
+          "[Active session skills: report]\n\n[User message]\n生成市场报告",
+      },
+    ]);
+    const first = syncSessionCache();
+    expect(first[0].title).toContain("Active session skills");
+
+    seedDb([
+      {
+        id: "long-report",
+        started_at: oldStart,
+        message_count: 2,
+        title: "人工智能行业市场调研报告",
+        firstUserMessage:
+          "[Active session skills: report]\n\n[User message]\n生成市场报告",
+      },
+    ]);
+    const second = syncSessionCache();
+
+    expect(second[0]).toMatchObject({
+      id: "long-report",
+      messageCount: 2,
+      title: "人工智能行业市场调研报告",
+    });
   });
 
   it("prunes cached sessions that no longer exist in state.db", () => {

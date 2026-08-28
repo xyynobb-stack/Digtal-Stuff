@@ -1,6 +1,9 @@
 ---
 name: project-manager
 description: Plan and run projects through scope definition, milestones, schedules, ownership, dependencies, risks, status reporting, and retrospectives. Use when a user needs a project plan, delivery diagnosis, meeting artifact, or execution decision.
+metadata:
+  hermes:
+    display_name: 项目管理
 ---
 
 # Project Manager

@@ -22,7 +22,7 @@ Endpoint and test-schema defaults are non-secret, while an enabled database cred
 
 Only `text` and `source` are requested as output fields. The stored 1024-dimensional vector is not returned to the Agent context.
 
-The repository does not store the supplied Milvus credential. The Python runtime needs `pymilvus` and NumPy, declared by the Skill's `requirements.txt`; release jobs install them, and [[src/main/installer.ts#probeRelocatedRuntime]] rejects an installed runtime that cannot import both before it is activated.
+The repository does not store the supplied Milvus credential. The Python runtime needs `pymilvus` and NumPy, declared by the Skill's `requirements.txt`; release jobs install and explicitly import both before packaging. Desktop activation uses the lightweight [[src/main/installer.ts#probeRelocatedRuntime]] so cold heavy-DLL loading cannot block an upgrade, and a damaged post-install dependency produces the RAG client's explicit `DEPENDENCY_ERROR` without attempting a network install.
 
 ## Runtime flow
 
@@ -44,7 +44,7 @@ The client is constructed inside the invocation and closed in `finally`. Search 
 
 The model rewrites user goals into evidence-oriented questions and generates chapter content; Python performs no LLM rewriting or prose generation, but a process-local state machine validates collection provenance and generation waves.
 
-For a full report, each Skill's document contract fixes its sections, evidence codes, table headers, missing-data behavior, and required analysis. The market flow builds 1.1 and 1.2 together, derives 1.3, and reuses that foundation for chapters 2–7. HR follows its authored sequence from 0.1 through chapter 4 so 0.3 and 0.2 remain authoritative dependencies. Finance computes boundary and costs before revenue, then unit economics, risks, and actions; finalization still renders chapters in document order.
+For a full report, each Skill's document contract fixes its sections, evidence codes, table headers, missing-data behavior, and required analysis. The market flow builds 1.1 and 1.2 together, derives 1.3, and reuses that foundation for chapters 2–7. HR uses four dependency waves: the three baselines, demand/quality/training, gap/risk, then final actions. Finance freezes its boundary, computes direct labor, composes rework and tool costs together, then proceeds through revenue, unit economics, risks, and actions. Finalization still renders every report in document order.
 
 A supplement retrieval happens only when a required evidence category is missing. It names the missing document, entity, time range, or field and is capped at two rounds. Generated report prose is never treated as retrieved evidence.
 

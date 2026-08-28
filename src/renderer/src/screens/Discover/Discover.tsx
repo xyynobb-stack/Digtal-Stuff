@@ -148,6 +148,7 @@ export default function Discover({
         userAddedSkills.map((skill) => ({
           id: `local:${skill.name}`,
           name: skill.name,
+          displayName: skill.displayName,
           description: skill.description,
           category: skill.category,
           path: skill.path,
@@ -299,7 +300,12 @@ export default function Discover({
   const filteredUserSkills = useMemo(
     () =>
       userSkills.filter((skill) =>
-        matchesQuery(skill.name, skill.description, skill.category),
+        matchesQuery(
+          skill.displayName,
+          skill.name,
+          skill.description,
+          skill.category,
+        ),
       ),
     [matchesQuery, userSkills],
   );
@@ -549,7 +555,9 @@ export default function Discover({
           <span className="discover-card-iconwrap">
             <Icon size={16} />
           </span>
-          <span className="discover-card-name">{item.name}</span>
+          <span className="discover-card-name">
+            {item.displayName || item.name}
+          </span>
           {item.category && (
             <span className="discover-card-badge">{item.category}</span>
           )}
@@ -731,7 +739,7 @@ export default function Discover({
                   <div className="discover-modal-titles">
                     <div className="discover-modal-name">
                       <KindIcon size={18} className="discover-card-icon" />
-                      {item.name}
+                      {item.displayName || item.name}
                     </div>
                     {item.category && (
                       <span className="discover-card-badge">

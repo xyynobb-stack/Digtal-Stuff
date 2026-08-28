@@ -193,14 +193,14 @@ class MarketReportWorkflowTests(unittest.TestCase):
             self.assertEqual(positions, sorted(positions))
 
     # @lat: [[lat.md/rag-mvp#Tests#HR and finance outlines remain authoritative]]
-    def test_hr_and_finance_follow_the_outline_generation_order_and_sources(self):
+    def test_hr_and_finance_follow_dependency_waves_and_sources(self):
         self.assertEqual(
             HR_GENERATION_WAVES,
-            tuple((section,) for section in HR_SECTION_ORDER),
+            (("0.1", "0.2", "0.3"), ("1.1", "2.1", "2.2"), ("1.2", "3"), ("4",)),
         )
         self.assertEqual(
             FINANCE_GENERATION_WAVES,
-            (("0",), ("2.1",), ("2.2",), ("2.3",), ("1",), ("3",), ("4",), ("5",)),
+            (("0",), ("2.1",), ("2.2", "2.3"), ("1",), ("3",), ("4",), ("5",)),
         )
         self.assertEqual(
             HR_SECTION_SPECS["0.1"]["evidence"],
@@ -210,13 +210,62 @@ class MarketReportWorkflowTests(unittest.TestCase):
             HR_SECTION_SPECS["1.2"]["depends_on"],
             ["0.2", "0.3", "1.1"],
         )
+        self.assertEqual(HR_SECTION_SPECS["3"]["depends_on"], ["0.2", "2.2"])
         self.assertEqual(
             FINANCE_SECTION_SPECS["2.2"]["evidence"],
-            ["C 质检/返工记录", "A 标注平台数据", "B 工时/排班"],
+            ["C 质检/返工记录", "A 标注平台数据", "B 工时/排班", "本报告 2.1"],
         )
+        self.assertEqual(FINANCE_SECTION_SPECS["2.2"]["depends_on"], ["0", "2.1"])
         self.assertEqual(
             FINANCE_SECTION_SPECS["3"]["depends_on"],
             ["0", "1", "2.1", "2.2", "2.3"],
+        )
+
+    def test_hr_and_finance_waves_carry_required_dependency_context(self):
+        hr_store = MarketReportWorkflowStore()
+        hr_store.execute(
+            "hr-context",
+            "start",
+            report_type="hr",
+            report_goal="生成人力资源分析报告",
+            retrieval_collection="my_skill_kb",
+        )
+        hr_store.execute(
+            "hr-context", "record_wave", sections=wave_payload(HR_GENERATION_WAVES[0])
+        )
+        hr_store.execute(
+            "hr-context", "record_wave", sections=wave_payload(HR_GENERATION_WAVES[1])
+        )
+        hr_status = hr_store.execute("hr-context", "status")
+        self.assertEqual(hr_status["expected_sections"], ["1.2", "3"])
+        self.assertEqual(
+            set(hr_status["next_wave"]["dependency_context"]),
+            {"0.2", "0.3", "1.1", "2.2"},
+        )
+
+        finance_store = MarketReportWorkflowStore()
+        finance_store.execute(
+            "finance-context",
+            "start",
+            report_type="finance",
+            report_goal="生成财务分析报告",
+            retrieval_collection="my_skill_kb",
+        )
+        finance_store.execute(
+            "finance-context",
+            "record_wave",
+            sections=wave_payload(FINANCE_GENERATION_WAVES[0]),
+        )
+        finance_store.execute(
+            "finance-context",
+            "record_wave",
+            sections=wave_payload(FINANCE_GENERATION_WAVES[1]),
+        )
+        finance_status = finance_store.execute("finance-context", "status")
+        self.assertEqual(finance_status["expected_sections"], ["2.2", "2.3"])
+        self.assertEqual(
+            set(finance_status["next_wave"]["dependency_context"]),
+            {"0", "2.1"},
         )
 
 

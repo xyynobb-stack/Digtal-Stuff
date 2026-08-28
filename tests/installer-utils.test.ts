@@ -256,6 +256,18 @@ describe("stock SOUL identity migration", () => {
     expect(migrated).toContain(custom);
     expect(migrateStockSoulIdentity(migrated)).toBe(migrated);
   });
+
+  it("adds visible-language guidance once without replacing custom SOUL text", async () => {
+    const { mergeBundledSoulRules } = await import("../src/main/installer");
+    const custom = "Keep my custom personality and tone exactly as written.";
+    const rules =
+      "<!-- JINGYU_VISIBLE_LANGUAGE_RULES -->\n\n中文用户可见内容使用简体中文。";
+
+    const merged = mergeBundledSoulRules(custom, rules);
+    expect(merged).toContain(custom);
+    expect(merged).toContain("JINGYU_VISIBLE_LANGUAGE_RULES");
+    expect(mergeBundledSoulRules(merged, rules)).toBe(merged);
+  });
 });
 
 // ─── OAuth credential discovery ─────────────────

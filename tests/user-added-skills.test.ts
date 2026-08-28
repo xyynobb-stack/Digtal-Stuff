@@ -32,7 +32,7 @@ function writeSkill(root: string, name: string, category: string): string {
 }
 
 describe("listUserAddedSkills", () => {
-  it("excludes bundled skills and preserves an existing non-bundled custom skill", () => {
+  it("excludes bundled skills and preserves custom plus legacy user skills", () => {
     writeSkill(
       join(TEST_REPO, "skills", "productivity", "bundled-notes"),
       "bundled-notes",
@@ -56,6 +56,7 @@ describe("listUserAddedSkills", () => {
 
     expect(listUserAddedSkills().map((skill) => skill.name)).toEqual([
       "python-web-reader",
+      "system-research",
     ]);
   });
 

@@ -100,7 +100,7 @@ describe("Discover writing templates entry", () => {
       expect(screen.getByText("工作报告")).toBeInTheDocument(),
     );
     const description =
-      screen.getByPlaceholderText("请输入这份合同或模板的简单介绍");
+      await screen.findByPlaceholderText("请输入这份合同或模板的简单介绍");
     fireEvent.change(description, {
       target: { value: "用于编写每周工作报告。" },
     });
@@ -195,6 +195,7 @@ describe("Discover writing templates entry", () => {
     vi.mocked(window.hermesAPI.listUserAddedSkills).mockResolvedValue([
       {
         name: "hr",
+        displayName: "人力资源",
         description: "Human resources partner",
         category: "custom",
         path: "C:\\skills\\custom\\hr",
@@ -205,7 +206,7 @@ describe("Discover writing templates entry", () => {
 
     await waitFor(() => {
       expect(screen.getByText("system-research")).toBeInTheDocument();
-      expect(screen.getByText("hr")).toBeInTheDocument();
+      expect(screen.getByText("人力资源")).toBeInTheDocument();
     });
     expect(screen.queryByText("community-only")).not.toBeInTheDocument();
 
@@ -217,7 +218,7 @@ describe("Discover writing templates entry", () => {
     fireEvent.click(systemToggle);
     expect(systemToggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("system-research")).not.toBeVisible();
-    expect(screen.getByText("hr")).toBeInTheDocument();
+    expect(screen.getByText("人力资源")).toBeInTheDocument();
 
     fireEvent.click(systemToggle);
     expect(screen.getByText("system-research")).toBeVisible();

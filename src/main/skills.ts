@@ -24,9 +24,13 @@ import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
 
 export interface InstalledSkill {
   name: string;
+  /** Optional user-facing label from metadata.hermes.display_name. */
+  displayName?: string;
   category: string;
   description: string;
   path: string;
+  /** Ownership boundary used by the renderer; system Skills stay unchanged. */
+  userAdded?: boolean;
 }
 
 export interface SkillSearchResult {
@@ -50,8 +54,9 @@ export function markSkillAsUserAdded(skillPath: string): void {
 function parseSkillFrontmatter(content: string): {
   name: string;
   description: string;
+  displayName: string;
 } {
-  const result = { name: "", description: "" };
+  const result = { name: "", description: "", displayName: "" };
 
   // Check for YAML frontmatter
   if (!content.startsWith("---")) {
@@ -75,6 +80,59 @@ function parseSkillFrontmatter(content: string): {
     /^\s*description:\s*["']?([^"'\n]+)["']?\s*$/m,
   );
   if (descMatch) result.description = descMatch[1].trim();
+
+  // `display_name` is deliberately optional and namespaced. Third-party
+  // Skills that only provide the standard name/description fields therefore
+  // remain fully compatible, while employee-created Skills can carry a
+  // Unicode label without changing their stable invocation name.
+  const lines = frontmatter.split(/\r?\n/);
+  let metadataIndent = -1;
+  let hermesIndent = -1;
+  for (const line of lines) {
+    if (!line.trim() || line.trimStart().startsWith("#")) continue;
+    const indent = line.length - line.trimStart().length;
+    const trimmed = line.trim();
+
+    if (metadataIndent < 0) {
+      if (indent === 0 && /^metadata:\s*$/.test(trimmed)) {
+        metadataIndent = indent;
+      }
+      continue;
+    }
+
+    if (indent <= metadataIndent) break;
+    if (hermesIndent < 0) {
+      if (indent > metadataIndent && /^hermes:\s*$/.test(trimmed)) {
+        hermesIndent = indent;
+      }
+      continue;
+    }
+
+    if (indent <= hermesIndent) {
+      hermesIndent = -1;
+      if (indent > metadataIndent && /^hermes:\s*$/.test(trimmed)) {
+        hermesIndent = indent;
+      }
+      continue;
+    }
+
+    const displayNameMatch = trimmed.match(/^display_name:\s*(.*?)\s*$/);
+    if (!displayNameMatch) continue;
+    let value = displayNameMatch[1].trim();
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1).trim();
+    }
+    // Ignore block scalars, empty values, and unreasonable UI labels rather
+    // than rejecting the entire Skill.
+    if (value && value !== "|" && value !== ">" && value.length <= 80) {
+      result.displayName = value;
+    }
+    break;
+  }
 
   return result;
 }
@@ -107,19 +165,30 @@ export function listInstalledSkills(profile?: string): InstalledSkill[] {
         try {
           const content = readFileSync(skillFile, "utf-8").slice(0, 4000);
           const meta = parseSkillFrontmatter(content);
+          const userAdded =
+            category.toLowerCase() === "custom" ||
+            existsSync(join(entryPath, USER_ADDED_SKILL_MARKER));
 
           skills.push({
             name: meta.name || entry,
+            ...(userAdded && meta.displayName
+              ? { displayName: meta.displayName }
+              : {}),
             category,
             description: meta.description || "",
             path: entryPath,
+            userAdded,
           });
         } catch {
+          const userAdded =
+            category.toLowerCase() === "custom" ||
+            existsSync(join(entryPath, USER_ADDED_SKILL_MARKER));
           skills.push({
             name: entry,
             category,
             description: "",
             path: entryPath,
+            userAdded,
           });
         }
       }

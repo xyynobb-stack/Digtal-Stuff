@@ -1,6 +1,9 @@
 ---
 name: market-report-rag
 description: 使用公司内部知识库生成七章市场分析报告 Word 文档；适用于市场调研、能力盘点、客户优先级、服务设计和行动建议。
+metadata:
+  hermes:
+    display_name: 市场分析报告
 ---
 
 # 市场分析报告

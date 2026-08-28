@@ -10,6 +10,14 @@ The Skills tab separates product-managed system skills from profile-local user s
 
 [[src/main/skills.ts#listUserAddedSkills]] defines the user boundary as the `custom` category or the desktop user-added marker. User cards are always rendered in the 用户添加的 SKILL column and remain visible when the system column is collapsed.
 
+## User Skill display names
+
+用户添加的 Skill 可以在 `SKILL.md` 的可选 `metadata.hermes.display_name` 中声明中文展示名，而英文 `name` 始终作为加载、选择、持久化和调用标识。
+
+[[src/main/skills.ts#listInstalledSkills]] 只向用户添加的 Skill 暴露合法展示名；系统 Skill 保持英文名称不变。发现页、能力页和 [[src/renderer/src/screens/Chat/SessionSkillPicker.tsx#SessionSkillPicker]] 优先显示该字段并同时支持中英文搜索，字段缺失或无效时无条件回退到 `name`，保证第三方 Skill 兼容。
+
+安装或卸载成功后只发布一次 `hermes-skills-changed` 事件；已挂载的 Skill 页面统一通过该事件刷新，避免当前页面先直接读取、再因全局事件重复读取。
+
 ## Starter user skills
 
 Each packaged profile receives editable custom Skills for common employee roles, conversational skill creation, and three internal-knowledge reports.
@@ -24,11 +32,11 @@ Market, HR, and finance RAG report Skills are included in the user-added catalog
 
 The fixed custom inventory contains `market-report-rag`, `hr-analysis-report-rag`, and `finance-analysis-report-rag`. Development preparation copies the same three directories into the default profile's `skills/custom`; packaged and development preparation move an obsolete profile `skills/research/market-report-rag` into `skill-backups`, so the bare name resolves only to the maintained custom Skill without discarding possible local edits.
 
-## Managed report Skill upgrades
+## Managed user Skill upgrades
 
-Product-maintained report Skills receive corrected contracts on application upgrades while their previous custom directories remain recoverable.
+Product-maintained report and Skill Creator Skills receive corrected contracts on application upgrades while their previous custom directories remain recoverable.
 
-[[src/main/preset-content.ts#installManagedReportSkills]] compares a packaged content revision, stages each changed report Skill, moves an existing same-name custom directory to `skill-backups`, and atomically activates the packaged version. A given revision is installed only once; all other starter and employee-created custom Skills retain the normal never-overwrite behavior.
+[[src/main/preset-content.ts#installManagedUserSkills]] compares a packaged content revision, stages each changed maintained Skill, moves an existing same-name custom directory to `skill-backups`, and atomically activates the packaged version. A given revision is installed only once; all other starter and employee-created custom Skills retain the normal never-overwrite behavior.
 
 ## Legacy report Skill migration
 
@@ -60,4 +68,4 @@ Writing templates are inert until the employee explicitly selects one for a conv
 
 [[src/renderer/src/screens/Chat/SessionTemplatePicker.tsx#SessionTemplatePicker]] provides a single-select composer control after the web-preview button and persists the chosen template id per chat. On each ordinary turn, [[src/renderer/src/screens/Chat/hooks/useChatActions.ts#useChatActions]] privately attaches the unchanged source file and adds a generic instruction telling the Agent to read and interpret it; slash commands are unchanged.
 
-The desktop never contains format-specific template interpretation. [[src/renderer/src/screens/Chat/sessionSkillEnvelope.ts#buildSessionSkillEnvelope]] carries only the selected filename and the generic Agent instruction, while `file.attach` supplies the original file reference. The private block and attachment references are placed before `[User message]`, allowing the packaged runtime to persist only the employee-authored suffix.
+The desktop never contains format-specific template interpretation. [[src/renderer/src/screens/Chat/sessionSkillEnvelope.ts#buildSessionSkillEnvelope]] carries only the selected filename and the generic Agent instruction, while `file.attach` supplies the original file reference. The private block and attachment references are placed before `[User message]`, allowing the packaged runtime to persist only the employee-authored suffix. History hydration recognizes both the current built-in/custom wording and the legacy all-skills wording, so upgrading does not expose an older private envelope in the chat.

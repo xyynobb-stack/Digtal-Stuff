@@ -10,6 +10,8 @@ export interface RegistryItem {
   /** Stable identifier, unique within its kind. */
   id: string;
   name: string;
+  /** Optional renderer-only label; identity and actions still use name. */
+  displayName?: string;
   description: string;
   author?: string;
   category?: string;

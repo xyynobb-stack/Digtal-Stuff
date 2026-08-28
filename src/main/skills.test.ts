@@ -22,7 +22,11 @@ vi.mock("./utils", () => ({
       : mocks.home,
 }));
 
-import { ensureLegacyUserSkillMarkers, listUserAddedSkills } from "./skills";
+import {
+  ensureLegacyUserSkillMarkers,
+  listInstalledSkills,
+  listUserAddedSkills,
+} from "./skills";
 
 describe("starter user skills", () => {
   beforeEach(() => {
@@ -68,6 +72,57 @@ describe("starter user skills", () => {
         existsSync(join(rag!.path, "references", "document-contract.md")),
       ).toBe(true);
     }
+  });
+
+  it("exposes an optional Chinese display name only for user-added Skills", () => {
+    // @lat: [[discover#User Skill display names]]
+    const custom = join(mocks.home, "skills", "custom", "market-report-rag");
+    const system = join(mocks.home, "skills", "research", "system-research");
+    for (const [path, name, displayName] of [
+      [custom, "market-report-rag", "市场分析报告"],
+      [system, "system-research", "系统研究"],
+    ]) {
+      mkdirSync(path, { recursive: true });
+      writeFileSync(
+        join(path, "SKILL.md"),
+        `---\nname: ${name}\ndescription: test\nmetadata:\n  hermes:\n    display_name: "${displayName}"\n---\n`,
+        "utf8",
+      );
+    }
+
+    expect(listUserAddedSkills()).toContainEqual(
+      expect.objectContaining({
+        name: "market-report-rag",
+        displayName: "市场分析报告",
+        userAdded: true,
+      }),
+    );
+    expect(
+      listInstalledSkills().find((skill) => skill.name === "system-research"),
+    ).toEqual(
+      expect.objectContaining({
+        name: "system-research",
+        userAdded: false,
+      }),
+    );
+    expect(
+      listInstalledSkills().find((skill) => skill.name === "system-research"),
+    ).not.toHaveProperty("displayName");
+  });
+
+  it("keeps third-party custom Skills without display_name compatible", () => {
+    const skillPath = join(mocks.home, "skills", "custom", "online-skill");
+    mkdirSync(skillPath, { recursive: true });
+    writeFileSync(
+      join(skillPath, "SKILL.md"),
+      "---\nname: online-skill\ndescription: downloaded\n---\n",
+      "utf8",
+    );
+
+    expect(listUserAddedSkills()).toContainEqual(
+      expect.objectContaining({ name: "online-skill", userAdded: true }),
+    );
+    expect(listUserAddedSkills()[0]).not.toHaveProperty("displayName");
   });
 
   it("gates legacy profile skills that are absent from the bundled runtime", () => {

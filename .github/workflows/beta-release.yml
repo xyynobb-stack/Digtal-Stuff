@@ -187,7 +187,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not install Hermes Agent into bundled venv" }
             & $venvPython -m pip install --disable-pip-version-check -r $ragRequirements
             if ($LASTEXITCODE -ne 0) { throw "Could not install market-report RAG dependencies" }
-            & $venvPython -c "import hermes_cli, run_agent, edge_tts, pymilvus"
+            & $venvPython -c "import hermes_cli, run_agent, edge_tts, numpy, pymilvus"
             if ($LASTEXITCODE -ne 0) { throw "Bundled Hermes Agent import check failed" }
             & $venvPython -c "from tui_gateway import server; required = {'model.options', 'model.identity', 'model.resolve', 'session.create', 'session.model.set', 'session.readiness'}; missing = required - server._methods.keys(); assert not missing, missing"
             if ($LASTEXITCODE -ne 0) { throw "Desktop Agent RPC registration check failed" }

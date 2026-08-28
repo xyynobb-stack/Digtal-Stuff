@@ -5847,6 +5847,10 @@ body:has(.shell-vibrant),
 }
 
 .chat-input {
+  /* @lat: [[chat-performance#Textarea auto-resize avoids per-keystroke reflow]]
+     Chromium sizes the textarea from its content without a synchronous JS
+     scrollHeight read, so typing cannot force layout of the transcript. */
+  field-sizing: content;
   width: 100%;
   background: none;
   border: none;
@@ -6979,8 +6983,8 @@ body:has(.shell-vibrant),
  *
  * A contiguous burst of tool calls/results folds into one collapsible
  * block (ChatGPT/Claude style) instead of one bubble per call. The
- * collapsed summary shows the most recent step; the run and each step
- * expand smoothly via a grid-template-rows height transition.
+ * collapsed summary shows the most recent step; the run and each step mount
+ * their detail DOM only while explicitly expanded.
  */
 .chat-message-history > .chat-tool-group,
 .chat-message-history > .chat-reasoning-group {
@@ -7134,15 +7138,8 @@ body:has(.shell-vibrant),
   flex-shrink: 0;
 }
 
-/* Smooth height animation without measuring: 0fr → 1fr collapses the row. */
 .chat-tool-collapse {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.22s ease;
-}
-
-.chat-tool-collapse--open {
-  grid-template-rows: 1fr;
+  display: block;
 }
 
 .chat-tool-collapse-inner {

@@ -9,7 +9,7 @@ import {
 import { dirname, join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  installManagedReportSkills,
+  installManagedUserSkills,
   installPackagedPresetContent,
   quarantineLegacyMarketReportSkill,
 } from "./preset-content";
@@ -160,14 +160,15 @@ describe("packaged preset user content", () => {
     );
   });
 
-  it("refreshes maintained report Skills and backs up previous content", async () => {
-    // @lat: [[discover#Managed report Skill upgrades]]
-    const reportNames = [
+  it("refreshes maintained user Skills and backs up previous content", async () => {
+    // @lat: [[discover#Managed user Skill upgrades]]
+    const managedNames = [
       "market-report-rag",
       "hr-analysis-report-rag",
       "finance-analysis-report-rag",
+      "skill-creator",
     ];
-    for (const name of reportNames) {
+    for (const name of managedNames) {
       writeFixture(
         join(presetRoot, "skills", "custom", name, "SKILL.md"),
         `new-${name}`,
@@ -179,10 +180,10 @@ describe("packaged preset user content", () => {
     }
 
     await expect(
-      installManagedReportSkills(presetRoot, hermesHome),
-    ).resolves.toBe(3);
+      installManagedUserSkills(presetRoot, hermesHome),
+    ).resolves.toBe(4);
 
-    for (const name of reportNames) {
+    for (const name of managedNames) {
       expect(
         readFileSync(
           join(hermesHome, "skills", "custom", name, "SKILL.md"),
@@ -192,13 +193,13 @@ describe("packaged preset user content", () => {
     }
     const backups = readdirSync(join(hermesHome, "skill-backups"));
     expect(
-      reportNames.every((name) =>
+      managedNames.every((name) =>
         backups.some((entry) => entry.startsWith(`previous-custom-${name}-`)),
       ),
     ).toBe(true);
 
     await expect(
-      installManagedReportSkills(presetRoot, hermesHome),
+      installManagedUserSkills(presetRoot, hermesHome),
     ).resolves.toBe(0);
     expect(readdirSync(join(hermesHome, "skill-backups"))).toEqual(backups);
   });

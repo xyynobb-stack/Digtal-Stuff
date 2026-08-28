@@ -520,23 +520,16 @@ export function probeRelocatedRuntime(runtimeRepo: string): void {
     process.platform === "win32"
       ? join(runtimeRepo, "venv", "Scripts", "python.exe")
       : join(runtimeRepo, "venv", "bin", "python");
-  execFileSync(
-    launcher,
-    [
-      "-c",
-      "import sys, numpy, pymilvus; assert tuple(map(int, pymilvus.__version__.split('.')[:2])) >= (2, 4); print(sys.executable)",
-    ],
-    {
-      cwd: runtimeRepo,
-      encoding: "utf8",
-      timeout: 15_000,
-      windowsHide: true,
-      env: {
-        ...process.env,
-        PYTHONPATH: runtimeRepo,
-      },
+  execFileSync(launcher, ["-c", "import sys; print(sys.executable)"], {
+    cwd: runtimeRepo,
+    encoding: "utf8",
+    timeout: 15_000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PYTHONPATH: runtimeRepo,
     },
-  );
+  });
 }
 
 function activateRuntime(
@@ -920,7 +913,8 @@ function installBundledLookupToken(): void {
   }
 }
 
-const COMPANY_SOUL_RULES_MARKER = "<!-- AGENT_WINDOWS_PYTHON_RULES -->";
+const COMPANY_VISIBLE_LANGUAGE_RULES_MARKER =
+  "<!-- JINGYU_VISIBLE_LANGUAGE_RULES -->";
 const STOCK_SOUL_IDENTITY_REPLACEMENTS = [
   [
     "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
@@ -941,8 +935,21 @@ export function migrateStockSoulIdentity(content: string): string {
   );
 }
 
+/** Append the current company SOUL rule without replacing user-authored text. */
+export function mergeBundledSoulRules(
+  existing: string,
+  bundledRules: string,
+): string {
+  const migrated = migrateStockSoulIdentity(existing);
+  const rules = bundledRules.trim();
+  if (!rules || migrated.includes(COMPANY_VISIBLE_LANGUAGE_RULES_MARKER)) {
+    return migrated;
+  }
+  return `${migrated.trimEnd()}${migrated.trimEnd() ? "\n\n" : ""}${rules}\n`;
+}
+
 /**
- * Install the package's company-wide tool preference exactly once without
+ * Install the package's company-wide visible-language guidance exactly once without
  * replacing the user's own SOUL.md content.  SOUL.md is loaded by Hermes as
  * part of every new agent system prompt, making this more reliable than an
  * optionally-invoked skill for the managed Windows runtime.
@@ -950,22 +957,29 @@ export function migrateStockSoulIdentity(content: string): string {
 function installBundledSoulRules(): void {
   if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
   const bundledRules = join(BUNDLED_RUNTIME_ROOT, "employee-default-soul.md");
-  const targetSoul = join(HERMES_HOME, "SOUL.md");
   try {
-    const existing = existsSync(targetSoul)
-      ? readFileSync(targetSoul, "utf-8")
-      : "";
-    const migrated = migrateStockSoulIdentity(existing);
     const rules = existsSync(bundledRules)
-      ? readFileSync(bundledRules, "utf-8").trim()
+      ? readFileSync(bundledRules, "utf-8")
       : "";
-    const next =
-      !rules || migrated.includes(COMPANY_SOUL_RULES_MARKER)
-        ? migrated
-        : `${migrated.trimEnd()}${migrated.trimEnd() ? "\n\n" : ""}${rules}\n`;
-    if (next === existing) return;
-    mkdirSync(HERMES_HOME, { recursive: true });
-    writeFileSync(targetSoul, next, "utf-8");
+    const targetSouls = [join(HERMES_HOME, "SOUL.md")];
+    const profilesRoot = join(HERMES_HOME, "profiles");
+    if (existsSync(profilesRoot)) {
+      for (const entry of readdirSync(profilesRoot, { withFileTypes: true })) {
+        const namedSoul = join(profilesRoot, entry.name, "SOUL.md");
+        if (entry.isDirectory() && existsSync(namedSoul))
+          targetSouls.push(namedSoul);
+      }
+    }
+
+    for (const targetSoul of targetSouls) {
+      const existing = existsSync(targetSoul)
+        ? readFileSync(targetSoul, "utf-8")
+        : "";
+      const next = mergeBundledSoulRules(existing, rules);
+      if (next === existing) continue;
+      mkdirSync(dirname(targetSoul), { recursive: true });
+      writeFileSync(targetSoul, next, "utf-8");
+    }
   } catch {
     // The agent still starts with its normal identity if this best-effort
     // company-rule installation cannot write the user's Hermes home.

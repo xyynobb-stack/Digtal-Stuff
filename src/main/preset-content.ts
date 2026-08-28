@@ -18,12 +18,15 @@ export interface PresetContentInstallResult {
   templatesCopied: number;
 }
 
-const MANAGED_REPORT_SKILLS = [
+const MANAGED_USER_SKILLS = [
   "market-report-rag",
   "hr-analysis-report-rag",
   "finance-analysis-report-rag",
+  "skill-creator",
 ] as const;
-const MANAGED_REPORT_REVISION_FILE = ".jingyuai-managed-report-revision";
+// Keep the existing marker filename so report Skills installed by earlier
+// releases retain their revision history when Skill Creator joins this set.
+const MANAGED_SKILL_REVISION_FILE = ".jingyuai-managed-report-revision";
 
 async function copyDirectory(source: string, target: string): Promise<void> {
   await mkdir(target, { recursive: true });
@@ -81,7 +84,7 @@ async function calculateDirectoryRevision(root: string): Promise<string> {
     entries.sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
       if (
-        entry.name === MANAGED_REPORT_REVISION_FILE ||
+        entry.name === MANAGED_SKILL_REVISION_FILE ||
         entry.name === ".hermes-desktop-user-added" ||
         entry.name === "__pycache__"
       ) {
@@ -116,7 +119,7 @@ async function replaceManagedDirectory(
   if (existsSync(destination)) {
     try {
       const installedRevision = await readFile(
-        join(destination, MANAGED_REPORT_REVISION_FILE),
+        join(destination, MANAGED_SKILL_REVISION_FILE),
         "utf8",
       );
       if (installedRevision.trim() === revision) return false;
@@ -134,7 +137,7 @@ async function replaceManagedDirectory(
   try {
     await copyDirectory(source, staging);
     await writeFile(
-      join(staging, MANAGED_REPORT_REVISION_FILE),
+      join(staging, MANAGED_SKILL_REVISION_FILE),
       `${revision}\n`,
       "utf8",
     );
@@ -158,8 +161,8 @@ async function replaceManagedDirectory(
   }
 }
 
-/** Refresh product-maintained report Skills while preserving the old copy. */
-export async function installManagedReportSkills(
+/** Refresh product-maintained user Skills while preserving the old copy. */
+export async function installManagedUserSkills(
   presetRoot: string,
   hermesHome: string,
 ): Promise<number> {
@@ -167,7 +170,7 @@ export async function installManagedReportSkills(
   const targetRoot = join(hermesHome, "skills", "custom");
   const backupRoot = join(hermesHome, "skill-backups");
   let installed = 0;
-  for (const name of MANAGED_REPORT_SKILLS) {
+  for (const name of MANAGED_USER_SKILLS) {
     if (
       await replaceManagedDirectory(
         join(sourceRoot, name),
@@ -212,14 +215,14 @@ export async function quarantineLegacyMarketReportSkill(
 
 /**
  * Merge content selected by the package builder into the default profile.
- * Maintained report Skills use revisioned upgrades with recoverable backups;
+ * Maintained user Skills use revisioned upgrades with recoverable backups;
  * all other same-name skills and templates remain user-owned and untouched.
  */
 export async function installPackagedPresetContent(
   presetRoot: string,
   hermesHome: string,
 ): Promise<PresetContentInstallResult> {
-  const managedSkillsCopied = await installManagedReportSkills(
+  const managedSkillsCopied = await installManagedUserSkills(
     presetRoot,
     hermesHome,
   );

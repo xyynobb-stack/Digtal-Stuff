@@ -19,6 +19,7 @@ import {
   type AgentInitializationStatus,
 } from "./useDashboardChatTransport";
 import type { ActiveTurn, ChatMessage, UsageState } from "../types";
+import { SESSION_TITLE_CHANGED_EVENT } from "../../../lib/sessionTitleEvents";
 
 type SetUsageMock = Mock<(value: SetStateAction<UsageState | null>) => void>;
 
@@ -142,6 +143,7 @@ function Harness({
   initialHermesSessionId = null,
   onDashboardUnavailable,
   onAgentInitializationChange,
+  onSessionTitle,
   onResumedModelIdentity,
   setUsage = vi.fn() as SetUsageMock,
 }: {
@@ -154,6 +156,7 @@ function Harness({
   onAgentInitializationChange?: (
     status: AgentInitializationStatus | null,
   ) => void;
+  onSessionTitle?: (sessionId: string, title: string) => void;
   onResumedModelIdentity?: (identity: {
     baseUrl: string;
     model: string;
@@ -198,6 +201,7 @@ function Harness({
     setUsage,
     onDashboardUnavailable,
     onAgentInitializationChange,
+    onSessionTitle,
     onResumedModelIdentity,
   });
 
@@ -438,6 +442,64 @@ describe("useDashboardChatTransport recovery", () => {
       session_id: "prewarmed-live",
       text: "hello after prewarm",
     });
+  });
+
+  it("publishes a live auto-title for the matching stored session", async () => {
+    dashboardMock.request.mockImplementation(async (method) => {
+      if (method === "session.create") {
+        return {
+          session_id: "title-live",
+          stored_session_id: "title-stored",
+          info: {
+            model: "bad-model",
+            provider: "bad-provider",
+            route_id: "route:v1:title",
+          },
+        };
+      }
+      if (method === "model.resolve") {
+        return {
+          model: "bad-model",
+          provider: "bad-provider",
+          route_id: "route:v1:title",
+        };
+      }
+      return {};
+    });
+    const api: HarnessApi = {};
+    const onSessionTitle = vi.fn();
+    const onWindowTitle = vi.fn();
+    window.addEventListener(SESSION_TITLE_CHANGED_EVENT, onWindowTitle);
+    render(
+      <Harness
+        api={api}
+        initialActiveTurn={null}
+        onSessionTitle={onSessionTitle}
+      />,
+    );
+
+    await waitFor(() => expect(dashboardMock.onEvent).toBeTypeOf("function"));
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        type: "session.title",
+        session_id: "title-live",
+        payload: {
+          session_id: "title-stored",
+          title: "人工智能行业市场调研报告",
+        },
+      });
+    });
+
+    expect(onSessionTitle).toHaveBeenCalledWith(
+      "title-stored",
+      "人工智能行业市场调研报告",
+    );
+    expect(onWindowTitle).toHaveBeenCalledTimes(1);
+    expect((onWindowTitle.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      sessionId: "title-stored",
+      title: "人工智能行业市场调研报告",
+    });
+    window.removeEventListener(SESSION_TITLE_CHANGED_EVENT, onWindowTitle);
   });
 
   it("records one session prewarm when model hydration reruns the effect", async () => {

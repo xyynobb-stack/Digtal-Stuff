@@ -10,6 +10,11 @@ import {
   patchDashboardCliColdStartSource,
   patchDashboardColdStartSource,
 } from "./patch-dashboard-cold-start.mjs";
+import {
+  patchDashboardOutputDirectoryComputeHostSource,
+  patchDashboardOutputDirectoryPromptSource,
+  patchDashboardOutputDirectoryServerSource,
+} from "./patch-dashboard-output-directory.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
@@ -662,6 +667,16 @@ export function applyOfflineRuntimeOverlays({
 } = {}) {
   syncRepositoryPresetSkills();
   const gatewayServerPath = path.join(agentRoot, "tui_gateway", "server.py");
+  const gatewayPromptPath = path.join(
+    agentRoot,
+    "tui_gateway",
+    "methods_prompt.py",
+  );
+  const computeHostPath = path.join(
+    agentRoot,
+    "tui_gateway",
+    "compute_host.py",
+  );
   const dashboardServerPath = path.join(
     agentRoot,
     "hermes_cli",
@@ -697,6 +712,9 @@ export function applyOfflineRuntimeOverlays({
   }
   if (!fs.existsSync(gatewayServerPath)) {
     throw new Error(`Gateway server not found: ${gatewayServerPath}`);
+  }
+  if (!fs.existsSync(gatewayPromptPath) || !fs.existsSync(computeHostPath)) {
+    throw new Error("Gateway output-directory sources were not found");
   }
   if (!fs.existsSync(dashboardServerPath)) {
     throw new Error(`Dashboard server not found: ${dashboardServerPath}`);
@@ -738,9 +756,25 @@ export function applyOfflineRuntimeOverlays({
     "utf8",
   );
   const patched = patchDesktopSkillToolsetSource(
-    patchGatewayServerSource(fs.readFileSync(gatewayServerPath, "utf8")),
+    patchDashboardOutputDirectoryServerSource(
+      patchGatewayServerSource(fs.readFileSync(gatewayServerPath, "utf8")),
+    ),
   );
   fs.writeFileSync(gatewayServerPath, patched, "utf8");
+  fs.writeFileSync(
+    gatewayPromptPath,
+    patchDashboardOutputDirectoryPromptSource(
+      fs.readFileSync(gatewayPromptPath, "utf8"),
+    ),
+    "utf8",
+  );
+  fs.writeFileSync(
+    computeHostPath,
+    patchDashboardOutputDirectoryComputeHostSource(
+      fs.readFileSync(computeHostPath, "utf8"),
+    ),
+    "utf8",
+  );
   fs.writeFileSync(
     dashboardServerPath,
     patchDashboardColdStartSource(fs.readFileSync(dashboardServerPath, "utf8")),

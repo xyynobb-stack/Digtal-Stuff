@@ -81,6 +81,23 @@ describe("ChatInput — CJK IME Enter handling", () => {
   });
 });
 
+describe("ChatInput — native content sizing", () => {
+  it("does not synchronously read scrollHeight while typing", () => {
+    const { textarea } = renderInput();
+    const scrollHeightRead = vi.fn(() => 80);
+    Object.defineProperty(textarea, "scrollHeight", {
+      configurable: true,
+      get: scrollHeightRead,
+    });
+
+    fireEvent.change(textarea, { target: { value: "一段新的输入" } });
+
+    expect(textarea.value).toBe("一段新的输入");
+    expect(scrollHeightRead).not.toHaveBeenCalled();
+    expect(textarea.style.height).toBe("");
+  });
+});
+
 describe("ChatInput — attachment ingestion barrier", () => {
   it("does not submit until the selected file has reached app-owned staging", async () => {
     let finishCopy: (path: string) => void = () => {};

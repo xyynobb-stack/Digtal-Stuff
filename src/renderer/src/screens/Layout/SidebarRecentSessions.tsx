@@ -23,6 +23,10 @@ import SidebarSessionMenu, {
   type SidebarMenuProject,
   type SidebarMenuTarget,
 } from "./SidebarSessionMenu";
+import {
+  SESSION_TITLE_CHANGED_EVENT,
+  sessionTitleChangedDetail,
+} from "../../lib/sessionTitleEvents";
 
 interface RecentSession {
   id: string;
@@ -215,6 +219,13 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   const sessionsRef = useRef<RecentSession[]>([]);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
+  // A cache read can start before a live title event and finish after it. Track
+  // a monotonic renderer-local revision so only that stale response preserves
+  // the newer title; later refreshes are free to accept the DB again.
+  const titleRevisionRef = useRef(0);
+  const liveTitleRevisionsRef = useRef(
+    new Map<string, { revision: number; title: string }>(),
+  );
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -240,12 +251,19 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         contextFolder?: string | null;
       }>,
       limit = RECENT_SESSIONS_PAGE_SIZE,
+      requestTitleRevision = titleRevisionRef.current,
     ): RecentSession[] =>
-      list.slice(0, limit).map(({ id, title, contextFolder }) => ({
-        id,
-        title,
-        contextFolder: contextFolder ?? null,
-      })),
+      list.slice(0, limit).map(({ id, title, contextFolder }) => {
+        const liveTitle = liveTitleRevisionsRef.current.get(id);
+        return {
+          id,
+          title:
+            liveTitle && liveTitle.revision > requestTitleRevision
+              ? liveTitle.title
+              : title,
+          contextFolder: contextFolder ?? null,
+        };
+      }),
     [],
   );
 
@@ -256,9 +274,14 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         title: string;
         contextFolder?: string | null;
       }>,
+      requestTitleRevision = titleRevisionRef.current,
     ): void => {
       setHasMore(list.length > RECENT_SESSIONS_PAGE_SIZE);
-      const next = normalizeRows(list);
+      const next = normalizeRows(
+        list,
+        RECENT_SESSIONS_PAGE_SIZE,
+        requestTitleRevision,
+      );
       // Skip the state update (and re-render) when nothing changed — the
       // common case for periodic refreshes.
       setSessions((prev) => (sameSessions(prev, next) ? prev : next));
@@ -273,13 +296,14 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         title: string;
         contextFolder?: string | null;
       }>,
+      requestTitleRevision = titleRevisionRef.current,
     ): void => {
       const loadedLimit = Math.max(
         RECENT_SESSIONS_PAGE_SIZE,
         sessionsRef.current.length,
       );
       setHasMore(list.length > loadedLimit);
-      const next = normalizeRows(list, loadedLimit);
+      const next = normalizeRows(list, loadedLimit, requestTitleRevision);
       setSessions((prev) => (sameSessions(prev, next) ? prev : next));
     },
     [normalizeRows],
@@ -292,9 +316,14 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         title: string;
         contextFolder?: string | null;
       }>,
+      requestTitleRevision = titleRevisionRef.current,
     ): void => {
       setHasMore(list.length > RECENT_SESSIONS_PAGE_SIZE);
-      const page = normalizeRows(list);
+      const page = normalizeRows(
+        list,
+        RECENT_SESSIONS_PAGE_SIZE,
+        requestTitleRevision,
+      );
       if (page.length === 0) return;
       setSessions((prev) => {
         const seen = new Set(prev.map((s) => s.id));
@@ -313,9 +342,10 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       const now = Date.now();
       if (!force && now - lastRefreshRef.current < REFRESH_THROTTLE_MS) return;
       lastRefreshRef.current = now;
+      const requestTitleRevision = titleRevisionRef.current;
       try {
         const synced = await window.hermesAPI.syncSessionCache();
-        applyLoadedWindow(synced);
+        applyLoadedWindow(synced, requestTitleRevision);
       } catch {
         // keep whatever we had — the list is best-effort UI sugar
       }
@@ -327,12 +357,13 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
     if (!open || !hasMoreRef.current || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    const requestTitleRevision = titleRevisionRef.current;
     try {
       const nextPage = await window.hermesAPI.listCachedSessions(
         RECENT_SESSIONS_PAGE_SIZE + 1,
         sessionsRef.current.length,
       );
-      appendPage(nextPage);
+      appendPage(nextPage, requestTitleRevision);
     } catch {
       // keep the current list; scrolling can retry on the next event
     } finally {
@@ -357,20 +388,22 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
     if (!open) return;
     let cancelled = false;
     void (async () => {
+      const cachedTitleRevision = titleRevisionRef.current;
       try {
         const cached = await window.hermesAPI.listCachedSessions(
           // One over the page size so the cache read alone can decide whether
           // another page exists without a separate count query.
           RECENT_SESSIONS_PAGE_SIZE + 1,
         );
-        if (!cancelled) applyFirstPage(cached);
+        if (!cancelled) applyFirstPage(cached, cachedTitleRevision);
       } catch {
         /* ignore cache read errors */
       }
       lastRefreshRef.current = Date.now();
+      const syncedTitleRevision = titleRevisionRef.current;
       try {
         const synced = await window.hermesAPI.syncSessionCache();
-        if (!cancelled) applyFirstPage(synced);
+        if (!cancelled) applyFirstPage(synced, syncedTitleRevision);
       } catch {
         // cache read above already painted something
       }
@@ -379,6 +412,36 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       cancelled = true;
     };
   }, [open, activeProfile, applyFirstPage]);
+
+  useEffect(() => {
+    const onSessionTitleChanged = (event: Event): void => {
+      const detail = sessionTitleChangedDetail(event);
+      if (!detail) return;
+      if (detail.profile && detail.profile !== activeProfile) return;
+      const revision = titleRevisionRef.current + 1;
+      titleRevisionRef.current = revision;
+      liveTitleRevisionsRef.current.set(detail.sessionId, {
+        revision,
+        title: detail.title,
+      });
+      setSessions((previous) => {
+        const next = previous.map((session) =>
+          session.id === detail.sessionId
+            ? { ...session, title: detail.title }
+            : session,
+        );
+        sessionsRef.current = next;
+        return sameSessions(previous, next) ? previous : next;
+      });
+    };
+    window.addEventListener(SESSION_TITLE_CHANGED_EVENT, onSessionTitleChanged);
+    return () => {
+      window.removeEventListener(
+        SESSION_TITLE_CHANGED_EVENT,
+        onSessionTitleChanged,
+      );
+    };
+  }, [activeProfile]);
 
   // While open: pick up background sessions (gateway, cron, other devices)
   // on focus and on a slow timer. No listeners or timers at all when closed.
@@ -516,6 +579,12 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         return;
       }
       const previous = current?.title ?? "";
+      const optimisticRevision = titleRevisionRef.current + 1;
+      titleRevisionRef.current = optimisticRevision;
+      liveTitleRevisionsRef.current.set(id, {
+        revision: optimisticRevision,
+        title: trimmed,
+      });
       // Optimistic local update; roll back if the write fails.
       setSessions((prev) =>
         prev.map((s) => (s.id === id ? { ...s, title: trimmed } : s)),
@@ -525,6 +594,12 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         await window.hermesAPI.updateSessionTitle(id, trimmed);
       } catch (err) {
         console.error("Failed to rename session", id, err);
+        const rollbackRevision = titleRevisionRef.current + 1;
+        titleRevisionRef.current = rollbackRevision;
+        liveTitleRevisionsRef.current.set(id, {
+          revision: rollbackRevision,
+          title: previous,
+        });
         setSessions((prev) =>
           prev.map((s) => (s.id === id ? { ...s, title: previous } : s)),
         );

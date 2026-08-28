@@ -664,7 +664,7 @@ describe("CLI fallback session id propagation", () => {
         }).catch(reject);
       }),
     ).rejects.toThrow(
-      "API request timed out. Check the SSH tunnel and remote Hermes gateway.",
+      "API request timed out. Check the SSH tunnel and remote JingYuAI gateway.",
     );
 
     expect(chunks).toEqual([]);

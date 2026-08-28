@@ -815,15 +815,25 @@ interface HermesAPI {
   ) => Promise<boolean>;
 
   // Skills
-  listInstalledSkills: (
-    profile?: string,
-  ) => Promise<
-    Array<{ name: string; category: string; description: string; path: string }>
+  listInstalledSkills: (profile?: string) => Promise<
+    Array<{
+      name: string;
+      displayName?: string;
+      category: string;
+      description: string;
+      path: string;
+      userAdded?: boolean;
+    }>
   >;
-  listUserAddedSkills: (
-    profile?: string,
-  ) => Promise<
-    Array<{ name: string; category: string; description: string; path: string }>
+  listUserAddedSkills: (profile?: string) => Promise<
+    Array<{
+      name: string;
+      displayName?: string;
+      category: string;
+      description: string;
+      path: string;
+      userAdded?: boolean;
+    }>
   >;
   listBundledSkills: () => Promise<
     Array<{

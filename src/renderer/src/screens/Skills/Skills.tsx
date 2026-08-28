@@ -7,9 +7,15 @@ import { OrbLoader } from "../../components/OrbLoader";
 
 interface InstalledSkill {
   name: string;
+  displayName?: string;
   category: string;
   description: string;
   path: string;
+  userAdded?: boolean;
+}
+
+function installedSkillLabel(skill: InstalledSkill): string {
+  return skill.userAdded ? skill.displayName || skill.name : skill.name;
 }
 
 interface BundledSkill {
@@ -89,7 +95,6 @@ function Skills({
     const result = await window.hermesAPI.installSkill(name, profile);
     setActionInProgress(null);
     if (result.success) {
-      await loadInstalled();
       window.dispatchEvent(new Event("hermes-skills-changed"));
     } else {
       setError(result.error || t("skills.installFailed"));
@@ -104,7 +109,6 @@ function Skills({
     setActionInProgress(null);
     if (result.success) {
       setDetailSkill(null);
-      await loadInstalled();
       window.dispatchEvent(new Event("hermes-skills-changed"));
       toast.success(t("skills.uninstallSuccess", { name }));
     } else {
@@ -124,6 +128,7 @@ function Skills({
       const q = search.toLowerCase();
       return (
         s.name.toLowerCase().includes(q) ||
+        installedSkillLabel(s).toLowerCase().includes(q) ||
         s.description.toLowerCase().includes(q) ||
         s.category.toLowerCase().includes(q)
       );
@@ -172,7 +177,9 @@ function Skills({
           <div className="skills-detail" onClick={(e) => e.stopPropagation()}>
             <div className="skills-detail-header">
               <div>
-                <div className="skills-detail-name">{detailSkill.name}</div>
+                <div className="skills-detail-name">
+                  {installedSkillLabel(detailSkill)}
+                </div>
                 <div className="skills-detail-category">
                   {detailSkill.category}
                 </div>
@@ -344,7 +351,9 @@ function Skills({
                 onClick={() => handleViewDetail(skill)}
               >
                 <div className="skills-card-category">{skill.category}</div>
-                <div className="skills-card-name">{skill.name}</div>
+                <div className="skills-card-name">
+                  {installedSkillLabel(skill)}
+                </div>
                 {skill.description && (
                   <div className="skills-card-description">
                     {skill.description}

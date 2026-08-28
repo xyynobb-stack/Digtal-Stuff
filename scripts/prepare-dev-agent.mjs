@@ -16,6 +16,11 @@ import {
 } from "./apply-offline-runtime-overlays.mjs";
 import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
 import { patchCompanyCodexRetries } from "./patch-company-fallback-safety.mjs";
+import {
+  patchDashboardOutputDirectoryComputeHostSource,
+  patchDashboardOutputDirectoryPromptSource,
+  patchDashboardOutputDirectoryServerSource,
+} from "./patch-dashboard-output-directory.mjs";
 
 const hermesHome =
   process.env.HERMES_HOME?.trim() ||
@@ -31,13 +36,25 @@ const workflowToolFiles = [
   "market_report_workflow_state.py",
   "market_report_workflow_tool.py",
 ];
+const visibleLanguageRulesMarker = "<!-- JINGYU_VISIBLE_LANGUAGE_RULES -->";
 
 /** Keep development and packaged model-route RPCs on the same implementation. */
 export function syncDevDesktopModelRouting(agentRoot) {
   const gatewayPath = path.join(agentRoot, "tui_gateway", "server.py");
   if (!fs.existsSync(gatewayPath)) return false;
   const source = fs.readFileSync(gatewayPath, "utf8");
-  const patched = patchGatewayServerSource(source);
+  let patched = patchGatewayServerSource(source);
+  const promptPath = path.join(agentRoot, "tui_gateway", "methods_prompt.py");
+  const computeHostPath = path.join(
+    agentRoot,
+    "tui_gateway",
+    "compute_host.py",
+  );
+  const hasOutputDirectorySources =
+    fs.existsSync(promptPath) && fs.existsSync(computeHostPath);
+  if (hasOutputDirectorySources) {
+    patched = patchDashboardOutputDirectoryServerSource(patched);
+  }
   const runtimeProviderPath = path.join(
     agentRoot,
     "hermes_cli",
@@ -60,6 +77,18 @@ export function syncDevDesktopModelRouting(agentRoot) {
     path.join(agentRoot, "tui_gateway", "methods_desktop_cold_start.py"),
   );
   if (patched !== source) fs.writeFileSync(gatewayPath, patched, "utf8");
+  if (hasOutputDirectorySources) {
+    const promptSource = fs.readFileSync(promptPath, "utf8");
+    const computeHostSource = fs.readFileSync(computeHostPath, "utf8");
+    const patchedPrompt =
+      patchDashboardOutputDirectoryPromptSource(promptSource);
+    if (patchedPrompt !== promptSource)
+      fs.writeFileSync(promptPath, patchedPrompt, "utf8");
+    const patchedComputeHost =
+      patchDashboardOutputDirectoryComputeHostSource(computeHostSource);
+    if (patchedComputeHost !== computeHostSource)
+      fs.writeFileSync(computeHostPath, patchedComputeHost, "utf8");
+  }
   return true;
 }
 
@@ -154,6 +183,42 @@ export function ensureDevJingYuAgentIdentity(
   return found;
 }
 
+/** Append user-visible language guidance to the active development SOUL once. */
+export function ensureDevVisibleLanguageRules(
+  profileSoulPath,
+  rulesPath = path.join(projectRoot, "resources", "employee-default-soul.md"),
+) {
+  if (!fs.existsSync(rulesPath)) return false;
+  const rules = fs.readFileSync(rulesPath, "utf8").trim();
+  if (!rules) return false;
+
+  const profileSouls = profileSoulPath
+    ? [profileSoulPath]
+    : [
+        path.join(hermesHome, "SOUL.md"),
+        ...(fs.existsSync(path.join(hermesHome, "profiles"))
+          ? fs
+              .readdirSync(path.join(hermesHome, "profiles"), {
+                withFileTypes: true,
+              })
+              .filter((entry) => entry.isDirectory())
+              .map((entry) =>
+                path.join(hermesHome, "profiles", entry.name, "SOUL.md"),
+              )
+          : []),
+      ];
+  let found = false;
+  for (const soulPath of profileSouls) {
+    if (!fs.existsSync(soulPath)) continue;
+    found = true;
+    const source = fs.readFileSync(soulPath, "utf8");
+    if (source.includes(visibleLanguageRulesMarker)) continue;
+    const next = `${source.trimEnd()}${source.trimEnd() ? "\n\n" : ""}${rules}\n`;
+    fs.writeFileSync(soulPath, next, "utf8");
+  }
+  return found;
+}
+
 /** Copy Desktop-owned report workflow tools into the installed development Agent. */
 export function syncDevMarketReportWorkflowTools(
   agentRoot,
@@ -183,6 +248,7 @@ export function syncDevMarketReportSkill(
     "market-report-rag",
     "hr-analysis-report-rag",
     "finance-analysis-report-rag",
+    "skill-creator",
   ];
   for (const name of names) {
     const source = path.join(starterRoot, name);
@@ -228,6 +294,7 @@ export function prepareDevAgent() {
   ensureDevCompanyResponsesUserAgent(agentRoot);
   ensureDevCompanyResponsesFallback(agentRoot);
   ensureDevJingYuAgentIdentity(agentRoot);
+  ensureDevVisibleLanguageRules();
   syncDevMarketReportWorkflowTools(agentRoot);
   syncDevMarketReportSkill(agentRoot);
 }

@@ -145,4 +145,47 @@ describe("Dashboard output-directory overlay", () => {
     expect(prompt).not.toMatch(/^\+/m);
     expect(compute).not.toMatch(/^\+/m);
   });
+
+  it("preserves a newer Agent runtime that already supports output_dir", () => {
+    const nativeServer = `
+def _validate_output_directory(raw):
+    return raw
+
+def _enrich_with_output_directory(message, output_dir):
+    return message
+
+def frame(output_dir):
+    return {"output_dir": output_dir}
+
+def drain(queued):
+    return run(output_dir=queued.get("output_dir"))
+
+def submit(run_message, output_dir):
+    return _enrich_with_output_directory(run_message, output_dir)
+`;
+    const nativePrompt = `
+output_dir = _validate_output_directory(params.get("output_dir"))
+submit(output_dir=output_dir)
+`;
+    const nativeCompute = `
+server._run_prompt_submit(
+    request_id,
+    sid,
+    session,
+    text,
+    display_text=frame.get("display_text"),
+    output_dir=frame.get("output_dir"),
+)
+`;
+
+    expect(patchDashboardOutputDirectoryServerSource(nativeServer)).toBe(
+      nativeServer,
+    );
+    expect(patchDashboardOutputDirectoryPromptSource(nativePrompt)).toBe(
+      nativePrompt,
+    );
+    expect(patchDashboardOutputDirectoryComputeHostSource(nativeCompute)).toBe(
+      nativeCompute,
+    );
+  });
 });

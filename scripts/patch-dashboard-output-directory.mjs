@@ -13,10 +13,32 @@ function replaceRequired(source, before, after, label) {
   return source.replace(before, after.replace(/\n\+/g, "\n"));
 }
 
+function hasNativePromptOutputDirectory(source) {
+  return (
+    source.includes('_validate_output_directory(params.get("output_dir"))') &&
+    source.includes("output_dir=output_dir")
+  );
+}
+
+function hasNativeServerOutputDirectory(source) {
+  return (
+    source.includes("def _validate_output_directory(") &&
+    source.includes("def _enrich_with_output_directory(") &&
+    source.includes('"output_dir": output_dir') &&
+    source.includes('output_dir=queued.get("output_dir")') &&
+    source.includes("_enrich_with_output_directory(run_message, output_dir)")
+  );
+}
+
 /** Teach prompt.submit to validate and snapshot the Desktop-provided output_dir. */
 export function patchDashboardOutputDirectoryPromptSource(source) {
   let patched = normalize(source);
-  if (patched.includes("HERMES_DESKTOP_OUTPUT_DIR_PROMPT")) return patched;
+  if (
+    patched.includes("HERMES_DESKTOP_OUTPUT_DIR_PROMPT") ||
+    hasNativePromptOutputDirectory(patched)
+  ) {
+    return patched;
+  }
 
   patched = replaceRequired(
     patched,
@@ -48,7 +70,12 @@ export function patchDashboardOutputDirectoryPromptSource(source) {
 /** Carry output_dir through queues/compute hosts and apply it ephemerally per turn. */
 export function patchDashboardOutputDirectoryServerSource(source) {
   let patched = normalize(source);
-  if (patched.includes("HERMES_DESKTOP_OUTPUT_DIR_SERVER")) return patched;
+  if (
+    patched.includes("HERMES_DESKTOP_OUTPUT_DIR_SERVER") ||
+    hasNativeServerOutputDirectory(patched)
+  ) {
+    return patched;
+  }
 
   patched = replaceRequired(
     patched,

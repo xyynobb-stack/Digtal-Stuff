@@ -28,9 +28,11 @@ import {
   patchTtsRequirementsSource,
   syncRepositoryPresetSkills,
 } from "../scripts/apply-offline-runtime-overlays.mjs";
+import { patchDesktopDdgsSource } from "../scripts/patch-desktop-ddgs.mjs";
 import {
   ensureDevCompanyResponsesUserAgent,
   ensureDevCompanyResponsesFallback,
+  ensureDevDdgsRuntime,
   ensureDevExecuteCodeChildrenHidden,
   ensureDevAgentSkillToolset,
   ensureDevJingYuAgentIdentity,
@@ -384,6 +386,75 @@ describe("company Responses request identity overlay", () => {
     expect(readFileSync(runAgent, "utf8")).toContain(
       '_desktop_headers["User-Agent"] = "JingYu-Desktop"',
     );
+  });
+});
+
+describe("desktop DDGS web search", () => {
+  // @lat: [[main-process#Optional tool availability#Bundled DDGS web search]]
+  it("uses bounded Chinese searches with caching and hidden workers", () => {
+    const source = readFileSync(
+      join(
+        process.cwd(),
+        "build/offline-runtime/hermes-agent/plugins/web/ddgs/provider.py",
+      ),
+      "utf8",
+    );
+
+    const patched = patchDesktopDdgsSource(source);
+
+    expect(patched).toContain("HERMES_DESKTOP_DDGS_DEFAULTS");
+    expect(patched).toContain('_SEARCH_REGION = "cn-zh"');
+    expect(patched).toContain("_SEARCH_TIMEOUT_SECS = 12");
+    expect(patched).toContain("_SEARCH_CACHE_TTL_SECS = 300.0");
+    expect(patched).toContain("_SEARCH_MAX_CONCURRENCY = 2");
+    expect(patched).toContain(
+      "threading.BoundedSemaphore(_SEARCH_MAX_CONCURRENCY)",
+    );
+    expect(patched).toContain("subprocess.CREATE_NO_WINDOW");
+    expect(patched).toContain("def _run_ddgs_search_isolated");
+    expect(patchDesktopDdgsSource(patched)).toBe(patched);
+  });
+
+  it("patches the installed development provider before startup", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-dev-ddgs-"));
+    tempRoots.push(root);
+    const provider = join(root, "plugins", "web", "ddgs", "provider.py");
+    mkdirSync(join(provider, ".."), { recursive: true });
+    writeFileSync(
+      provider,
+      readFileSync(
+        join(
+          process.cwd(),
+          "build/offline-runtime/hermes-agent/plugins/web/ddgs/provider.py",
+        ),
+        "utf8",
+      ),
+      "utf8",
+    );
+
+    expect(ensureDevDdgsRuntime(root)).toBe(true);
+    expect(readFileSync(provider, "utf8")).toContain(
+      "HERMES_DESKTOP_DDGS_DEFAULTS",
+    );
+  });
+
+  it("pins DDGS and its native primp dependency in both Windows release channels", () => {
+    const requirements = readFileSync(
+      join(process.cwd(), "resources", "desktop-agent-requirements.txt"),
+      "utf8",
+    );
+    expect(requirements).toContain("primp==1.3.1");
+    expect(requirements).toContain("ddgs==9.16.0");
+
+    for (const workflow of ["release.yml", "beta-release.yml"]) {
+      const source = readFileSync(
+        join(process.cwd(), ".github", "workflows", workflow),
+        "utf8",
+      );
+      expect(source).toContain("resources/desktop-agent-requirements.txt");
+      expect(source).toContain("numpy, pymilvus, ddgs, importlib.metadata");
+      expect(source).toContain("metadata.version('primp') == '1.3.1'");
+    }
   });
 });
 

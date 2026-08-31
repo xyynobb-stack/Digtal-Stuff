@@ -15,6 +15,7 @@ import {
   patchDashboardOutputDirectoryPromptSource,
   patchDashboardOutputDirectoryServerSource,
 } from "./patch-dashboard-output-directory.mjs";
+import { patchDesktopDdgsSource } from "./patch-desktop-ddgs.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
@@ -701,6 +702,13 @@ export function applyOfflineRuntimeOverlays({
     "conversation_loop.py",
   );
   const codexRuntimePath = path.join(agentRoot, "agent", "codex_runtime.py");
+  const ddgsProviderPath = path.join(
+    agentRoot,
+    "plugins",
+    "web",
+    "ddgs",
+    "provider.py",
+  );
   const identityPromptPaths = JINGYU_AGENT_PROMPT_RELATIVE_PATHS.map(
     (relativePath) => path.join(agentRoot, relativePath),
   );
@@ -730,6 +738,9 @@ export function applyOfflineRuntimeOverlays({
   }
   if (!fs.existsSync(runAgentPath)) {
     throw new Error(`Agent entrypoint not found: ${runAgentPath}`);
+  }
+  if (!fs.existsSync(ddgsProviderPath)) {
+    throw new Error(`DDGS provider not found: ${ddgsProviderPath}`);
   }
   if (!fs.existsSync(chatCompletionHelpersPath)) {
     throw new Error(
@@ -800,6 +811,11 @@ export function applyOfflineRuntimeOverlays({
   fs.writeFileSync(
     runAgentPath,
     patchCompanyResponsesUserAgentSource(fs.readFileSync(runAgentPath, "utf8")),
+    "utf8",
+  );
+  fs.writeFileSync(
+    ddgsProviderPath,
+    patchDesktopDdgsSource(fs.readFileSync(ddgsProviderPath, "utf8")),
     "utf8",
   );
   fs.writeFileSync(

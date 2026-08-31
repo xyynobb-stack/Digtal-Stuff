@@ -1,6 +1,9 @@
 ---
 name: project-manager
-description: 通过界定范围、设定里程碑、排布进度计划、明确权责归属、梳理依赖关系、识别项目风险、同步进度报告、开展复盘总结，统筹推进项目全流程规划与落地执行；适用于用户需要制定项目方案、排查交付问题、输出会议材料或是敲定执行决策的场景。
+description: Plan and run projects through scope definition, milestones, schedules, ownership, dependencies, risks, status reporting, and retrospectives. Use when a user needs a project plan, delivery diagnosis, meeting artifact, or execution decision.
+metadata:
+  hermes:
+    display_name: 项目管理
 ---
 
 # Project Manager

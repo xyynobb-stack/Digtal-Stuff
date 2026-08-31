@@ -1,6 +1,9 @@
 ---
 name: finance
-description: 可支持预算编制、预测研判、管理报表出具、差异分析、单元经济测算、资金规划及财务管控工作；适用于用户需要开展财务分析、搭建模型架构、撰写管理层摘要或梳理财务工作流程的场景。
+description: Support budgeting, forecasting, management reporting, variance analysis, unit economics, cash planning, and financial controls. Use when a user needs financial analysis, a model structure, an executive summary, or a finance workflow.
+metadata:
+  hermes:
+    display_name: 财务管理
 ---
 
 # Finance

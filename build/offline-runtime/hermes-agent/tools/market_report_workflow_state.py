@@ -43,6 +43,54 @@ SECTION_SPECS: Mapping[str, Dict[str, Any]] = {
     "7": {"goal": "决策建议与 90 天行动计划", "evidence": ["业务负责人访谈"], "depends_on": list(FOUNDATION_SECTIONS)},
 }
 
+HR_SECTION_ORDER = ("0.1", "0.2", "0.3", "1.1", "1.2", "2.1", "2.2", "3", "4")
+HR_GENERATION_WAVES = (
+    ("0.1", "0.2", "0.3"),
+    ("1.1", "2.1", "2.2"),
+    ("1.2", "3"),
+    ("4",),
+)
+HR_FOUNDATION = ("0.1", "0.2", "0.3")
+HR_SECTION_SPECS: Mapping[str, Dict[str, Any]] = {
+    "0.1": {"goal": "按岗位统计人员结构、配比异常和用工形式风险", "evidence": ["B 工时/排班/所在项目", "E 人员技能与背景", "G 岗位职责/SOP"], "depends_on": []},
+    "0.2": {"goal": "以实际项目经历判定技能覆盖矩阵和单点能力", "evidence": ["A 项目标注数据", "B 工时/排班/所在项目", "E 人员技能与背景"], "depends_on": []},
+    "0.3": {"goal": "按标注品类建立产能与人效基线", "evidence": ["A 项目标注数据", "B 工时/排班", "D 项目交付量与周期"], "depends_on": []},
+    "1.1": {"goal": "按品类和项目时间轴测算所需人天与人数", "evidence": ["D 项目交付量与周期", "项目经理访谈", "销售访谈"], "depends_on": ["0.3"]},
+    "1.2": {"goal": "按月份和品类计算缺口、冗余及可培训转移能力", "evidence": ["本报告 0.2、0.3、1.1"], "depends_on": ["0.2", "0.3", "1.1"]},
+    "2.1": {"goal": "按错误类型归因质量问题并比较新人和老人收敛周期", "evidence": ["C 质检/返工记录", "A 项目标注数据", "F 培训与上手记录"], "depends_on": []},
+    "2.2": {"goal": "按品类分析上手周期、培训人天和成长路径", "evidence": ["F 培训与上手记录", "E 人员技能与背景", "G 岗位职责/SOP"], "depends_on": []},
+    "3": {"goal": "识别单点依赖、流失、弹性和知识流失风险", "evidence": ["本报告 0.2、2.2", "E 人员技能与背景", "H 外部行业资料", "组长访谈"], "depends_on": ["0.2", "2.2"]},
+    "4": {"goal": "用三项经营判断和90天行动表收口", "evidence": ["本报告全篇"], "depends_on": list(HR_SECTION_ORDER[:-1])},
+}
+
+FINANCE_SECTION_ORDER = ("0", "1", "2.1", "2.2", "2.3", "3", "4", "5")
+FINANCE_GENERATION_WAVES = (
+    ("0",),
+    ("2.1",),
+    ("2.2", "2.3"),
+    ("1",),
+    ("3",),
+    ("4",),
+    ("5",),
+)
+FINANCE_FOUNDATION = ("0", "1", "2.1", "2.2", "2.3")
+FINANCE_SECTION_SPECS: Mapping[str, Dict[str, Any]] = {
+    "0": {"goal": "冻结成本纳入项、排除项和关键估算假设", "evidence": ["人天综合成本单一口径；无其他必需资料"], "depends_on": []},
+    "1": {"goal": "按客户和标注品类拆分收入结构与集中度", "evidence": ["D 项目交付量与周期", "E 报价区间与计价方式"], "depends_on": ["0"]},
+    "2.1": {"goal": "按品类分别计算标注与审核直接人力成本", "evidence": ["A 标注平台数据", "B 工时/排班", "人天综合成本"], "depends_on": ["0"]},
+    "2.2": {"goal": "计算返工人天、返工成本及其直接人力成本占比", "evidence": ["C 质检/返工记录", "A 标注平台数据", "B 工时/排班", "本报告 2.1"], "depends_on": ["0", "2.1"]},
+    "2.3": {"goal": "计算工具平台摊销和预标注模型投入产出", "evidence": ["F 工具与平台采购清单"], "depends_on": ["0"]},
+    "3": {"goal": "按统一品类生成单位经济模型、毛利排序和盈亏平衡测算", "evidence": ["本报告第1、2章"], "depends_on": list(FINANCE_FOUNDATION)},
+    "4": {"goal": "分析客户集中度、单价、低毛利和产能风险", "evidence": ["本报告第1至3章", "G 外部行业资料"], "depends_on": ["1", "2.1", "2.2", "2.3", "3"]},
+    "5": {"goal": "用三项经营判断和可验收行动表收口", "evidence": ["本报告全篇"], "depends_on": list(FINANCE_SECTION_ORDER[:-1])},
+}
+
+REPORT_DEFINITIONS: Mapping[str, Dict[str, Any]] = {
+    "market": {"sections": SECTION_ORDER, "waves": GENERATION_WAVES, "specs": SECTION_SPECS},
+    "hr": {"sections": HR_SECTION_ORDER, "waves": HR_GENERATION_WAVES, "specs": HR_SECTION_SPECS},
+    "finance": {"sections": FINANCE_SECTION_ORDER, "waves": FINANCE_GENERATION_WAVES, "specs": FINANCE_SECTION_SPECS},
+}
+
 MAX_SECTION_CHARS = 6000
 MAX_EVIDENCE_SUMMARY_CHARS = 12000
 MAX_SUPPLEMENT_ROUNDS = 2
@@ -59,6 +107,7 @@ class WorkflowError(ValueError):
 
 @dataclass
 class ReportState:
+    report_type: str
     report_goal: str
     retrieval_collection: str
     initial_evidence_summary: str = ""
@@ -70,8 +119,9 @@ class ReportState:
 
     @property
     def expected_wave(self) -> Optional[Sequence[str]]:
+        waves = REPORT_DEFINITIONS[self.report_type]["waves"]
         return next(
-            (wave for wave in GENERATION_WAVES if any(section not in self.sections for section in wave)),
+            (wave for wave in waves if any(section not in self.sections for section in wave)),
             None,
         )
 
@@ -91,6 +141,7 @@ class MarketReportWorkflowStore:
             if action == "start":
                 return self._start(
                     task_id,
+                    arguments.get("report_type", "market"),
                     arguments.get("report_goal"),
                     arguments.get("retrieval_collection"),
                     arguments.get("initial_evidence_summary", ""),
@@ -125,10 +176,14 @@ class MarketReportWorkflowStore:
     def _start(
         self,
         task_id: str,
+        report_type: Any,
         report_goal: Any,
         retrieval_collection: Any,
         initial_evidence_summary: Any,
     ) -> Dict[str, Any]:
+        kind = str(report_type or "market").strip().lower()
+        if kind not in REPORT_DEFINITIONS:
+            raise WorkflowError("INVALID_REPORT_TYPE", f"不支持的报告类型：{kind}")
         goal = self._clean_text(report_goal, "report_goal")
         collection = self._clean_text(retrieval_collection, "retrieval_collection")
         if collection != REQUIRED_RETRIEVAL_COLLECTION:
@@ -148,6 +203,7 @@ class MarketReportWorkflowStore:
         while len(self._states) >= self._max_active_tasks:
             self._states.popitem(last=False)
         state = ReportState(
+            report_type=kind,
             report_goal=goal,
             retrieval_collection=collection,
             initial_evidence_summary=summary,
@@ -189,7 +245,7 @@ class MarketReportWorkflowStore:
             content, source_refs = prepared[section]
             state.sections[section] = content
             state.sources[section] = source_refs
-        if "1.3" in prepared:
+        if state.report_type == "market" and "1.3" in prepared:
             state.capability_matrix = prepared["1.3"][0]
         return self._status(state, "record_wave", recorded_sections=expected)
 
@@ -233,7 +289,7 @@ class MarketReportWorkflowStore:
             "queries": cleaned_queries,
             "missing_evidence": self._clean_list(missing_evidence),
             "instruction": (
-                "只能调用 market-report-rag/scripts/rag_client.py 批量检索；"
+                "只能调用当前报告 Skill 自带的 rag_client.py 批量检索；"
                 f"返回 collection 必须为 {REQUIRED_RETRIEVAL_COLLECTION}，否则立即停止。"
             ),
         }
@@ -243,12 +299,14 @@ class MarketReportWorkflowStore:
         expected_wave = state.expected_wave
         if expected_wave is not None:
             raise WorkflowError("REPORT_INCOMPLETE", f"报告尚未完成；下一波是 {list(expected_wave)}。")
-        report = "\n\n".join(f"## {section}\n\n{state.sections[section]}" for section in SECTION_ORDER)
+        order = REPORT_DEFINITIONS[state.report_type]["sections"]
+        report = "\n\n".join(f"## {section}\n\n{state.sections[section]}" for section in order)
         return {
             "ok": True,
             "action": "finalize",
             "complete": True,
             "retrieval_collection": state.retrieval_collection,
+            "report_type": state.report_type,
             "report": report,
             "sources_by_section": dict(state.sources),
             "supplement_rounds": state.supplement_rounds,
@@ -262,6 +320,7 @@ class MarketReportWorkflowStore:
             "action": action,
             "complete": expected_wave is None,
             "retrieval_collection": state.retrieval_collection,
+            "report_type": state.report_type,
             "completed_sections": list(state.sections),
             "expected_sections": expected_sections,
             "expected_section": expected_sections[0] if len(expected_sections) == 1 else None,
@@ -270,10 +329,11 @@ class MarketReportWorkflowStore:
         }
         payload.update(extra)
         if expected_wave is not None:
+            definition = REPORT_DEFINITIONS[state.report_type]
             dependency_keys: List[str] = []
             section_specs = []
             for section in expected_wave:
-                spec = SECTION_SPECS[section]
+                spec = definition["specs"][section]
                 section_specs.append(
                     {
                         "section": section,
@@ -290,7 +350,7 @@ class MarketReportWorkflowStore:
                 if key in state.sections
             }
             payload["next_wave"] = {
-                "wave": GENERATION_WAVES.index(expected_wave) + 1,
+                "wave": definition["waves"].index(expected_wave) + 1,
                 "sections": section_specs,
                 "dependency_context": context,
                 "capability_matrix": state.capability_matrix,

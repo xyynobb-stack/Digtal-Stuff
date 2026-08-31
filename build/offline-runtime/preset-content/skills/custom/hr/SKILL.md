@@ -1,6 +1,9 @@
 ---
 name: hr
-description: 支持全模块人力资源工作，涵盖招聘、面试组织、入职办理、绩效考核、员工关系维护、制度搭建及人力规划；适用于用户需要人力资源类分析、对外对内文案撰写、方案规划、模板制作或是相关决策参考的场景。
+description: Support human-resources work including recruiting, interviews, onboarding, performance reviews, employee relations, policies, and workforce planning. Use when a user asks for HR analysis, communications, plans, templates, or decisions.
+metadata:
+  hermes:
+    display_name: 人力资源
 ---
 
 # HR

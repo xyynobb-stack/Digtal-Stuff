@@ -25,6 +25,8 @@ import os
 import subprocess
 import sys
 import time
+import threading
+from collections import OrderedDict
 from typing import Any, Dict, Optional
 
 from agent.web_search_provider import WebSearchProvider
@@ -36,13 +38,57 @@ logger = logging.getLogger(__name__)
 # loop has no overall cap, so a slow/rate-limited DuckDuckGo response can hang
 # the (single, shared) agent loop indefinitely (#36776). Enforce a hard cap
 # here by killing a disposable worker process (#68096).
-_SEARCH_TIMEOUT_SECS = 30
 
 # How often the parent polls stdout / interrupt flag while waiting.
 _POLL_INTERVAL_SECS = 0.1
 
 # After terminate(), wait this long before escalating to kill().
 _TERMINATE_GRACE_SECS = 1.0
+
+# HERMES_DESKTOP_DDGS_DEFAULTS: keep startup side-effect-free and bound only actual searches.
+_SEARCH_REGION = "cn-zh"
+_SEARCH_REQUEST_TIMEOUT_SECS = 6
+_SEARCH_TIMEOUT_SECS = 12
+_SEARCH_CACHE_TTL_SECS = 300.0
+_SEARCH_CACHE_MAX_ENTRIES = 128
+_SEARCH_MAX_CONCURRENCY = 2
+_search_cache: "OrderedDict[tuple[str, int], tuple[float, list[dict[str, Any]]]]" = OrderedDict()
+_search_cache_lock = threading.Lock()
+_search_concurrency = threading.BoundedSemaphore(_SEARCH_MAX_CONCURRENCY)
+
+
+def _copy_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(item) for item in results]
+
+
+def _get_cached_results(query: str, safe_limit: int) -> Optional[list[dict[str, Any]]]:
+    key = (query.strip().casefold(), safe_limit)
+    now = time.monotonic()
+    with _search_cache_lock:
+        cached = _search_cache.get(key)
+        if cached is None:
+            return None
+        timestamp, results = cached
+        if now - timestamp > _SEARCH_CACHE_TTL_SECS:
+            _search_cache.pop(key, None)
+            return None
+        _search_cache.move_to_end(key)
+        return _copy_results(results)
+
+
+def _store_cached_results(
+    query: str,
+    safe_limit: int,
+    results: list[dict[str, Any]],
+) -> None:
+    if not results:
+        return
+    key = (query.strip().casefold(), safe_limit)
+    with _search_cache_lock:
+        _search_cache[key] = (time.monotonic(), _copy_results(results))
+        _search_cache.move_to_end(key)
+        while len(_search_cache) > _SEARCH_CACHE_MAX_ENTRIES:
+            _search_cache.popitem(last=False)
 
 
 class _SearchInterrupted(Exception):
@@ -60,8 +106,15 @@ def _run_ddgs_search(query: str, safe_limit: int) -> list[dict[str, Any]]:
     from ddgs import DDGS  # type: ignore
 
     results: list[dict[str, Any]] = []
-    with DDGS(timeout=10) as client:
-        for i, hit in enumerate(client.text(query, max_results=safe_limit)):
+    with DDGS(timeout=_SEARCH_REQUEST_TIMEOUT_SECS) as client:
+        for i, hit in enumerate(
+            client.text(
+                query,
+                region=_SEARCH_REGION,
+                safesearch="moderate",
+                max_results=safe_limit,
+            )
+        ):
             if i >= safe_limit:
                 break
             url = str(hit.get("href") or hit.get("url") or "")
@@ -139,7 +192,7 @@ def _terminate_and_reap(
         logger.debug("DDGS worker reap error: %s", exc)
 
 
-def _run_ddgs_search_bounded(query: str, safe_limit: int) -> list[dict[str, Any]]:
+def _run_ddgs_search_isolated(query: str, safe_limit: int) -> list[dict[str, Any]]:
     """Run ``_run_ddgs_search`` in a disposable process with a hard deadline.
 
     The parent never joins the child while it may be inside native code holding
@@ -179,7 +232,9 @@ def _run_ddgs_search_bounded(query: str, safe_limit: int) -> list[dict[str, Any]
     extra_kwargs: dict[str, Any] = {}
     if sys.platform == "win32":
         # New process group so terminate/kill reach the worker cleanly on Windows.
-        extra_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        extra_kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        )
     else:
         # Own session so a hung primp/libcurl grandchild can be reaped with the worker.
         extra_kwargs["start_new_session"] = True
@@ -262,6 +317,26 @@ def _run_ddgs_search_bounded(query: str, safe_limit: int) -> list[dict[str, Any]
             raise RuntimeError("DDGS worker returned non-list results")
         return results
     raise RuntimeError(str(envelope.get("error") or "DDGS worker failed"))
+
+
+def _run_ddgs_search_bounded(query: str, safe_limit: int) -> list[dict[str, Any]]:
+    """Use cached results and cap concurrent DDGS worker processes."""
+    cached = _get_cached_results(query, safe_limit)
+    if cached is not None:
+        return cached
+
+    if not _search_concurrency.acquire(timeout=_SEARCH_TIMEOUT_SECS):
+        raise TimeoutError("DDGS search concurrency queue timed out")
+    try:
+        # A peer may have populated the cache while this request was queued.
+        cached = _get_cached_results(query, safe_limit)
+        if cached is not None:
+            return cached
+        results = _run_ddgs_search_isolated(query, safe_limit)
+        _store_cached_results(query, safe_limit, results)
+        return _copy_results(results)
+    finally:
+        _search_concurrency.release()
 
 
 class DDGSWebSearchProvider(WebSearchProvider):

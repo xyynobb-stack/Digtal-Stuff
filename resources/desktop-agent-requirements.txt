@@ -1,0 +1,3 @@
+# Installed only while GitHub Actions builds the bundled Agent environment.
+# Runtime startup never downloads or installs this dependency.
+ddgs==9.16.0

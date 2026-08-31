@@ -14,7 +14,7 @@ An `update-not-available` result is a successful check and clears stale footer s
 
 Stable and beta workflows build Windows x64 NSIS installers; only the stable channel is visible to installed production clients.
 
-`.github/workflows/release.yml` runs on pushes to `release`, reads `package.json`, builds the Windows installer, and publishes a normal GitHub Release with `latest.yml`, the setup executable, and its blockmap.
+`.github/workflows/release.yml` runs on pushes to `release`, reads `package.json`, builds the Windows installer, and publishes `latest.yml`, the setup executable, and its blockmap. Normal versions become stable GitHub Releases; hyphenated diagnostic versions such as `0.7.43-test.1` are marked as prereleases so production clients ignore them.
 
 Stable pushes must advance the version in both `package.json` and the root package entries of `package-lock.json`: the workflow skips builds when the matching `v<version>` tag already exists. Runtime fallback code ships with the overlays, but AIHub credentials are provisioned separately per installed profile, as described in [[provider-setup#Company gateway fallback]].
 

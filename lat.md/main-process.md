@@ -132,12 +132,6 @@ Optional tool probes must remain bounded and side-effect-free so Agent construct
 
 Because Edge is the desktop's default TTS provider, stable and beta Windows workflows install the `edge-tts` Agent extra into the bundled virtual environment and verify that `edge_tts` imports before packaging. This keeps normal voice support offline-ready while retaining fail-fast behavior if a future package is incomplete.
 
-### Bundled DDGS web search
-
-Windows desktop builds include a pinned DDGS client so `web_search` is available without a user API key, a startup download, or a network availability probe.
-
-Stable and beta workflows install `resources/desktop-agent-requirements.txt` into the bundled Agent virtual environment and fail the build if `ddgs` cannot import. `scripts/patch-desktop-ddgs.mjs` keeps development and packaged providers aligned: Chinese-region safe search runs only on tool invocation, uses a 12-second hard deadline, limits worker concurrency to two, caches successful results for five minutes, and hides its disposable Windows worker process. A failed request returns a tool error but does not uninstall the package or remove future `web_search` calls.
-
 ## Packaged preset user content
 
 Offline builds distribute repository-selected custom Skills and reviewed writing templates as immediately usable, editable profile content.

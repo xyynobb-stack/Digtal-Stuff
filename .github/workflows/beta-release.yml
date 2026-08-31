@@ -176,7 +176,6 @@ jobs:
           $venvRoot = Join-Path $agentRoot "venv"
           $venvPython = Join-Path $venvRoot "Scripts/python.exe"
           $ragRequirements = (Resolve-Path "build/offline-runtime/preset-content/skills/custom/market-report-rag/requirements.txt").Path
-          $desktopRequirements = (Resolve-Path "resources/desktop-agent-requirements.txt").Path
 
           & $basePython -m venv $venvRoot
           if ($LASTEXITCODE -ne 0) { throw "Could not create bundled Python venv" }
@@ -188,9 +187,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not install Hermes Agent into bundled venv" }
             & $venvPython -m pip install --disable-pip-version-check -r $ragRequirements
             if ($LASTEXITCODE -ne 0) { throw "Could not install market-report RAG dependencies" }
-            & $venvPython -m pip install --disable-pip-version-check -r $desktopRequirements
-            if ($LASTEXITCODE -ne 0) { throw "Could not install desktop web-search dependencies" }
-            & $venvPython -c "import hermes_cli, run_agent, edge_tts, numpy, pymilvus, ddgs"
+            & $venvPython -c "import hermes_cli, run_agent, edge_tts, numpy, pymilvus"
             if ($LASTEXITCODE -ne 0) { throw "Bundled Hermes Agent import check failed" }
             & $venvPython -c "from tui_gateway import server; required = {'model.options', 'model.identity', 'model.resolve', 'session.create', 'session.model.set', 'session.readiness'}; missing = required - server._methods.keys(); assert not missing, missing"
             if ($LASTEXITCODE -ne 0) { throw "Desktop Agent RPC registration check failed" }

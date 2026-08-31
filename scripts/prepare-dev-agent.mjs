@@ -14,7 +14,6 @@ import {
   patchDesktopProtocolRoutingSource,
   patchJingYuAgentIdentitySource,
 } from "./apply-offline-runtime-overlays.mjs";
-import { patchDesktopDdgsSource } from "./patch-desktop-ddgs.mjs";
 import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
 import { patchCompanyCodexRetries } from "./patch-company-fallback-safety.mjs";
 import {
@@ -123,23 +122,6 @@ export function ensureDevCompanyResponsesUserAgent(agentRoot) {
   const source = fs.readFileSync(runAgentPath, "utf8");
   const patched = patchCompanyResponsesUserAgentSource(source);
   if (patched !== source) fs.writeFileSync(runAgentPath, patched, "utf8");
-  return true;
-}
-
-/** Keep local development search behavior aligned with packaged DDGS. */
-export function ensureDevDdgsRuntime(agentRoot) {
-  const providerPath = path.join(
-    agentRoot,
-    "plugins",
-    "web",
-    "ddgs",
-    "provider.py",
-  );
-  if (!fs.existsSync(providerPath)) return false;
-
-  const source = fs.readFileSync(providerPath, "utf8");
-  const patched = patchDesktopDdgsSource(source);
-  if (patched !== source) fs.writeFileSync(providerPath, patched, "utf8");
   return true;
 }
 
@@ -310,7 +292,6 @@ export function prepareDevAgent() {
   ensureDevAgentSkillToolset(agentRoot);
   ensureDevExecuteCodeChildrenHidden(agentRoot);
   ensureDevCompanyResponsesUserAgent(agentRoot);
-  ensureDevDdgsRuntime(agentRoot);
   ensureDevCompanyResponsesFallback(agentRoot);
   ensureDevJingYuAgentIdentity(agentRoot);
   ensureDevVisibleLanguageRules();

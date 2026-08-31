@@ -385,6 +385,42 @@ export function useChatIPC({
       },
     );
 
+    const cleanupApproval = window.hermesAPI.onApprovalRequest(
+      (eventRunId, req) => {
+        if (!eventMatchesRun(eventRunId, runId) || !req.requestId) return;
+        reasoningSegmentClosedRef.current = true;
+        setToolProgress(null);
+        setIsLoading(true);
+        if (activeTurnRef.current) {
+          activeTurnRef.current.status = "awaiting_approval";
+        }
+        setMessages((prev) => {
+          if (
+            prev.some(
+              (message) =>
+                message.kind === "approval" &&
+                message.requestId === req.requestId,
+            )
+          ) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              id: `approval-${req.requestId}`,
+              kind: "approval",
+              role: "agent",
+              requestId: req.requestId,
+              transport: "ipc",
+              description: req.description,
+              command: req.command,
+              choices: req.choices,
+            },
+          ];
+        });
+      },
+    );
+
     const cleanupToolProgress = window.hermesAPI.onChatToolProgress(
       (eventRunId, tool) => {
         if (!eventMatchesRun(eventRunId, runId)) return;
@@ -475,6 +511,7 @@ export function useChatIPC({
       cleanupDone();
       cleanupError();
       cleanupClarify();
+      cleanupApproval();
       cleanupToolProgress();
       cleanupToolEvent();
       cleanupUsage();

@@ -945,6 +945,7 @@ def _(rid, params: dict) -> dict:
                     session["session_key"],
                     params.get("choice", "deny"),
                     resolve_all=params.get("all", False),
+                    request_id=params.get("request_id"),
                 )
             },
         )

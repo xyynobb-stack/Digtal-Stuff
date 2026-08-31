@@ -112,6 +112,60 @@ describe("mergeStreamedWithFinal", () => {
 });
 
 describe("applyDashboardStreamEvent — message.complete text reconciliation", () => {
+  // @lat: [[main-process#Text integrity diagnostics]]
+  it("preserves every Chinese chunk and reconciles to the canonical final text", () => {
+    let state: DashboardEventState = {
+      messages: [],
+      reasoningSegmentClosed: false,
+    };
+    const turn = {
+      startIndex: 0,
+      status: "running" as const,
+      turnId: "turn-chinese",
+      userId: "user-chinese",
+    };
+
+    for (const text of ["我", "喜欢吃", "饭"]) {
+      state = applyDashboardStreamEvent(
+        state,
+        { type: "message.delta", payload: { text } },
+        { activeTurn: turn, now: 1 },
+      );
+    }
+    state = applyDashboardStreamEvent(
+      state,
+      { type: "message.complete", payload: { text: "我喜欢吃饭" } },
+      { activeTurn: turn, now: 2 },
+    );
+
+    expect(state.messages).toEqual([
+      expect.objectContaining({ role: "agent", content: "我喜欢吃饭" }),
+    ]);
+  });
+  it("turns approval.request into a request-scoped approval card", () => {
+    const next = applyDashboardStreamEvent(
+      { messages: [userTurn()], reasoningSegmentClosed: false },
+      {
+        type: "approval.request",
+        payload: {
+          request_id: "approval-7",
+          description: "Write the generated report",
+          command: "python generate.py",
+          choices: ["once", "always", "deny", "invalid"],
+        },
+      },
+    );
+
+    expect(next.messages.at(-1)).toMatchObject({
+      id: "approval-approval-7",
+      kind: "approval",
+      requestId: "approval-7",
+      transport: "dashboard",
+      choices: ["once", "always", "deny"],
+    });
+    expect(next.reasoningSegmentClosed).toBe(true);
+  });
+
   const userTurn = (): ChatMessage => ({
     id: "u1",
     role: "user",

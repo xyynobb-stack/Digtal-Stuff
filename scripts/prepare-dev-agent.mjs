@@ -22,6 +22,11 @@ import {
   patchDashboardOutputDirectoryPromptSource,
   patchDashboardOutputDirectoryServerSource,
 } from "./patch-dashboard-output-directory.mjs";
+import {
+  patchApprovalApiServerSource,
+  patchApprovalCoreSource,
+  patchApprovalPromptSource,
+} from "./patch-desktop-approval-bridge.mjs";
 
 const hermesHome =
   process.env.HERMES_HOME?.trim() ||
@@ -89,6 +94,34 @@ export function syncDevDesktopModelRouting(agentRoot) {
       patchDashboardOutputDirectoryComputeHostSource(computeHostSource);
     if (patchedComputeHost !== computeHostSource)
       fs.writeFileSync(computeHostPath, patchedComputeHost, "utf8");
+  }
+  const approvalPath = path.join(agentRoot, "tools", "approval.py");
+  const approvalApiPath = path.join(
+    agentRoot,
+    "gateway",
+    "platforms",
+    "api_server.py",
+  );
+  if (fs.existsSync(approvalPath)) {
+    const approvalSource = fs.readFileSync(approvalPath, "utf8");
+    const patchedApproval = patchApprovalCoreSource(approvalSource);
+    if (patchedApproval !== approvalSource) {
+      fs.writeFileSync(approvalPath, patchedApproval, "utf8");
+    }
+  }
+  if (fs.existsSync(promptPath)) {
+    const promptSource = fs.readFileSync(promptPath, "utf8");
+    const patchedPrompt = patchApprovalPromptSource(promptSource);
+    if (patchedPrompt !== promptSource) {
+      fs.writeFileSync(promptPath, patchedPrompt, "utf8");
+    }
+  }
+  if (fs.existsSync(approvalApiPath)) {
+    const apiSource = fs.readFileSync(approvalApiPath, "utf8");
+    const patchedApi = patchApprovalApiServerSource(apiSource);
+    if (patchedApi !== apiSource) {
+      fs.writeFileSync(approvalApiPath, patchedApi, "utf8");
+    }
   }
   return true;
 }

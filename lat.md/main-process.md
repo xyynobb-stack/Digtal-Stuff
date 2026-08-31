@@ -124,6 +124,14 @@ The renderer records send and stream boundaries through the sandboxed preload br
 
 Deferred session creation is explicitly separated from real Agent readiness. [[resources/hermes-agent-overlays/tui_gateway/methods_desktop_cold_start.py#_install_desktop_runtime_timing]] observes the existing Agent build, `AIAgent` construction, and streaming/non-streaming provider calls without waiting or changing their results, then emits metadata-only `desktop.timing` events. Agent construction also reports nested phase boundaries for the `run_agent` import, MCP waits, configuration and runtime resolution, transport and model-client creation, tool-definition snapshots, individual tool availability probes, and TLS setup. The renderer validates those stages before recording them, and the tracker derives `agentBuildToEventMs`, `agentConstructToEventMs`, and per-turn `apiRequestToEventMs`. A cold first turn can therefore be attributed to a specific synchronous initialization phase or provider first-byte latency instead of treating `dashboard.session_ready` as proof that the Agent already exists.
 
+## Text integrity diagnostics
+
+Text integrity tracing correlates one opt-in test turn across backend emission, WebSocket delivery, renderer state and the persisted SessionDB rows without changing normal chat behavior.
+
+Setting `JINGYU_TEXT_TRACE=1` makes [[src/main/dashboard.ts#startDashboard]] pass a local JSONL destination to the managed gateway. The staged helper [[resources/hermes-agent-overlays/tui_gateway/text_integrity_trace.py#record_backend_emit]] numbers every `message.*` event per runtime session and adds its diagnostic turn key and sequence to the payload; immediately before completion it records every assistant row after the latest user row from SessionDB. `scripts/patch-dashboard-text-integrity-trace.mjs` installs these two hooks idempotently during both development preparation and release staging.
+
+[[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#recordDashboardTextIntegrity]] records the exact WebSocket text before routing checks and the assistant state immediately after event reduction. [[src/main/text-integrity-trace.ts#recordTextIntegrityTrace]] appends all four stages to `%APPDATA%\hermes-desktop\text-integrity-trace.log`, including text length and SHA-256. Trace content can include conversation text, is capped per record, is disabled by default, and every write is exception-isolated.
+
 ## Optional tool availability
 
 Optional tool probes must remain bounded and side-effect-free so Agent construction never downloads packages required only by an unused tool.

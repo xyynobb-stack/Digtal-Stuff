@@ -1534,6 +1534,16 @@ def _event_frame(event: str, sid: str, payload: dict | None = None) -> dict:
 
 
 def _emit(event: str, sid: str, payload: dict | None = None):
+    # Development-only text integrity tracing; the helper is inert unless the
+    # Desktop explicitly supplies HERMES_TEXT_INTEGRITY_TRACE_FILE.
+    try:
+        from tui_gateway.text_integrity_trace import record_backend_emit
+
+        trace_meta = record_backend_emit(event, sid, payload)
+        if trace_meta and isinstance(payload, dict):
+            payload = {**payload, "_text_trace": trace_meta}
+    except Exception:
+        pass
     write_json(_event_frame(event, sid, payload))
 
 
@@ -9923,6 +9933,12 @@ def _run_prompt_submit(
                 )
                 payload["recoverable"] = True
             _retire_turn_marker(session, marker_key)
+            try:
+                from tui_gateway.text_integrity_trace import record_database_snapshot
+
+                record_database_snapshot(sid, session, agent)
+            except Exception:
+                pass
             _emit("message.complete", sid, payload)
 
             # ── /goal continuation (Ralph-style loop) ─────────────────

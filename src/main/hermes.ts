@@ -1046,6 +1046,10 @@ export function extractReasoningDelta(delta: unknown): string {
  * stale resolver.
  */
 const pendingClarify = new Map<string, (answer: string) => void>();
+const pendingApprovals = new Map<
+  string,
+  (choice: "once" | "session" | "always" | "deny") => Promise<boolean>
+>();
 
 export function registerPendingClarify(
   requestId: string,
@@ -1068,6 +1072,30 @@ export function resolvePendingClarify(
 
 export function clearPendingClarify(requestId: string): void {
   pendingClarify.delete(requestId);
+}
+
+export function registerPendingApproval(
+  requestId: string,
+  resolver: (
+    choice: "once" | "session" | "always" | "deny",
+  ) => Promise<boolean>,
+): void {
+  pendingApprovals.set(requestId, resolver);
+}
+
+export async function resolvePendingApproval(
+  requestId: string,
+  choice: "once" | "session" | "always" | "deny",
+): Promise<boolean> {
+  const resolver = pendingApprovals.get(requestId);
+  if (!resolver) return false;
+  const delivered = await resolver(choice);
+  if (delivered) pendingApprovals.delete(requestId);
+  return delivered;
+}
+
+export function clearPendingApproval(requestId: string): void {
+  pendingApprovals.delete(requestId);
 }
 
 export interface ChatCallbacks {
@@ -1102,6 +1130,12 @@ export interface ChatCallbacks {
     requestId: string;
     question: string;
     choices: string[];
+  }) => void;
+  onApproval?: (req: {
+    requestId: string;
+    description: string;
+    command: string;
+    choices: Array<"once" | "session" | "always" | "deny">;
   }) => void;
 }
 
@@ -1633,6 +1667,42 @@ function postRunStop(
   req.end();
 }
 
+function postRunApproval(
+  apiUrl: string,
+  profile: string | undefined,
+  runId: string,
+  requestId: string,
+  choice: "once" | "session" | "always" | "deny",
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const body = Buffer.from(
+      JSON.stringify({ choice, request_id: requestId, all: false }),
+      "utf-8",
+    );
+    const url = `${apiUrl}/v1/runs/${encodeURIComponent(runId)}/approval`;
+    const requester = url.startsWith("https") ? https : http;
+    const req = requester.request(
+      url,
+      {
+        method: "POST",
+        headers: getJsonApiHeaders(profile, body),
+        timeout: 30_000,
+      },
+      (res) => {
+        res.resume();
+        res.on("end", () => resolve((res.statusCode ?? 500) < 300));
+      },
+    );
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.write(body);
+    req.end();
+  });
+}
+
 function sendMessageViaRuns(
   message: string,
   cb: ChatCallbacks,
@@ -1684,10 +1754,13 @@ function sendMessageViaRuns(
   let startReq: http.ClientRequest | null = null;
   let eventsReq: http.ClientRequest | null = null;
   let fallbackHandle: ChatHandle | null = null;
+  const pendingApprovalIds = new Set<string>();
 
   function finish(error?: string): void {
     if (finished || fallbackStarted) return;
     finished = true;
+    for (const requestId of pendingApprovalIds) clearPendingApproval(requestId);
+    pendingApprovalIds.clear();
     if (error) {
       cb.onError(error);
     } else {
@@ -1780,11 +1853,43 @@ function sendMessageViaRuns(
     }
 
     if (eventName === "approval.request") {
-      // The current renderer's approval controls are wired to the legacy chat
-      // flow and only appear after a response finishes. A run pauses before it
-      // can finish, so fall back to the existing path instead of deadlocking
-      // the user on a hidden approval request.
-      stopRunAndFallback();
+      const requestId =
+        typeof raw.request_id === "string" && raw.request_id
+          ? raw.request_id
+          : `run-approval-${runId}`;
+      const requestedChoices: Array<"once" | "session" | "always" | "deny"> =
+        Array.isArray(raw.choices)
+          ? raw.choices.filter(
+              (choice): choice is "once" | "session" | "always" | "deny" =>
+                choice === "once" ||
+                choice === "session" ||
+                choice === "always" ||
+                choice === "deny",
+            )
+          : [];
+      const choices: Array<"once" | "session" | "always" | "deny"> =
+        requestedChoices.length > 0
+          ? requestedChoices
+          : ["once", "session", "deny"];
+      pendingApprovalIds.add(requestId);
+      registerPendingApproval(requestId, async (choice) => {
+        const delivered = await postRunApproval(
+          apiUrl,
+          profile,
+          runId,
+          requestId,
+          choice,
+        );
+        if (delivered) pendingApprovalIds.delete(requestId);
+        return delivered;
+      });
+      cb.onApproval?.({
+        requestId,
+        description: typeof raw.description === "string" ? raw.description : "",
+        command: typeof raw.command === "string" ? raw.command : "",
+        choices,
+      });
+      return;
     }
   }
 
@@ -1912,6 +2017,9 @@ function sendMessageViaRuns(
       eventsReq?.destroy();
       fallbackHandle?.abort();
       if (runId) postRunStop(apiUrl, profile, runId);
+      for (const requestId of pendingApprovalIds)
+        clearPendingApproval(requestId);
+      pendingApprovalIds.clear();
     },
   };
 }
@@ -1940,6 +2048,7 @@ async function sendMessageViaTuiGateway(
   // request_id of an in-flight clarify question, if the agent is awaiting an
   // answer. Cleared on turn end so an abandoned turn leaks no stale resolver.
   let pendingClarifyId: string | null = null;
+  const pendingApprovalIds = new Set<string>();
 
   function finish(error?: string): void {
     if (finished) return;
@@ -1948,6 +2057,8 @@ async function sendMessageViaTuiGateway(
       clearPendingClarify(pendingClarifyId);
       pendingClarifyId = null;
     }
+    for (const requestId of pendingApprovalIds) clearPendingApproval(requestId);
+    pendingApprovalIds.clear();
     cleanup();
     if (error) {
       cb.onError(error);
@@ -1963,6 +2074,8 @@ async function sendMessageViaTuiGateway(
       clearPendingClarify(pendingClarifyId);
       pendingClarifyId = null;
     }
+    for (const requestId of pendingApprovalIds) clearPendingApproval(requestId);
+    pendingApprovalIds.clear();
     cleanup();
   }
 
@@ -2052,28 +2165,48 @@ async function sendMessageViaTuiGateway(
     }
 
     if (event.type === "approval.request") {
-      // Match the existing local chat posture: Hermes One does not expose a
-      // mid-stream approval dialog, so answer the dashboard protocol once and
-      // keep the transcript focused on the resulting tool call/result events.
-      void client
-        .request(
+      const payload = event.payload ?? {};
+      const requestId =
+        typeof payload.request_id === "string" && payload.request_id
+          ? payload.request_id
+          : `gateway-approval-${activeSessionId}-${Date.now()}`;
+      const requestedChoices: Array<"once" | "session" | "always" | "deny"> =
+        Array.isArray(payload.choices)
+          ? payload.choices.filter(
+              (choice): choice is "once" | "session" | "always" | "deny" =>
+                choice === "once" ||
+                choice === "session" ||
+                choice === "always" ||
+                choice === "deny",
+            )
+          : [];
+      const choices: Array<"once" | "session" | "always" | "deny"> =
+        requestedChoices.length > 0
+          ? requestedChoices
+          : ["once", "session", "deny"];
+      pendingApprovalIds.add(requestId);
+      registerPendingApproval(requestId, async (choice) => {
+        const result = await client.request<{ resolved?: number }>(
           "approval.respond",
           {
             session_id: activeSessionId,
-            choice: "once",
+            request_id: requestId,
+            choice,
             all: false,
           },
           30_000,
-        )
-        .catch((error) => {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          if (!hasGatewayOutput) {
-            startApiFallback(message);
-            return;
-          }
-          finish(message);
-        });
+        );
+        const delivered = Number(result?.resolved ?? 0) > 0;
+        if (delivered) pendingApprovalIds.delete(requestId);
+        return delivered;
+      });
+      cb.onApproval?.({
+        requestId,
+        description:
+          typeof payload.description === "string" ? payload.description : "",
+        command: typeof payload.command === "string" ? payload.command : "",
+        choices,
+      });
       return;
     }
 

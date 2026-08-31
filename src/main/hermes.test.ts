@@ -60,6 +60,8 @@ import type { ConnectionConfig } from "./config";
 import { providerListSafe } from "./secrets";
 import {
   getRemoteAuthHeader,
+  registerPendingApproval,
+  resolvePendingApproval,
   sendMessage,
   shouldForceCliForSessionOverride,
   shouldUseTuiGatewayClient,
@@ -74,6 +76,21 @@ const mockedGetConnectionConfig = vi.mocked(getConnectionConfig);
 const mockedReadEnv = vi.mocked(readEnv);
 const mockedProviderListSafe = vi.mocked(providerListSafe);
 const mockedSpawn = vi.mocked(spawn);
+
+describe("request-scoped approvals", () => {
+  it("resolves only the selected pending tool call", async () => {
+    const first = vi.fn(async () => true);
+    const second = vi.fn(async () => true);
+    registerPendingApproval("approval-first", first);
+    registerPendingApproval("approval-second", second);
+
+    expect(await resolvePendingApproval("approval-second", "once")).toBe(true);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledWith("once");
+    expect(await resolvePendingApproval("approval-second", "deny")).toBe(false);
+    expect(await resolvePendingApproval("approval-first", "deny")).toBe(true);
+  });
+});
 
 describe("local Dashboard process ownership", () => {
   // @lat: [[chat-commands#Transport connection lifecycle]]

@@ -42,6 +42,7 @@ import type {
 import type { ChatToolEvent } from "../shared/chat-stream";
 import type { GpuPreferenceMode, GpuStatus } from "../shared/gpu";
 import type { ColdStartTimingEvent } from "../shared/cold-start-timing";
+import type { TextIntegrityTraceEvent } from "../shared/text-integrity-trace";
 import type {
   WorkRecordDetail,
   WorkRecordQuery,
@@ -252,7 +253,8 @@ interface HermesAPI {
   exportWorkRecord: (id: string) => Promise<string | null>;
   openWorkRecordAttachment: (id: string, index: number) => Promise<boolean>;
   onWorkRecordsChanged: (callback: (ids: string[]) => void) => () => void;
-  recordColdStartTiming: (event: ColdStartTimingEvent) => void;
+    recordColdStartTiming: (event: ColdStartTimingEvent) => void;
+    recordTextIntegrityTrace: (event: TextIntegrityTraceEvent) => void;
 
   // Installation
   checkInstall: () => Promise<InstallStatus>;
@@ -575,6 +577,21 @@ interface HermesAPI {
     ) => void,
   ) => () => void;
   respondClarify: (requestId: string, answer: string) => Promise<boolean>;
+  onApprovalRequest: (
+    callback: (
+      runId: string,
+      req: {
+        requestId: string;
+        description: string;
+        command: string;
+        choices: Array<"once" | "session" | "always" | "deny">;
+      },
+    ) => void,
+  ) => () => void;
+  respondApproval: (
+    requestId: string,
+    choice: "once" | "session" | "always" | "deny",
+  ) => Promise<boolean>;
 
   // Gateway
   startGateway: () => Promise<GatewayStartResult>;
@@ -635,10 +652,10 @@ interface HermesAPI {
       | {
           kind: "assistant";
           id: number;
-           content: string;
-           timestamp: number;
-           finishReason?: string;
-           error?: string;
+          content: string;
+          timestamp: number;
+          finishReason?: string;
+          error?: string;
           attachments?: Attachment[];
         }
       | {

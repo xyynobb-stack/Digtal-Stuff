@@ -15,7 +15,13 @@ import {
   patchDashboardOutputDirectoryPromptSource,
   patchDashboardOutputDirectoryServerSource,
 } from "./patch-dashboard-output-directory.mjs";
+import { patchDashboardTextIntegrityTraceSource } from "./patch-dashboard-text-integrity-trace.mjs";
 import { patchDesktopDdgsSource } from "./patch-desktop-ddgs.mjs";
+import {
+  patchApprovalApiServerSource,
+  patchApprovalCoreSource,
+  patchApprovalPromptSource,
+} from "./patch-desktop-approval-bridge.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
@@ -690,6 +696,13 @@ export function applyOfflineRuntimeOverlays({
     "tools",
     "code_execution_tool.py",
   );
+  const approvalToolPath = path.join(agentRoot, "tools", "approval.py");
+  const apiServerPath = path.join(
+    agentRoot,
+    "gateway",
+    "platforms",
+    "api_server.py",
+  );
   const runAgentPath = path.join(agentRoot, "run_agent.py");
   const chatCompletionHelpersPath = path.join(
     agentRoot,
@@ -736,6 +749,9 @@ export function applyOfflineRuntimeOverlays({
   if (!fs.existsSync(executeCodeToolPath)) {
     throw new Error(`Execute Code tool not found: ${executeCodeToolPath}`);
   }
+  if (!fs.existsSync(approvalToolPath) || !fs.existsSync(apiServerPath)) {
+    throw new Error("Desktop approval runtime sources were not found");
+  }
   if (!fs.existsSync(runAgentPath)) {
     throw new Error(`Agent entrypoint not found: ${runAgentPath}`);
   }
@@ -767,8 +783,10 @@ export function applyOfflineRuntimeOverlays({
     "utf8",
   );
   const patched = patchDesktopSkillToolsetSource(
-    patchDashboardOutputDirectoryServerSource(
-      patchGatewayServerSource(fs.readFileSync(gatewayServerPath, "utf8")),
+    patchDashboardTextIntegrityTraceSource(
+      patchDashboardOutputDirectoryServerSource(
+        patchGatewayServerSource(fs.readFileSync(gatewayServerPath, "utf8")),
+      ),
     ),
   );
   fs.writeFileSync(gatewayServerPath, patched, "utf8");
@@ -806,6 +824,21 @@ export function applyOfflineRuntimeOverlays({
     patchExecuteCodeWindowsChildSource(
       fs.readFileSync(executeCodeToolPath, "utf8"),
     ),
+    "utf8",
+  );
+  fs.writeFileSync(
+    approvalToolPath,
+    patchApprovalCoreSource(fs.readFileSync(approvalToolPath, "utf8")),
+    "utf8",
+  );
+  fs.writeFileSync(
+    gatewayPromptPath,
+    patchApprovalPromptSource(fs.readFileSync(gatewayPromptPath, "utf8")),
+    "utf8",
+  );
+  fs.writeFileSync(
+    apiServerPath,
+    patchApprovalApiServerSource(fs.readFileSync(apiServerPath, "utf8")),
     "utf8",
   );
   fs.writeFileSync(

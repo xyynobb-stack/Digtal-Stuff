@@ -10,9 +10,6 @@ import { useI18n } from "../../components/useI18n";
 import { parseMediaTokens, cleanLeakedToolTags } from "./mediaUtils";
 import type { ChatBubbleMessage, ChatMessage } from "./types";
 
-export const APPROVAL_RE =
-  /⚠️.*dangerous|requires? (your )?approval|\/approve.*\/deny|do you want (me )?to (proceed|continue|run|execute)/i;
-
 /**
  * Coerce any DB, stream, or IPC timestamp value to valid epoch milliseconds.
  * Handles seconds (< 1e12), ms, us (> 1e14), ns (> 1e17), and ISO strings.
@@ -159,8 +156,6 @@ interface MessageRowProps {
   msg: ChatMessage;
   isLast: boolean;
   isLoading: boolean;
-  onApprove: () => void;
-  onDeny: () => void;
   /** False on continuation rows of a turn — render a spacer instead of the
    *  avatar so the turn reads as one grouped block. Defaults to true. */
   showAvatar?: boolean;
@@ -172,16 +167,13 @@ export const MessageRow = memo(function MessageRow({
   msg,
   isLast,
   isLoading,
-  onApprove,
-  onDeny,
   showAvatar = true,
   agent,
 }: MessageRowProps): React.JSX.Element {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
-  // MessageRow is wrapped in memo() but still re-renders on any prop change
-  // (e.g. isLoading toggling at the end of a stream), and `parseMediaTokens`
+  // MessageRow is wrapped in memo(), and `parseMediaTokens`
   // runs a full regex pipeline. Cache the result against the message content
   // so a long conversation doesn't reparse every row on every render.
   // Only agent bubbles need media parsing — user bubbles render content
@@ -227,12 +219,6 @@ export const MessageRow = memo(function MessageRow({
     );
   }
 
-  const showApprovalBar =
-    msg.role === "agent" &&
-    !msg.error &&
-    !isLoading &&
-    isLast &&
-    APPROVAL_RE.test(msg.content);
   const hasAttachments = !!msg.attachments && msg.attachments.length > 0;
   const epochMs = coerceToEpochMs(msg.timestamp);
   const isTimeValid = isValidEpochMs(epochMs);
@@ -321,19 +307,6 @@ export const MessageRow = memo(function MessageRow({
         >
           {bubbleTime}
         </time>
-      )}
-      {showApprovalBar && (
-        <div className="chat-approval-bar">
-          <button
-            className="chat-approval-btn chat-approve"
-            onClick={onApprove}
-          >
-            {t("chat.approve")}
-          </button>
-          <button className="chat-approval-btn chat-deny" onClick={onDeny}>
-            {t("chat.deny")}
-          </button>
-        </div>
       )}
     </div>
   );

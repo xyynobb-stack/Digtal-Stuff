@@ -28,12 +28,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     category: "agent",
   },
   {
-    name: "/approve",
-    description: "Approve a pending action",
-    category: "agent",
-  },
-  { name: "/deny", description: "Deny a pending action", category: "agent" },
-  {
     name: "/status",
     description: "Show current agent status",
     category: "agent",

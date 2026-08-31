@@ -70,6 +70,11 @@ import {
   type ColdStartTimingEvent,
 } from "../../shared/cold-start-timing";
 import { recordColdStartTiming } from "../cold-start-timing";
+import { recordTextIntegrityTrace } from "../text-integrity-trace";
+import {
+  isTextIntegrityTraceStage,
+  type TextIntegrityTraceEvent,
+} from "../../shared/text-integrity-trace";
 import {
   checkInstallStatus,
   initializeBundledRuntime,
@@ -141,6 +146,7 @@ import {
   notifyProfileSwitched,
   setSshRemoteApiKey,
   resolvePendingClarify,
+  resolvePendingApproval,
 } from "../hermes";
 import {
   freshDashboardWebSocketUrl,
@@ -754,6 +760,12 @@ export function registerIpcHandlers(context: IpcContext): void {
       return;
     }
     recordColdStartTiming(candidate as ColdStartTimingEvent);
+  });
+  ipcMain.on("record-text-integrity-trace", (_event, trace: unknown) => {
+    if (!trace || typeof trace !== "object") return;
+    const candidate = trace as Partial<TextIntegrityTraceEvent>;
+    if (!isTextIntegrityTraceStage(candidate.stage)) return;
+    recordTextIntegrityTrace(candidate as TextIntegrityTraceEvent);
   });
   // Installation
   ipcMain.handle("check-install", async () => {
@@ -1803,6 +1815,9 @@ export function registerIpcHandlers(context: IpcContext): void {
           onClarify: (req) => {
             safeSend("chat-clarify-request", req);
           },
+          onApproval: (req) => {
+            safeSend("chat-approval-request", req);
+          },
         },
         profile,
         resumeSessionId,
@@ -1839,6 +1854,21 @@ export function registerIpcHandlers(context: IpcContext): void {
         payload?.answer ?? "",
       );
     },
+  );
+
+  ipcMain.handle(
+    "approval-respond",
+    (
+      _event,
+      payload: {
+        requestId: string;
+        choice: "once" | "session" | "always" | "deny";
+      },
+    ) =>
+      resolvePendingApproval(
+        payload?.requestId ?? "",
+        payload?.choice ?? "deny",
+      ),
   );
 
   // Renderer-driven clipboard write (issue #298 — "Copy entire chat").

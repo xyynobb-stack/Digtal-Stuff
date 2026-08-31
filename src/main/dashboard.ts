@@ -45,6 +45,10 @@ import {
   profileHome,
 } from "./utils";
 import { recordColdStartTiming } from "./cold-start-timing";
+import {
+  textIntegrityTraceEnabled,
+  textIntegrityTraceFilePath,
+} from "./text-integrity-trace";
 
 export interface DashboardConnection {
   baseUrl: string;
@@ -716,6 +720,12 @@ export async function startDashboard(
           HERMES_HOME,
           HERMES_DASHBOARD_SESSION_TOKEN: token,
           HERMES_DESKTOP: "1",
+          ...(textIntegrityTraceEnabled()
+            ? {
+                HERMES_TEXT_INTEGRITY_TRACE_FILE:
+                  textIntegrityTraceFilePath(),
+              }
+            : {}),
           // `hermes serve` also sets this itself. Exporting it protects older
           // compatible runtimes and guarantees the SPA is never mounted.
           HERMES_SERVE_HEADLESS: "1",

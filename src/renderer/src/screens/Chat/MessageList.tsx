@@ -3,7 +3,10 @@ import { HermesAvatar, MessageRow } from "./MessageRow";
 import type { AgentAvatarInfo } from "./MessageRow";
 import { ReasoningRow, ToolActivityGroup } from "./HistoryRow";
 import { ClarifyCard } from "./ClarifyCard";
+import { ApprovalCard } from "./ApprovalCard";
 import type {
+  ApprovalChoice,
+  ApprovalMessage,
   ChatMessage,
   ClarifyMessage,
   ToolCallMessage,
@@ -19,8 +22,11 @@ interface MessageListProps {
   messages: ChatMessage[];
   isLoading: boolean;
   toolProgress: string | null;
-  onApprove: () => void;
-  onDeny: () => void;
+  onApprovalRespond: (
+    msg: ApprovalMessage,
+    choice: ApprovalChoice,
+  ) => Promise<boolean>;
+  onApprovalResolved: (requestId: string, choice: ApprovalChoice) => void;
   /** Mark an inline clarify card resolved once the user answers/skips. */
   onClarifyResolved: (requestId: string, answer: string) => void;
   /** Appearance of the agent this conversation is with, so idle avatars show
@@ -69,8 +75,8 @@ export const MessageList = memo(function MessageList({
   messages,
   isLoading,
   toolProgress,
-  onApprove,
-  onDeny,
+  onApprovalRespond,
+  onApprovalResolved,
   onClarifyResolved,
   agentAvatar,
 }: MessageListProps): React.JSX.Element {
@@ -153,6 +159,18 @@ export const MessageList = memo(function MessageList({
       continue;
     }
 
+    if (k === "approval") {
+      rows.push(
+        <ApprovalCard
+          key={msg.id}
+          msg={msg as ApprovalMessage}
+          onRespond={onApprovalRespond}
+          onResolved={onApprovalResolved}
+        />,
+      );
+      continue;
+    }
+
     const bubble = msg as Extract<ChatMessage, { role: "user" | "agent" }>;
     rows.push(
       <MessageRow
@@ -160,8 +178,6 @@ export const MessageList = memo(function MessageList({
         msg={bubble}
         isLast={i === visibleMessages.length - 1}
         isLoading={isLoading}
-        onApprove={onApprove}
-        onDeny={onDeny}
         showAvatar={showAvatar}
         agent={agentAvatar}
       />,

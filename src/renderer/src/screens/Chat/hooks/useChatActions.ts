@@ -13,12 +13,6 @@ import type { SessionModelOverride } from "../../../../../shared/model-override"
 import type { WritingTemplate } from "../../../../../shared/writing-templates";
 import { buildSessionSkillEnvelope } from "../sessionSkillEnvelope";
 
-/** Slash commands the desktop handles through its own renderer flow rather
- *  than the gateway slash pipeline: the approval responses, which the gateway
- *  expects as prompt-level input (the side-question commands are handled
- *  separately by `parseBackgroundCommand`). */
-const RENDERER_NATIVE_SLASH = new Set(["/approve", "/deny"]);
-
 /** Side-question commands (`/btw` is an alias of `/background`/`/bg`). They run
  *  on a concurrent background agent via `prompt.background`, so they bypass the
  *  busy queue entirely. Returns the question text (possibly ""), or null when
@@ -108,8 +102,6 @@ interface UseChatActionsResult {
     attachments?: Attachment[],
   ) => Promise<void>;
   handleAbort: () => void;
-  handleApprove: () => void;
-  handleDeny: () => void;
 }
 
 /**
@@ -345,10 +337,6 @@ export function useChatActions({
       if (!hasPayload) return;
       if (!skipLoadingCheck && isLoadingRef.current) return;
 
-      const cmdName = text.startsWith("/")
-        ? text.split(/\s+/)[0].toLowerCase()
-        : "";
-
       // Side-question commands (`/btw`, `/bg`, `/background`) run on a
       // concurrent background agent, not the gateway slash pipeline. (Normally
       // intercepted earlier so they bypass the busy queue; handled here too for
@@ -359,7 +347,7 @@ export function useChatActions({
         return;
       }
 
-      if (text.startsWith("/") && !RENDERER_NATIVE_SLASH.has(cmdName)) {
+      if (text.startsWith("/")) {
         const parsed = parseSlashCommand(text);
         const definition = parsed.ok
           ? slashCatalog.resolve(parsed.command.normalizedName)
@@ -516,36 +504,10 @@ export function useChatActions({
     setTimeout(() => chatInputRef.current?.focus(), 50);
   }, [abortDashboard, runId, activeTurnRef, chatInputRef, setIsLoading]);
 
-  const handleApprove = useCallback(() => {
-    chatInputRef.current?.clear();
-    setIsLoading(true);
-    const turn = pushUser("/approve", "user-approve");
-    activeTurnRef.current = {
-      ...turn,
-      startIndex: messagesRef.current.length,
-      status: "running",
-    };
-    sendToAgent("/approve").catch(() => setIsLoading(false));
-  }, [activeTurnRef, chatInputRef, pushUser, sendToAgent, setIsLoading]);
-
-  const handleDeny = useCallback(() => {
-    chatInputRef.current?.clear();
-    setIsLoading(true);
-    const turn = pushUser("/deny", "user-deny");
-    activeTurnRef.current = {
-      ...turn,
-      startIndex: messagesRef.current.length,
-      status: "running",
-    };
-    sendToAgent("/deny").catch(() => setIsLoading(false));
-  }, [activeTurnRef, chatInputRef, pushUser, sendToAgent, setIsLoading]);
-
   return {
     handleSend,
     handleQuickAsk,
     handleBackground: runBackground,
     handleAbort,
-    handleApprove,
-    handleDeny,
   };
 }

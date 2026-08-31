@@ -385,6 +385,7 @@ describe("useDashboardChatTransport recovery", () => {
       value: {
         freshDashboardWsUrl: vi.fn(async () => "ws://fresh-dashboard"),
         recordColdStartTiming: vi.fn(),
+        recordTextIntegrityTrace: vi.fn(),
         recordSessionContinuation: vi.fn(async () => true),
         recordSessionLocalError: vi.fn(async () => true),
         startDashboard: vi.fn(async () => ({
@@ -723,6 +724,81 @@ describe("useDashboardChatTransport recovery", () => {
       stages.filter((stage) => stage === "chat.first_message_delta"),
     ).toHaveLength(1);
     expect(stages.filter((stage) => stage === "chat.complete")).toHaveLength(1);
+  });
+
+  it("records WebSocket text and the resulting frontend state for one turn", async () => {
+    // @lat: [[main-process#Text integrity diagnostics]]
+    dashboardMock.request.mockImplementation(async (method) => {
+      if (method === "session.create") {
+        return { session_id: "live", stored_session_id: "stored" };
+      }
+      return {};
+    });
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+
+    await act(async () => {
+      await api.send?.("复述中文哨兵文本");
+    });
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        type: "message.start",
+        session_id: "live",
+        payload: { _text_trace: { turn_key: "live:1", sequence: 1 } },
+      });
+      dashboardMock.onEvent?.({
+        type: "message.delta",
+        session_id: "live",
+        payload: {
+          text: "我",
+          _text_trace: { turn_key: "live:1", sequence: 2 },
+        },
+      });
+      dashboardMock.onEvent?.({
+        type: "message.delta",
+        session_id: "live",
+        payload: {
+          text: "喜欢吃",
+          _text_trace: { turn_key: "live:1", sequence: 3 },
+        },
+      });
+      dashboardMock.onEvent?.({
+        type: "message.delta",
+        session_id: "live",
+        payload: {
+          text: "饭",
+          _text_trace: { turn_key: "live:1", sequence: 4 },
+        },
+      });
+      dashboardMock.onEvent?.({
+        type: "message.complete",
+        session_id: "live",
+        payload: {
+          text: "我喜欢吃饭",
+          _text_trace: { turn_key: "live:1", sequence: 5 },
+        },
+      });
+    });
+
+    const records = vi
+      .mocked(window.hermesAPI.recordTextIntegrityTrace)
+      .mock.calls.map(([event]) => event);
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        stage: "websocket.received",
+        backendTurnKey: "live:1",
+        sequence: 3,
+        text: "喜欢吃",
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        stage: "frontend.state",
+        backendTurnKey: "live:1",
+        sequence: 5,
+        text: "我喜欢吃饭",
+      }),
+    );
   });
 
   it("uses authoritative session readiness instead of diagnostic timing for UX", async () => {
@@ -2257,6 +2333,60 @@ describe("useDashboardChatTransport messagesRef sync", () => {
     expect(api.messages).toHaveLength(2);
     expect(api.messages?.[0]?.id).toBe("u-edited");
     expect(api.messages?.[1]?.id).toBe("bg-t1");
+  });
+
+  it("does not let a delayed internal React snapshot erase newer stream deltas", async () => {
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await connect(api);
+
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        type: "message.start",
+        session_id: "live-1",
+        payload: {},
+      });
+      dashboardMock.onEvent?.({
+        type: "message.delta",
+        session_id: "live-1",
+        payload: { text: "人生如同" },
+      });
+    });
+    const firstInternalSnapshot = api.messages;
+    expect(firstInternalSnapshot?.at(-1)).toMatchObject({
+      role: "agent",
+      content: "人生如同",
+    });
+
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        type: "message.delta",
+        session_id: "live-1",
+        payload: { text: "一条长" },
+      });
+    });
+    expect(api.messages?.at(-1)).toMatchObject({
+      content: "人生如同一条长",
+    });
+
+    // This reproduces React committing the first transport-owned array after
+    // `messagesRef` has already advanced to the second one. The stale prop may
+    // render briefly, but it must never become the source of the next delta.
+    await act(async () => {
+      api.setMessages?.(firstInternalSnapshot ?? []);
+    });
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        type: "message.delta",
+        session_id: "live-1",
+        payload: { text: "河" },
+      });
+    });
+
+    expect(api.messages?.at(-1)).toMatchObject({
+      role: "agent",
+      content: "人生如同一条长河",
+    });
   });
 });
 

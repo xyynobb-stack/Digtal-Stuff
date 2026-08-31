@@ -39,7 +39,13 @@ import type { Attachment } from "../../../../shared/attachments";
 import type { SessionModelOverride } from "../../../../shared/model-override";
 import type { SessionOutputDestination } from "../../../../shared/session-output";
 import type { WritingTemplate } from "../../../../shared/writing-templates";
-import type { ActiveTurn, ChatMessage, UsageState } from "./types";
+import type {
+  ActiveTurn,
+  ApprovalChoice,
+  ApprovalMessage,
+  ChatMessage,
+  UsageState,
+} from "./types";
 import type { ContextUsage } from "./ContextGauge";
 import { contextWindowForModel } from "./contextWindows";
 import { QueuedMessages } from "./QueuedMessages";
@@ -721,6 +727,22 @@ function Chat({
     [setMessages],
   );
 
+  const handleApprovalResolved = useCallback(
+    (requestId: string, choice: ApprovalChoice) => {
+      if (activeTurnRef.current?.status === "awaiting_approval") {
+        activeTurnRef.current.status = "running";
+      }
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.kind === "approval" && message.requestId === requestId
+            ? { ...message, choice, resolved: true }
+            : message,
+        ),
+      );
+    },
+    [activeTurnRef, setMessages],
+  );
+
   const handleClear = useCallback(() => {
     if (isLoading) {
       window.hermesAPI.abortChat(runId);
@@ -832,6 +854,20 @@ function Chat({
     onSessionTitle: (_sessionId, title) => onTitleChange?.(runId, title),
     onResumedModelIdentity: handleResumedModelIdentity,
   });
+  const respondDashboardApproval = dashboardTransport.respondApproval;
+
+  const handleApprovalRespond = useCallback(
+    async (
+      message: ApprovalMessage,
+      choice: ApprovalChoice,
+    ): Promise<boolean> => {
+      if (message.transport === "dashboard") {
+        return respondDashboardApproval(message.requestId, choice);
+      }
+      return window.hermesAPI.respondApproval(message.requestId, choice);
+    },
+    [respondDashboardApproval],
+  );
 
   const enrichWorkRecord = useCallback(
     async (input: WorkRecordEnrichmentInput): Promise<string | null> => {
@@ -1293,8 +1329,8 @@ function Chat({
               messages={messages}
               isLoading={isLoading}
               toolProgress={toolProgress}
-              onApprove={actions.handleApprove}
-              onDeny={actions.handleDeny}
+              onApprovalRespond={handleApprovalRespond}
+              onApprovalResolved={handleApprovalResolved}
               onClarifyResolved={handleClarifyResolved}
               agentAvatar={agentAvatar}
             />

@@ -102,7 +102,7 @@ A legacy attachment turn keeps one user bubble and places subsequent reasoning a
 
 `handleGatewayEvent` in [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] applies stream events against a synchronous `messagesRef`, not React state, because state lags a render behind and each successive delta must build on the previous one.
 
-The handler reads the ref, applies a delta, writes the ref back, then calls `setMessages`. An effect mirrors `messages` back into `messagesRef`, and its guard is a correctness invariant. Every `setMessages` in the hook stores the exact same array in the ref, so when React commits the hook's own push, `messages === messagesRef.current` and the effect must skip: re-adopting that snapshot let a second `message.delta` land on a pre-delta array and silently drop a chunk (#757). The effect therefore syncs only when the identity differs (`messages !== messagesRef.current`), which happens only when Chat state changes underneath the hook — a new user turn, `handleClear` emptying the list, or a clarify card resolving in place. A length comparison is wrong here: it misses the shrink and the same-length replacement.
+The handler reads the ref, applies a delta, writes the ref back, then calls `setMessages`. An effect mirrors genuinely external `messages` changes back into `messagesRef`, and its guard is a correctness invariant. React may commit an older hook-owned array after a newer WebSocket delta has already advanced the ref, so comparison with only the latest array is insufficient. The hook records every array it publishes in a `WeakSet`; delayed commits of any recorded array cannot overwrite the stream source of truth, while unrecorded arrays from a new user turn, `handleClear`, editing, or clarify resolution remain authoritative. A length comparison is wrong because it misses shrinking and same-length replacements.
 
 ## Reasoning & tool activity rows
 
@@ -136,11 +136,17 @@ Each user/assistant bubble reveals a relative "time ago" label on row hover, so 
 
 The canonical time comes from state.db: [[src/renderer/src/screens/Chat/sessionHistory.ts#dbItemsToChatMessages]] copies each row's `timestamp` onto the `ChatBubbleMessage`, and [[src/renderer/src/screens/Chat/sessionHistory.ts#reconcileAfterDbRefresh|the end-of-stream reconcile]] adopts it onto the matching streamed bubble (via `mergeDbMetadataIntoStreamed`) so a live turn picks up its real time after refresh without remounting. state.db stores times in **seconds**, so `toEpochMs` in MessageRow scales any sub-`1e12` value up to milliseconds before use (otherwise it renders as ~Jan 1970). [[src/renderer/src/screens/Chat/MessageRow.tsx#formatBubbleTime]] builds the label with date-fns `formatDistanceToNowStrict` (e.g. "5 minutes ago", "just now" under 10s), with `formatBubbleTimeAbsolute` supplying the exact date/time as the `<time>` element's `title`/`dateTime`. The `.chat-message:hover .chat-bubble-time` CSS fades it in below the bubble, anchored to `.chat-message` because `.chat-bubble`'s own `overflow` would clip it.
 
-## Renderer-native commands
+## Mid-turn approvals
 
-A few non-local commands have dedicated desktop handling and must NOT be diverted to the gateway slash pipeline, or they'd lose their behaviour.
+Sensitive tool calls pause the current turn and render a structured approval card; a decision resumes that exact blocked call instead of creating another user turn.
 
-The approval responses `/approve` and `/deny` (the `RENDERER_NATIVE_SLASH` set) are excluded from the pipeline and sent as prompt-level input, matching their dedicated button handlers — `slash.exec` rejects pending-input commands anyway.
+The runtime assigns every approval a unique `request_id` before publishing `approval.request`. Dashboard JSON-RPC answers through `approval.respond`; the Runs transport answers through `/v1/runs/{run_id}/approval`. Both carry the same id and one of `once`, `session`, `always`, or `deny`. Runtime queues resolve by id rather than FIFO, so concurrent requests cannot authorize the wrong command.
+
+[[src/renderer/src/screens/Chat/ApprovalCard.tsx#ApprovalCard]] remains visible while the originating turn has `awaiting_approval` status. A successful response marks only that card resolved and returns the turn to `running`; a missing, expired, or transport-failed request keeps the controls available with an error. The normal loading state stays active so the user cannot accidentally submit a competing prompt while the tool is paused.
+
+The legacy text-regex buttons, `/approve`/`/deny` prompt turns, automatic `once` response, and Runs-to-legacy fallback are intentionally absent. Approval is a protocol event, not model prose: treating it as text either ends the original turn or permits work without an explicit user decision.
+
+Packaged and development runtimes both apply `scripts/patch-desktop-approval-bridge.mjs`, which adds request identities and forwards them through the two runtime response endpoints. This keeps local `npm run dev` behavior aligned with the staged offline runtime.
 
 ## Session Skill activation
 

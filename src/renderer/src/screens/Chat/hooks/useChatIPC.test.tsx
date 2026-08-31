@@ -15,6 +15,17 @@ interface ChatIpcCallbacks {
   toolProgress?: Callback<[string, string]>;
   toolEvent?: Callback<[string, unknown]>;
   usage?: Callback<[string, UsageState]>;
+  approval?: Callback<
+    [
+      string,
+      {
+        requestId: string;
+        description: string;
+        command: string;
+        choices: Array<"once" | "session" | "always" | "deny">;
+      },
+    ]
+  >;
 }
 
 function installHermesApi(callbacks: ChatIpcCallbacks): {
@@ -68,6 +79,10 @@ function installHermesApi(callbacks: ChatIpcCallbacks): {
         return vi.fn();
       },
       onClarifyRequest: vi.fn(() => vi.fn()),
+      onApprovalRequest: (cb: NonNullable<ChatIpcCallbacks["approval"]>) => {
+        callbacks.approval = cb;
+        return vi.fn();
+      },
       onChatUsage: (cb: Callback<[string, UsageState]>) => {
         callbacks.usage = cb;
         return vi.fn();
@@ -114,6 +129,25 @@ afterEach(() => {
 });
 
 describe("useChatIPC session scoping", () => {
+  it("renders an approval request without ending the active turn", () => {
+    const callbacks: ChatIpcCallbacks = {};
+    installHermesApi(callbacks);
+    render(<Harness sessionScopeId="session-1" />);
+
+    act(() => {
+      callbacks.approval?.("run-1", {
+        requestId: "approval-1",
+        description: "Write the report",
+        command: "python generate.py",
+        choices: ["once", "deny"],
+      });
+    });
+
+    expect(screen.getByTestId("ids")).toHaveTextContent(
+      JSON.stringify(["approval-approval-1"]),
+    );
+  });
+
   it("ignores late DB refreshes from an old session after the visible chat is cleared", async () => {
     const callbacks: ChatIpcCallbacks = {};
     const api = installHermesApi(callbacks);

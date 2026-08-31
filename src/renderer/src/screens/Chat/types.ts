@@ -80,18 +80,36 @@ export interface ClarifyMessage {
   resolved?: boolean;
 }
 
+export type ApprovalChoice = "once" | "session" | "always" | "deny";
+
+/** A structured mid-turn approval request. It remains attached to the turn
+ * that created it; answering it resumes that exact blocked tool call. */
+export interface ApprovalMessage {
+  id: string;
+  kind: "approval";
+  role: "agent";
+  requestId: string;
+  transport: "dashboard" | "ipc";
+  description: string;
+  command: string;
+  choices: ApprovalChoice[];
+  choice?: ApprovalChoice;
+  resolved?: boolean;
+}
+
 export type ChatMessage =
   | ChatBubbleMessage
   | ReasoningMessage
   | ToolCallMessage
   | ToolResultMessage
-  | ClarifyMessage;
+  | ClarifyMessage
+  | ApprovalMessage;
 
 export interface ActiveTurn {
   turnId: string;
   userId: string;
   startIndex: number;
-  status: "running" | "failed" | "completed";
+  status: "running" | "awaiting_approval" | "failed" | "completed";
 }
 
 export interface ModelGroup {

@@ -21,6 +21,7 @@ import tempfile
 import threading
 import time
 import unicodedata
+import uuid
 from typing import Optional
 from hermes_cli.config import cfg_get
 
@@ -2240,9 +2241,11 @@ def _denial_breaker_addendum(session_key: str) -> str:
 
 class _ApprovalEntry:
     """One pending dangerous-command approval inside a gateway session."""
-    __slots__ = ("event", "data", "result", "reason")
+    __slots__ = ("event", "data", "result", "reason", "request_id")
 
     def __init__(self, data: dict):
+        self.request_id = uuid.uuid4().hex
+        data["request_id"] = self.request_id
         self.event = threading.Event()
         self.data = data          # command, description, pattern_keys, …
         self.result: Optional[str] = None  # "once"|"session"|"always"|"deny"
@@ -2283,7 +2286,8 @@ def unregister_gateway_notify(session_key: str) -> None:
 
 def resolve_gateway_approval(session_key: str, choice: str,
                              resolve_all: bool = False,
-                             reason: Optional[str] = None) -> int:
+                             reason: Optional[str] = None,
+                             request_id: Optional[str] = None) -> int:
     """Called by the gateway's /approve or /deny handler to unblock
     waiting agent thread(s).
 
@@ -2304,6 +2308,15 @@ def resolve_gateway_approval(session_key: str, choice: str,
         if resolve_all:
             targets = list(queue)
             queue.clear()
+        elif request_id:
+            target = next(
+                (entry for entry in queue if entry.request_id == request_id),
+                None,
+            )
+            if target is None:
+                return 0
+            queue.remove(target)
+            targets = [target]
         else:
             targets = [queue.pop(0)]
         if not queue:

@@ -1,6 +1,6 @@
 {
   "name": "hermes-desktop",
-  "version": "0.7.45",
+  "version": "0.7.46",
   "description": "JingYuAI Desktop — self-improving AI assistant",
   "main": "./out/main/index.js",
   "author": "fathah",
@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "test:sandbox": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/hermes-sandbox.ps1 test",
     "test:live-visual": "node scripts/drive-live-regression-suite.js",
+    "diagnose:text-integrity": "node scripts/analyze-text-integrity-trace.mjs",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",

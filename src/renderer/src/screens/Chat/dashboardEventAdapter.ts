@@ -168,6 +168,51 @@ function appendClarifyRequest(
   return [...messages, bubble];
 }
 
+function approvalChoices(
+  payload: Record<string, unknown>,
+): import("./types").ApprovalChoice[] {
+  const allowed = new Set(["once", "session", "always", "deny"]);
+  const choices = Array.isArray(payload.choices)
+    ? payload.choices
+        .map((choice) => stringValue(choice))
+        .filter((choice): choice is import("./types").ApprovalChoice =>
+          allowed.has(choice),
+        )
+    : [];
+  return choices.length > 0 ? choices : ["once", "session", "deny"];
+}
+
+function appendApprovalRequest(
+  messages: ReadonlyArray<ChatMessage>,
+  payload: unknown,
+  now = Date.now(),
+): ChatMessage[] {
+  if (!isRecord(payload)) return [...messages];
+  const requestId = textFromPayload(payload, "request_id", "id");
+  const description = textFromPayload(
+    payload,
+    "description",
+    "message",
+    "text",
+  );
+  const command = textFromPayload(payload, "command", "code");
+  const id = `approval-${requestId || `${now}-${messages.length}`}`;
+  if (messages.some((message) => message.id === id)) return [...messages];
+  return [
+    ...messages,
+    {
+      id,
+      kind: "approval",
+      role: "agent",
+      requestId,
+      transport: "dashboard",
+      description,
+      command,
+      choices: approvalChoices(payload),
+    },
+  ];
+}
+
 function toolEventFromGatewayEvent(event: DashboardStreamEvent): ChatToolEvent {
   const payload = isRecord(event.payload) ? event.payload : {};
   const name =
@@ -758,6 +803,11 @@ export function applyDashboardStreamEvent(
     case "clarify.request":
       return {
         messages: appendClarifyRequest(state.messages, event.payload, now),
+        reasoningSegmentClosed: true,
+      };
+    case "approval.request":
+      return {
+        messages: appendApprovalRequest(state.messages, event.payload, now),
         reasoningSegmentClosed: true,
       };
     case "message.complete": {

@@ -5409,42 +5409,6 @@ body:has(.shell-vibrant),
   opacity: 0.7;
 }
 
-/* Approval bar */
-.chat-approval-bar {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-  margin-left: 42px;
-}
-
-.chat-approval-btn {
-  padding: 5px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background var(--transition);
-}
-
-.chat-approve {
-  background: var(--success);
-  color: #fff;
-}
-
-.chat-approve:hover {
-  background: #16a34a;
-}
-
-.chat-deny {
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-}
-
-.chat-deny:hover {
-  background: var(--bg-hover);
-}
-
 /* Inline clarify card — a mid-turn question rendered in the transcript. */
 .chat-clarify {
   margin-top: 8px;
@@ -5574,6 +5538,87 @@ body:has(.shell-vibrant),
   font-size: 12px;
   color: var(--danger, #ef4444);
   margin-top: 2px;
+}
+
+/* Structured mid-turn approval card. Unlike the legacy text-matched buttons,
+   this remains visible while the originating tool call is blocked. */
+.chat-approval-card {
+  margin: 8px 0 16px 42px;
+  padding: 14px 16px;
+  border: 1px solid
+    color-mix(in srgb, var(--danger, #ef4444) 45%, var(--border));
+  border-left: 3px solid var(--danger, #ef4444);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 680px;
+}
+
+.chat-approval-card--resolved {
+  opacity: 0.82;
+}
+.chat-approval-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.chat-approval-description {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.chat-approval-command {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.chat-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chat-approval-action {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chat-approval-action:hover {
+  border-color: var(--accent, #2563eb);
+  background: var(--bg-hover);
+}
+.chat-approval-action--once {
+  border-color: var(--accent, #2563eb);
+  background: var(--accent, #2563eb);
+  color: #fff;
+}
+.chat-approval-action--deny {
+  color: var(--danger, #ef4444);
+}
+.chat-approval-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.chat-approval-decision {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.chat-approval-error {
+  font-size: 12px;
+  color: var(--danger, #ef4444);
 }
 
 /* Override Tailwind preflight spacing inside agent bubbles */

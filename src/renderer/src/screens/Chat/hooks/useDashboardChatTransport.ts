@@ -12,7 +12,13 @@ import {
 import { DashboardGatewayClient } from "../dashboardGatewayClient";
 import { executeSlash, type SlashExecOutcome } from "../slashExec";
 import type { AgentCommandsCatalogResponse } from "../slash/types";
-import type { ActiveTurn, Attachment, ChatMessage, UsageState } from "../types";
+import type {
+  ActiveTurn,
+  ApprovalChoice,
+  Attachment,
+  ChatMessage,
+  UsageState,
+} from "../types";
 import { addAttachmentRefsToSessionEnvelope } from "../sessionSkillEnvelope";
 import type { DesktopSessionContinuationItem } from "../../../../../shared/session-continuation";
 import {
@@ -20,6 +26,7 @@ import {
   type ColdStartTimingEvent,
 } from "../../../../../shared/cold-start-timing";
 import { dispatchSessionTitleChanged } from "../../../lib/sessionTitleEvents";
+import type { TextIntegrityTraceStage } from "../../../../../shared/text-integrity-trace";
 
 interface SessionModelIdentity {
   api_mode?: string;
@@ -266,6 +273,10 @@ export interface AgentInitializationStatus {
 interface UseDashboardChatTransportResult {
   abort: () => void;
   enabled: boolean;
+  respondApproval: (
+    requestId: string,
+    choice: ApprovalChoice,
+  ) => Promise<boolean>;
   /** Publish a picker choice before React commits the matching Chat state. */
   setModelSelectionIntent: (
     provider: string,
@@ -955,6 +966,83 @@ function logDashboardEvent(
   console.info("[JingYuAI dashboard event]", summary);
 }
 
+function tracePayloadText(payload: unknown): string {
+  const record = asRecord(payload);
+  for (const key of [
+    "final_response",
+    "content",
+    "text",
+    "rendered",
+    "delta",
+  ]) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return "";
+}
+
+function traceBackendMetadata(payload: unknown): {
+  backendTurnKey?: string;
+  sequence?: number;
+} {
+  const trace = asRecord(asRecord(payload)._text_trace);
+  const backendTurnKey =
+    typeof trace.turn_key === "string" ? trace.turn_key : undefined;
+  const sequence = Number(trace.sequence);
+  return {
+    ...(backendTurnKey ? { backendTurnKey } : {}),
+    ...(Number.isFinite(sequence) ? { sequence } : {}),
+  };
+}
+
+function traceAssistantState(
+  messages: ChatMessage[],
+  activeTurn: ActiveTurn | null,
+): string {
+  const startIndex = Math.max(0, activeTurn?.startIndex ?? 0);
+  return messages
+    .slice(startIndex)
+    .filter(isBubbleMessage)
+    .filter((message) => message.role === "agent")
+    .map((message) => normalizeMessageText(message.content))
+    .join("\n\n<assistant-segment>\n\n");
+}
+
+// @lat: [[main-process#Text integrity diagnostics]]
+function recordDashboardTextIntegrity(
+  stage: Extract<
+    TextIntegrityTraceStage,
+    "websocket.received" | "frontend.state"
+  >,
+  event: DashboardStreamEvent,
+  activeTurn: ActiveTurn | null,
+  runtimeSessionId: string | null,
+  text: string,
+): void {
+  if (!event.type.startsWith("message.")) return;
+  try {
+    window.hermesAPI.recordTextIntegrityTrace?.({
+      stage,
+      atMs: Date.now(),
+      ...(event.session_id || runtimeSessionId
+        ? { sessionId: event.session_id || runtimeSessionId || undefined }
+        : {}),
+      ...(activeTurn?.turnId ? { turnId: activeTurn.turnId } : {}),
+      ...traceBackendMetadata(event.payload),
+      eventType: event.type,
+      text,
+      detail:
+        event.session_id &&
+        runtimeSessionId &&
+        event.session_id !== runtimeSessionId
+          ? `runtime-session-mismatch:${runtimeSessionId}`
+          : undefined,
+    });
+  } catch {
+    // A diagnostic bridge failure must never affect the active chat turn.
+  }
+}
+
 export function usageFromPayload(payload: unknown): Partial<UsageState> | null {
   const usage = asRecord(asRecord(payload).usage);
   // The JingYuAI gateway (`_get_usage` in tui_gateway/server.py) emits
@@ -1249,6 +1337,11 @@ export function useDashboardChatTransport({
   const onSessionTitleRef = useRef(onSessionTitle);
   const profileRef = useRef(profile);
   const messagesRef = useRef<ChatMessage[]>(messages);
+  // React may commit an older array from this hook after a newer WebSocket
+  // delta has already advanced `messagesRef`. Remember every array published by
+  // this transport so those delayed internal commits cannot be mistaken for an
+  // external Chat-state replacement.
+  const internalMessageSnapshotsRef = useRef(new WeakSet<ChatMessage[]>());
   // Model changes can race a composer callback that was captured by the input
   // before React replaced it. Keep the routing identity in a live ref so even
   // that older callback switches/creates the runtime with the picker value
@@ -1343,6 +1436,9 @@ export function useDashboardChatTransport({
   const recreateRuntimeSessionRef = useRef(false);
   const lastRuntimeSessionWasCreatedRef = useRef(false);
   const pendingClarifyRequestIdRef = useRef<string | null>(null);
+  const pendingApprovalRequestsRef = useRef(
+    new Map<string, { sessionId: string; turnId: string | null }>(),
+  );
   const pendingRecoveredContinuationRef = useRef<
     DesktopSessionContinuationItem[]
   >([]);
@@ -1556,18 +1652,14 @@ export function useDashboardChatTransport({
   }, [clearBackgroundNoticeTimer, onAgentInitializationChange, recordTiming]);
 
   useEffect(() => {
-    // `messagesRef` is the synchronous source of truth for `handleGatewayEvent`:
-    // it reads the ref, applies a stream delta, writes the ref back, then calls
-    // `setMessages`. Every `setMessages` in this hook stores that exact array in
-    // the ref, so when React finally commits our own push, `messages` is the
-    // very same reference and there is nothing to do. Re-syncing on that commit
-    // is what dropped streaming chunks (#757): a second delta could land on an
-    // older `messages` snapshot and reset the ref behind the deltas already
-    // applied. Skip when the identity matches (our push); adopt any other array,
-    // which can only come from Chat state changing underneath us — a new user
-    // turn (grows), `handleClear` (`setMessages([])`, shrinks), or a clarify
-    // card resolving in place (same length). A length check misses the last two.
-    if (messages !== messagesRef.current) {
+    // @lat: [[chat-commands#Slash command execution#Streaming source-of-truth ref]]
+    // `messagesRef` is the synchronous source of truth for stream deltas. React
+    // can commit an earlier array after a later delta already updated the ref,
+    // so identity against only the latest array is insufficient: every array
+    // produced by this hook must be ignored when it comes back through props.
+    // Arrays not in the WeakSet originate outside the transport (new turn,
+    // clear, edit, clarify resolution) and remain authoritative.
+    if (!internalMessageSnapshotsRef.current.has(messages)) {
       messagesRef.current = messages;
     }
   }, [messages]);
@@ -1592,6 +1684,7 @@ export function useDashboardChatTransport({
     recreateRuntimeSessionRef.current = false;
     lastRuntimeSessionWasCreatedRef.current = false;
     pendingClarifyRequestIdRef.current = null;
+    pendingApprovalRequestsRef.current.clear();
     lastSyncedCwdRef.current = null;
     resetSessionReadiness();
   }, [hermesSessionId, resetSessionReadiness]);
@@ -1617,6 +1710,7 @@ export function useDashboardChatTransport({
     recreateRuntimeSessionRef.current = false;
     lastRuntimeSessionWasCreatedRef.current = false;
     pendingClarifyRequestIdRef.current = null;
+    pendingApprovalRequestsRef.current.clear();
     pendingRecoveredContinuationRef.current = [];
     lastSyncedCwdRef.current = null;
     resetSessionReadiness();
@@ -1625,6 +1719,13 @@ export function useDashboardChatTransport({
   const handleGatewayEvent = useCallback(
     (event: DashboardStreamEvent): void => {
       const runtimeSessionId = runtimeSessionIdRef.current;
+      recordDashboardTextIntegrity(
+        "websocket.received",
+        event,
+        activeTurnRef.current,
+        runtimeSessionId,
+        tracePayloadText(event.payload),
+      );
       if (event.type === "session.reclaimed") {
         const payload = asRecord(event.payload);
         const reclaimedSessionId = String(
@@ -1651,6 +1752,21 @@ export function useDashboardChatTransport({
         return;
       }
       logDashboardEvent(event, "accepted", runtimeSessionId);
+
+      if (event.type === "approval.request") {
+        const payload = asRecord(event.payload);
+        const requestId = String(payload.request_id ?? payload.id ?? "").trim();
+        if (requestId && runtimeSessionId) {
+          pendingApprovalRequestsRef.current.set(requestId, {
+            sessionId: runtimeSessionId,
+            turnId: activeTurnRef.current?.turnId ?? null,
+          });
+          if (activeTurnRef.current) {
+            activeTurnRef.current.status = "awaiting_approval";
+          }
+          setToolProgress(null);
+        }
+      }
 
       if (event.type === "session.title") {
         const payload = asRecord(event.payload);
@@ -1769,6 +1885,7 @@ export function useDashboardChatTransport({
             content: `${label}${body}`,
           },
         ];
+        internalMessageSnapshotsRef.current.add(appended);
         messagesRef.current = appended;
         setMessages(appended);
         return;
@@ -1795,8 +1912,16 @@ export function useDashboardChatTransport({
             activeTurnRef.current,
           )
         : next.messages;
+      internalMessageSnapshotsRef.current.add(nextMessages);
       messagesRef.current = nextMessages;
       setMessages(nextMessages);
+      recordDashboardTextIntegrity(
+        "frontend.state",
+        event,
+        activeTurnRef.current,
+        runtimeSessionId,
+        traceAssistantState(nextMessages, activeTurnRef.current),
+      );
 
       if (event.type === "message.complete") {
         if (failed) {
@@ -2485,6 +2610,7 @@ export function useDashboardChatTransport({
               message,
               activeTurn,
             );
+            internalMessageSnapshotsRef.current.add(failedMessages);
             messagesRef.current = failedMessages;
             return failedMessages;
           });
@@ -2563,6 +2689,7 @@ export function useDashboardChatTransport({
         let failedMessages: ChatMessage[] | null = null;
         setMessages((prev) => {
           failedMessages = markActiveTurnFailed(prev, message, activeTurn);
+          internalMessageSnapshotsRef.current.add(failedMessages);
           messagesRef.current = failedMessages;
           return failedMessages;
         });
@@ -2843,10 +2970,49 @@ export function useDashboardChatTransport({
     [enabled, ensureClient],
   );
 
+  const respondApproval = useCallback(
+    async (requestId: string, choice: ApprovalChoice): Promise<boolean> => {
+      if (!enabled || !requestId) return false;
+      const pending = pendingApprovalRequestsRef.current.get(requestId);
+      const currentSessionId = runtimeSessionIdRef.current;
+      if (
+        !pending ||
+        !currentSessionId ||
+        pending.sessionId !== currentSessionId
+      ) {
+        return false;
+      }
+      const activeTurnId = activeTurnRef.current?.turnId ?? null;
+      if (pending.turnId && activeTurnId && pending.turnId !== activeTurnId) {
+        return false;
+      }
+      const client = await ensureClient();
+      const response = await client.request<{ resolved?: number }>(
+        "approval.respond",
+        {
+          session_id: pending.sessionId,
+          request_id: requestId,
+          choice,
+          all: false,
+        },
+        30_000,
+      );
+      if (!response || Number(response.resolved ?? 0) <= 0) return false;
+      pendingApprovalRequestsRef.current.delete(requestId);
+      if (activeTurnRef.current?.status === "awaiting_approval") {
+        activeTurnRef.current.status = "running";
+      }
+      setIsLoading(true);
+      return true;
+    },
+    [activeTurnRef, enabled, ensureClient, setIsLoading],
+  );
+
   const abort = useCallback(() => {
     const client = clientRef.current;
     const sessionId = runtimeSessionIdRef.current;
     if (!enabled || !client || !sessionId) return;
+    pendingApprovalRequestsRef.current.clear();
     void client
       .request("session.interrupt", { session_id: sessionId })
       .catch(() => {
@@ -2871,5 +3037,6 @@ export function useDashboardChatTransport({
     getCommandCatalog,
     runBackground,
     runOneShot,
+    respondApproval,
   };
 }

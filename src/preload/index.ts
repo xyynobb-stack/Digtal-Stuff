@@ -40,6 +40,7 @@ import type {
   SshDockerProvisionResult,
 } from "../shared/ssh-docker";
 import type { ColdStartTimingEvent } from "../shared/cold-start-timing";
+import type { TextIntegrityTraceEvent } from "../shared/text-integrity-trace";
 import type {
   WorkRecordDetail,
   WorkRecordQuery,
@@ -132,6 +133,8 @@ const hermesAPI = {
   },
   recordColdStartTiming: (event: ColdStartTimingEvent): void =>
     ipcRenderer.send("record-cold-start-timing", event),
+  recordTextIntegrityTrace: (event: TextIntegrityTraceEvent): void =>
+    ipcRenderer.send("record-text-integrity-trace", event),
 
   // Installation
   checkInstall: (): Promise<{
@@ -849,6 +852,37 @@ const hermesAPI = {
    *  autonomously (the gateway treats it as "you decide"). */
   respondClarify: (requestId: string, answer: string): Promise<boolean> =>
     ipcRenderer.invoke("clarify-respond", { requestId, answer }),
+
+  onApprovalRequest: (
+    callback: (
+      runId: string,
+      req: {
+        requestId: string;
+        description: string;
+        command: string;
+        choices: Array<"once" | "session" | "always" | "deny">;
+      },
+    ) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      runId: string,
+      req: {
+        requestId: string;
+        description: string;
+        command: string;
+        choices: Array<"once" | "session" | "always" | "deny">;
+      },
+    ): void => callback(runId, req);
+    ipcRenderer.on("chat-approval-request", handler);
+    return () => ipcRenderer.removeListener("chat-approval-request", handler);
+  },
+
+  respondApproval: (
+    requestId: string,
+    choice: "once" | "session" | "always" | "deny",
+  ): Promise<boolean> =>
+    ipcRenderer.invoke("approval-respond", { requestId, choice }),
 
   // Gateway
   startGateway: (): Promise<GatewayStartResult> =>

@@ -35,3 +35,5 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[office-world-actions]] — chat-commanded errands: the agent's LLM emits world-action blocks from the office chat, its avatar walks the trip route to the bank/showroom, and the rep modal auto-opens running the requested action on arrival.
 - [[mcp-servers]] — add / edit / remove / enable / test MCP servers from the Capabilities → MCP tab; the shared add+edit modal and the in-place atomic `updateMcpServer` upsert (config.yaml locally, gateway REST in Remote/SSH).
 - [[rag-mvp]] — the bundled market-report RAG Skill that plans internal evidence queries, calls the remote embedding endpoint, searches Milvus, and keeps each retrieval process stateless.
+- [[feishu-drive]] — the application-owned, user-shareable Feishu Drive subtree with bounded listing, search, folder creation, upload, and file deletion tools.
+- [[feishu-user-oauth]] — server-side employee OAuth for connecting each user's own Feishu account without exposing app or user credentials to the desktop package.

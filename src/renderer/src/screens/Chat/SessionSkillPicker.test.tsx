@@ -23,6 +23,14 @@ describe("SessionSkillPicker display names", () => {
             path: "C:\\skills\\custom\\downloaded-skill",
             userAdded: true,
           },
+          {
+            name: "project-manager",
+            displayName: "项目管理",
+            category: "custom",
+            description: "项目经理岗位能力",
+            path: "C:\\skills\\custom\\project-manager",
+            userAdded: true,
+          },
         ]),
       },
     });
@@ -41,5 +49,24 @@ describe("SessionSkillPicker display names", () => {
 
     fireEvent.click(screen.getByText("市场分析报告"));
     expect(onChange).toHaveBeenCalledWith(["market-report-rag"]);
+  });
+
+  it("does not allow a mandatory role Skill to be removed", async () => {
+    const onChange = vi.fn();
+    render(
+      <SessionSkillPicker
+        activeSkills={["project-manager"]}
+        lockedSkills={["project-manager"]}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /技能/ }));
+    const roleSkill = await screen.findByRole("button", {
+      name: /项目管理.*岗位必需/,
+    });
+    expect(roleSkill).toBeDisabled();
+    fireEvent.click(roleSkill);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

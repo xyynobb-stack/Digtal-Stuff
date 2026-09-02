@@ -5,6 +5,9 @@ export interface ConfiguredEmployee {
   phone: string;
   realName: string;
   models: string[];
+  profileId?: string;
+  roleName?: string;
+  roleStatus?: "awaiting_position" | "configured" | "unmapped";
 }
 
 export function normalizeEmployeePhone(phone: string): string {
@@ -77,7 +80,31 @@ export function loadConfiguredEmployees(): ConfiguredEmployee[] {
               ),
             )
           : [];
-        return [{ phone, realName, models }];
+        const profileId =
+          typeof candidate.profileId === "string"
+            ? candidate.profileId.trim()
+            : "";
+        const roleName =
+          typeof candidate.roleName === "string"
+            ? candidate.roleName.trim()
+            : "";
+        const roleStatus = [
+          "awaiting_position",
+          "configured",
+          "unmapped",
+        ].includes(String(candidate.roleStatus))
+          ? candidate.roleStatus
+          : undefined;
+        return [
+          {
+            phone,
+            realName,
+            models,
+            ...(profileId ? { profileId } : {}),
+            ...(roleName ? { roleName } : {}),
+            ...(roleStatus ? { roleStatus } : {}),
+          },
+        ];
       });
     }
   } catch {
@@ -110,6 +137,13 @@ export function rememberConfiguredEmployee(
       models: Array.from(
         new Set(employee.models.map((model) => model.trim()).filter(Boolean)),
       ),
+      ...(employee.profileId?.trim()
+        ? { profileId: employee.profileId.trim() }
+        : {}),
+      ...(employee.roleName?.trim()
+        ? { roleName: employee.roleName.trim() }
+        : {}),
+      ...(employee.roleStatus ? { roleStatus: employee.roleStatus } : {}),
     });
   }
   try {

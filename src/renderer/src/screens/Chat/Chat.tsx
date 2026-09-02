@@ -183,6 +183,33 @@ function Chat({
   const [activeSkills, setActiveSkills] = useState<string[]>(() =>
     readStoredSkills(sessionSkillStorageKey(initialSessionId ?? null)),
   );
+  const [mandatorySkills, setMandatorySkills] = useState<string[]>([]);
+  const [mandatorySkillsLoaded, setMandatorySkillsLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setMandatorySkillsLoaded(false);
+    void window.hermesAPI
+      .getEmployeeProfileBinding(profile)
+      .then((binding) => {
+        if (cancelled) return;
+        setMandatorySkills(binding?.role.mandatorySkills ?? []);
+        setMandatorySkillsLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Ordinary non-employee profiles remain usable if this optional
+        // metadata read fails. Employee provisioning itself fails closed.
+        setMandatorySkills([]);
+        setMandatorySkillsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
+  const effectiveActiveSkills = useMemo(
+    () => [...new Set([...mandatorySkills, ...activeSkills])],
+    [mandatorySkills, activeSkills],
+  );
   const sessionTemplateStorageKey = useCallback(
     (sessionId: string | null): string =>
       `hermes.session-writing-template.${sessionId ?? runId}`,
@@ -894,7 +921,7 @@ function Chat({
     profileId: profile ?? "default",
     profileName: profileDisplayName ?? profile ?? "default",
     sessionId: hermesSessionId,
-    skills: activeSkills,
+    skills: effectiveActiveSkills,
     template: Boolean(activeWritingTemplate),
     contextFolder,
     isLoading,
@@ -1006,7 +1033,7 @@ function Chat({
     activeTurnRef,
     resolveContextFolder,
     resolveOutputDirectory,
-    activeSkills,
+    activeSkills: effectiveActiveSkills,
     activeWritingTemplate,
     sessionModel: sessionModelOverride,
     sendViaDashboard: dashboardTransport.enabled
@@ -1388,7 +1415,15 @@ function Chat({
           remoteMode={remoteMode}
           profile={profile}
           contextUsage={contextUsage}
-          readiness={readiness}
+          readiness={
+            mandatorySkillsLoaded
+              ? readiness
+              : {
+                  ok: false,
+                  code: "EMPLOYEE_WORKSPACE_INITIALIZING",
+                  message: "正在加载员工岗位能力，请稍候…",
+                }
+          }
           slashCommands={slashMenuCommands}
           onSubmit={handleSubmitOrQueue}
           onQuickAsk={actions.handleQuickAsk}
@@ -1411,8 +1446,13 @@ function Chat({
               />
               <SessionSkillPicker
                 profile={profile}
-                activeSkills={activeSkills}
-                onChange={setActiveSkills}
+                activeSkills={effectiveActiveSkills}
+                lockedSkills={mandatorySkills}
+                onChange={(skills) =>
+                  setActiveSkills(
+                    skills.filter((skill) => !mandatorySkills.includes(skill)),
+                  )
+                }
               />
 
               <ContextFolderChip

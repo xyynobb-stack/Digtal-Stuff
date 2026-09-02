@@ -20,9 +20,9 @@ A **Configure** button is pinned at the bottom of the provider rail (below the s
 
 ## Employee phone model allowlist
 
-Phone-provisioned local users see only conversational models granted by the latest employee lookup response, including Chat Completions and Responses models.
+Phone-provisioned local users see only conversational models granted to the active employee Profile, including Chat Completions and Responses models.
 
-The main process persists the grant through [[src/main/employee-model-access.ts#writeEmployeeModelAccess]] and applies it to `list-models`; unrelated rows remain stored but are not returned. [[src/renderer/src/screens/Chat/hooks/useModelConfig.ts#useModelConfig]] also suppresses Ollama Cloud discovery merging while the grant is active, preventing live models from bypassing the allowlist. Remote and SSH catalogs, and local installs without a phone grant, retain their normal behavior.
+The main process persists the Profile-scoped grant through [[src/main/employee-model-access.ts#writeEmployeeModelAccess]] and applies the active Profile's grant to `list-models`; unrelated rows remain stored but are not returned. [[src/renderer/src/screens/Chat/hooks/useModelConfig.ts#useModelConfig]] also suppresses Ollama Cloud discovery merging while the grant is active, preventing live models from bypassing the allowlist. Remote and SSH catalogs, and local Profiles without a phone grant, retain their normal behavior.
 
 The company endpoint has two fixed internal named routes sharing a credential: `company-platform` uses `chat_completions`, and `company-platform-responses` uses `codex_responses`. Per-route model lists are refreshed on provisioning, including empty lists, and model-library rows retain their protocol. No model selection flips a shared provider's protocol or rewrites the global default. The existing serialized picker queue and session-owned pending switch carry the concrete provider identity.
 
@@ -31,6 +31,10 @@ Both cold creation and switching resolve model membership within the selected en
 ### Mixed employee protocols
 
 Verify that employee import includes both supported conversation protocols, prefers Chat Completions when both are advertised, and excludes compact-only or image-only endpoints.
+
+### Profile-scoped employee grants
+
+Verify that writing one employee Profile's company model grant does not activate or expose that grant in another Profile.
 
 ### Protocol-safe session routing
 

@@ -941,7 +941,7 @@ function Layout({
               {remoteMode ? (
                 <RemoteNotice feature="Providers" />
               ) : (
-                <Providers profile={activeProfile} />
+                <Providers />
               )}
             </div>
           )}

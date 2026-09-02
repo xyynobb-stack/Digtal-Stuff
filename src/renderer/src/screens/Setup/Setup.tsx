@@ -101,21 +101,19 @@ function Setup({
     setError("");
     try {
       const result = await window.hermesAPI.provisionEmployee(normalized);
-      const realName = result.realName;
-      if (realName) {
-        const renamed = await window.hermesAPI.setProfileName(
-          "default",
-          realName,
-        );
-        if (!renamed.success) {
-          throw new Error(renamed.error || "姓名自动填写失败。");
-        }
+      if (!result.activated) {
+        setError("已有更新的员工配置请求，本次结果未切换为当前员工。");
+        return;
       }
+      const realName = result.realName;
       setEmployeeConfigured(
         rememberConfiguredEmployee({
           phone: normalized,
           realName,
           models: result.models,
+          profileId: result.profileId,
+          roleName: result.role.roleName || undefined,
+          roleStatus: result.role.status,
         }),
       );
       setEmployeePhone("");

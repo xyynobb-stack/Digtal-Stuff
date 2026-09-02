@@ -488,6 +488,127 @@ export function patchDesktopSkillToolsetSource(source) {
     );
 }
 
+/** Add user-authorized Feishu Drive file tools to desktop toolsets. */
+export function patchFeishuDriveToolsetSource(source) {
+  let patched = source
+    .replace(/\r\n/g, "\n")
+    .replaceAll('"feishu_drive_initialize", ', "")
+    .replace(
+      '"description": "Connected-user Feishu/Lark Drive files plus document comment operations",',
+      '"description": "Feishu/Lark document comment operations (list, reply, add)",',
+    )
+    .replace(
+      "# Service-gated: hidden unless the Feishu SDK and profile credentials exist.",
+      "# Service-gated: hidden until this profile connects a Feishu account.",
+    );
+  const fileTools = [
+    "feishu_drive_list_files",
+    "feishu_drive_search_files",
+    "feishu_drive_create_folder",
+    "feishu_drive_upload_file",
+    "feishu_drive_delete_file",
+  ];
+  const toolLines = `            # Service-gated: hidden until this profile connects a Feishu account.
+            "feishu_drive_list_files", "feishu_drive_search_files",
+            "feishu_drive_create_folder",
+            "feishu_drive_upload_file", "feishu_drive_delete_file",
+`;
+
+  const removeFromNamedToolset = (current, toolsetName) => {
+    const blockStart = current.indexOf(`    "${toolsetName}": {`);
+    const toolsStart = current.indexOf('        "tools": [', blockStart);
+    const toolsEnd = current.indexOf("        ],", toolsStart);
+    if (blockStart < 0 || toolsStart < 0 || toolsEnd < 0) {
+      throw new Error(
+        `Feishu Drive ${toolsetName} toolset marker was not found`,
+      );
+    }
+    const block = current.slice(toolsStart, toolsEnd);
+    const present = fileTools.filter((name) => block.includes(`"${name}"`));
+    if (present.length === 0) return current;
+    if (present.length !== fileTools.length) {
+      throw new Error(
+        `Feishu Drive ${toolsetName} toolset is only partially patched`,
+      );
+    }
+    const cleaned = block
+      .split("\n")
+      .filter(
+        (line) =>
+          !fileTools.some((name) => line.includes(`"${name}"`)) &&
+          !line.includes(
+            "Service-gated: hidden until this profile connects a Feishu account.",
+          ),
+      )
+      .join("\n");
+    return `${current.slice(0, toolsStart)}${cleaned}${current.slice(toolsEnd)}`;
+  };
+
+  const addToNamedToolset = (current, toolsetName) => {
+    const blockStart = current.indexOf(`    "${toolsetName}": {`);
+    const toolsStart = current.indexOf('        "tools": [', blockStart);
+    const toolsEnd = current.indexOf("        ],", toolsStart);
+    if (blockStart < 0 || toolsStart < 0 || toolsEnd < 0) {
+      throw new Error(
+        `Feishu Drive ${toolsetName} toolset marker was not found`,
+      );
+    }
+    const block = current.slice(toolsStart, toolsEnd);
+    const present = fileTools.filter((name) => block.includes(`"${name}"`));
+    if (present.length === fileTools.length) return current;
+    if (present.length > 0) {
+      throw new Error(
+        `Feishu Drive ${toolsetName} toolset is only partially patched`,
+      );
+    }
+    return `${current.slice(0, toolsEnd)}${toolLines}${current.slice(toolsEnd)}`;
+  };
+
+  const coreStart = patched.indexOf("_HERMES_CORE_TOOLS = [");
+  const coreEnd = patched.indexOf("\n]\n\n# Webhook", coreStart);
+  if (coreStart < 0 || coreEnd < 0) {
+    throw new Error("Feishu Drive core toolset marker was not found");
+  }
+  const coreBlock = patched.slice(coreStart, coreEnd);
+  const corePresent = fileTools.filter((name) =>
+    coreBlock.includes(`"${name}"`),
+  );
+  if (corePresent.length === 0) {
+    const coreLines = toolLines.replaceAll("            ", "    ");
+    patched = `${patched.slice(0, coreEnd)}\n${coreLines}${patched.slice(coreEnd)}`;
+  } else if (corePresent.length !== fileTools.length) {
+    throw new Error("Feishu Drive core toolset is only partially patched");
+  }
+
+  // Keep the connected-user file actions separate from Hermes' legacy
+  // app-credential document-comment toolset. Platform resolution compares a
+  // toolset's complete static membership with the platform composite; mixing
+  // the two made the five OAuth tools disappear from Desktop conversations.
+  patched = removeFromNamedToolset(patched, "feishu_drive");
+  if (!patched.includes('    "feishu_user_drive": {')) {
+    const anchor = '    "feishu_drive": {';
+    const index = patched.indexOf(anchor);
+    if (index < 0) {
+      throw new Error("Feishu Drive toolset insertion marker was not found");
+    }
+    const userDriveToolset = `    "feishu_user_drive": {
+        "description": "Connected-user Feishu/Lark personal Drive file operations",
+        "tools": [
+${toolLines}        ],
+    },
+`;
+    patched = `${patched.slice(0, index)}${userDriveToolset}${patched.slice(index)}`;
+  }
+
+  for (const toolsetName of [
+    "hermes-acp",
+    "hermes-api-server",
+  ]) {
+    patched = addToNamedToolset(patched, toolsetName);
+  }
+  return patched;
+}
+
 /** @returns {string} TTS source whose availability probe never installs packages. */
 export function patchTtsRequirementsSource(source) {
   if (
@@ -704,6 +825,7 @@ export function applyOfflineRuntimeOverlays({
     "api_server.py",
   );
   const runAgentPath = path.join(agentRoot, "run_agent.py");
+  const toolsetsPath = path.join(agentRoot, "toolsets.py");
   const chatCompletionHelpersPath = path.join(
     agentRoot,
     "agent",
@@ -755,6 +877,9 @@ export function applyOfflineRuntimeOverlays({
   if (!fs.existsSync(runAgentPath)) {
     throw new Error(`Agent entrypoint not found: ${runAgentPath}`);
   }
+  if (!fs.existsSync(toolsetsPath)) {
+    throw new Error(`Agent toolsets not found: ${toolsetsPath}`);
+  }
   if (!fs.existsSync(ddgsProviderPath)) {
     throw new Error(`DDGS provider not found: ${ddgsProviderPath}`);
   }
@@ -770,6 +895,11 @@ export function applyOfflineRuntimeOverlays({
   }
 
   fs.cpSync(overlayRoot, agentRoot, { recursive: true, force: true });
+  fs.writeFileSync(
+    toolsetsPath,
+    patchFeishuDriveToolsetSource(fs.readFileSync(toolsetsPath, "utf8")),
+    "utf8",
+  );
   const runtimeProviderPath = path.join(
     agentRoot,
     "hermes_cli",

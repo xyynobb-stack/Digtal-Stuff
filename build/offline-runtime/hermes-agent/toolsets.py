@@ -68,6 +68,10 @@ _HERMES_CORE_TOOLS = [
     "clarify",
     # Code execution + delegation
     "execute_code", "delegate_task",
+    # Service-gated: hidden until this profile connects a Feishu account.
+    "feishu_drive_list_files", "feishu_drive_search_files",
+    "feishu_drive_create_folder",
+    "feishu_drive_upload_file", "feishu_drive_delete_file",
     # Cronjob management
     "cronjob",
     # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)
@@ -334,6 +338,15 @@ TOOLSETS = {
         "includes": []
     },
 
+    "feishu_user_drive": {
+        "description": "Connected-user Feishu/Lark personal Drive file operations",
+        "tools": [
+            # Service-gated: hidden until this profile connects a Feishu account.
+            "feishu_drive_list_files", "feishu_drive_search_files",
+            "feishu_drive_create_folder",
+            "feishu_drive_upload_file", "feishu_drive_delete_file",
+        ],
+    },
     "feishu_drive": {
         "description": "Feishu/Lark document comment operations (list, reply, add)",
         "tools": [
@@ -418,6 +431,10 @@ TOOLSETS = {
             "todo", "memory",
             "session_search",
             "execute_code", "delegate_task",
+            # Service-gated: hidden until this profile connects a Feishu account.
+            "feishu_drive_list_files", "feishu_drive_search_files",
+            "feishu_drive_create_folder",
+            "feishu_drive_upload_file", "feishu_drive_delete_file",
         ],
         "includes": []
     },
@@ -450,6 +467,10 @@ TOOLSETS = {
             "session_search",
             # Code execution + delegation
             "execute_code", "delegate_task",
+            # Service-gated: hidden until this profile connects a Feishu account.
+            "feishu_drive_list_files", "feishu_drive_search_files",
+            "feishu_drive_create_folder",
+            "feishu_drive_upload_file", "feishu_drive_delete_file",
             # Cronjob management
             "cronjob",
             # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)

@@ -4,13 +4,61 @@ The first-run screen where the user picks an AI provider and enters credentials 
 
 ## Employee phone provisioning
 
-The setup and Providers screens provision an employee by phone, import supported Chat Completions and Responses models, and activate Kimi-2.6 when available without exposing the administrator token to the renderer.
+The setup and Providers screens provision an isolated employee Profile by phone, import supported Chat Completions and Responses models, and activate Kimi-2.6 when available without exposing administrator or employee credentials to the renderer.
 
-The employee-facing Providers screen is intentionally limited to the phone input, automatic provisioning action, error feedback, and a deduplicated list of configured employees. Each successful record shows the phone, API `real_name`, and supported conversational model names. Account login, active-model management, provider keys, credential pools, OAuth, auxiliary tasks, and registry controls are not rendered there.
+The employee-facing Providers screen is intentionally limited to the phone input, automatic provisioning action, error feedback, and a deduplicated list of configured employees. Each successful record shows the phone, API `real_name`, resolved-or-pending position, and supported conversational model names. Account login, active-model management, provider keys, credential pools, OAuth, auxiliary tasks, and registry controls are not rendered there.
 
-Provisioning also writes the API `real_name` to the active local profile's display name through `setProfileName`; the stable profile id is unchanged. First-run Setup applies the same behavior to the default profile. The renderer stores the display metadata locally so it survives reloads, migrates legacy `username` metadata as a display fallback, and keeps former phone-only entries visible with a reconfiguration prompt. New lookup responses never fall back to the API username.
+`user_id`, not phone or display name, is the stable employee identity. [[src/main/employee-workspace.ts#employeeProfileIdForUserId]] derives a CLI-safe Profile id and reuses `employee-binding.json` on later lookups; `real_name` becomes display metadata while the stable id and directory stay unchanged. The renderer stores non-secret display metadata locally, migrates legacy `username` metadata only as a display fallback, and keeps former phone-only entries visible with a reconfiguration prompt.
 
-Each successful lookup replaces `employee-model-access.json` with the returned chat-model ids and company endpoint. [[src/main/employee-model-access.ts#filterModelsForEmployeeAccess]] filters renderer-facing local model reads without deleting the underlying model library, so reconfiguring another phone immediately replaces the visible grant.
+Each successful lookup writes `employee-model-access.json` inside the employee Profile with the returned chat-model ids and company endpoint. [[src/main/employee-model-access.ts#filterModelsForEmployeeAccess]] filters renderer-facing local model reads for the active Profile without deleting the shared underlying model library.
+
+### Identity SOUL and future role binding
+
+Employee identity is committed locally while job behavior remains data-driven and fail-closed when the personnel API has not supplied a position.
+
+[[src/main/employee-workspace.ts#mergeEmployeeSoul]] owns one marked block inside the Profile's `SOUL.md`, preserving global rules and manual content outside that block. The block identifies the employee workspace, forbids impersonation and unsupported real-world authority, and explicitly forbids guessing a missing job from name, department, history, or task content.
+
+[[src/main/employee-workspace.ts#resolveEmployeeRole]] is the compatibility seam for future `position`, `job_title`, `jobTitle`, `role`, `department`, or `department_name` fields. A missing position yields `awaiting_position`; an unknown value yields `unmapped`; only a catalog match yields `configured` and mandatory Skills. `project-manager` is the first product-maintained role Skill. [[src/renderer/src/screens/Chat/Chat.tsx#Chat]] loads mandatory Skills before enabling Send, merges them with optional session Skills, and prevents the picker from removing them.
+
+### Transaction and race boundary
+
+Employee provisioning publishes one ready binding only after profile files and the profile-specific gateway are healthy, so Chat cannot observe a half-configured identity.
+
+[[src/main/ipc/register.ts#registerIpcHandlers]] merges duplicate phone requests, serializes work for the same `user_id`, writes credentials and configuration only to the resolved Profile, installs managed content, writes SOUL, restarts or starts that Profile's gateway, and waits for health before [[src/main/employee-workspace.ts#commitEmployeeProvision]] atomically publishes `employee-binding.json`. A pending binding is not readable by Chat.
+
+Before mutation, the main process snapshots the Profile-owned environment, model configuration, SOUL, model grant, display metadata, and ready binding. Failure restores that snapshot, keeps the former ready binding authoritative, and writes a secret-free failed marker so an interrupted new Profile can be retried. Different-employee requests may finish independently, but only the latest initiated request may switch the active Profile; an older slow response cannot overwrite the user's newer selection.
+
+### Legacy default continuity
+
+The first employee Profile may claim the pre-employee `default` workspace once, preserving the current user's local history without weakening isolation for later employees.
+
+The claim is serialized across employees and persisted as pending before data publication. [[src/main/employee-workspace.ts#prepareLegacyEmployeeMigration]] uses SQLite online backup for `state.db`, verifies integrity plus session/message counts, copies session artifacts, and merges missing writing templates while leaving the source intact. It refuses to replace a nonempty target; a pending retry accepts a nonempty target only when its session ids and message count prove that the legacy DB was already published. Provisioning pauses when a chat is running, suspends main-process DB opens, blocks Dashboard reconnects, and waits for both source and target Dashboards and gateways to release SQLite before publication. Previously running local services are restored, and the Profile activates only after the migrated target gateway passes health checks.
+
+“我的记录” remains in its Electron-wide WAL database. After the target is healthy, [[src/main/work-records.ts#WorkRecordStore#reassignProfile]] atomically changes only legacy `default` rows to the claimed employee Profile; completion is then marked so another employee cannot inherit them. An interrupted pending claim is resumable, and the old `default` chat files remain recoverable.
+
+#### One-time claim
+
+The legacy default workspace can be claimed by one stable employee `user_id`; retries for that employee resume the same target, while a different employee receives an isolated fresh workspace.
+
+### Employee workspace initialization tests
+
+Offline tests cover the current position-less response, future project-manager mapping, phone mismatch rejection, stable Profile ids, managed-SOUL preservation, and pending-versus-ready binding visibility.
+
+#### Positionless current response
+
+The current API payload creates a stable employee identity while leaving role state at `awaiting_position`, without inferring a job.
+
+#### Future project-manager mapping
+
+A future project-manager title resolves to the maintained `project-manager` Skill through the role catalog compatibility seam.
+
+#### Ready publication
+
+Pending initialization remains invisible to Chat, while an atomic ready binding becomes readable only after commit.
+
+#### Dashboard handle release
+
+Employee history publication waits for the managed Dashboard process to exit instead of treating a sent termination signal as proof that Windows has released `state.db`.
 
 The provider list is data-driven from `PROVIDERS.setup` in [[src/renderer/src/constants.ts]]. Each entry carries an `envKey`, `configProvider`, `baseUrl`, and `needsKey`; selecting a card drives which form fields show (API key, or the Local server/base-URL flow).
 

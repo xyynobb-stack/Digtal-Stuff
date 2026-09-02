@@ -131,7 +131,7 @@ export function useModelConfig(profile?: string): UseModelConfigResult {
   const reload = useCallback(async (): Promise<void> => {
     const seq = ++loadSeqRef.current;
     const employeeAccessPromise = window.hermesAPI.getEmployeeModelAccess
-      ? window.hermesAPI.getEmployeeModelAccess()
+      ? window.hermesAPI.getEmployeeModelAccess(profile)
       : Promise.resolve({ active: false });
     const [mc, savedModels, employeeAccess] = await Promise.all([
       window.hermesAPI.getModelConfig(profile),

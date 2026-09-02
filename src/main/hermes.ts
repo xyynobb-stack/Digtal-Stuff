@@ -3614,6 +3614,22 @@ async function waitForApiServerStopped(
   return false;
 }
 
+export async function stopGatewayAndWait(
+  profile?: string,
+  timeoutMs = 5000,
+): Promise<boolean> {
+  const pidEntry = readPidFileEntry(profile);
+  stopGateway(profile, true);
+  if (!(await waitForApiServerStopped(profile, timeoutMs))) return false;
+  if (!pidEntry) return true;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!pidIsAliveAs(pidEntry.pid, GATEWAY_IMAGE_PREFIXES)) return true;
+    await delay(100);
+  }
+  return !pidIsAliveAs(pidEntry.pid, GATEWAY_IMAGE_PREFIXES);
+}
+
 function gatewayRestartProfileKey(profile?: string): string {
   return profileKey(profile);
 }

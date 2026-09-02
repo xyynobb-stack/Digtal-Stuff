@@ -2,7 +2,7 @@ import HermesLogo from "./HermesLogo";
 import { defaultColorForName } from "../../../../shared/profileColors";
 
 interface ProfileAvatarProps {
-  /** Profile/agent name — drives the letter and the default colour. */
+  /** Profile/agent name — drives the accessible label and default colour. */
   name: string;
   /** Resolved accent colour; falls back to a stable per-name default. */
   color?: string | null;
@@ -10,8 +10,7 @@ interface ProfileAvatarProps {
   avatar?: string | null;
   /** Pixel diameter. */
   size?: number;
-  /** Show the Hermes logo (instead of a letter) for the default profile when
-   *  it has no custom avatar. */
+  /** Show the Hermes logo when no custom avatar is configured. */
   defaultLogo?: boolean;
   className?: string;
 }
@@ -19,8 +18,7 @@ interface ProfileAvatarProps {
 /**
  * Unified profile/agent avatar used in the nav, the active-sessions bar and the
  * manage page. Renders a custom image when one is set, otherwise a flat
- * coloured circle with the profile's initial (or the Hermes logo for the
- * default profile).
+ * Hermes logo for every Profile.
  */
 export default function ProfileAvatar({
   name,
@@ -44,7 +42,7 @@ export default function ProfileAvatar({
     );
   }
 
-  if (name === "default" && defaultLogo) {
+  if (defaultLogo) {
     return (
       <div
         className={`profile-avatar profile-avatar-logo ${className}`}

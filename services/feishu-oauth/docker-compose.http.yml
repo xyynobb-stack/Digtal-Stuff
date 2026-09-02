@@ -1,0 +1,8 @@
+services:
+  feishu-oauth-proxy:
+    image: caddy:2.10.2-alpine
+    container_name: feishu-oauth-proxy
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile.http:/etc/caddy/Caddyfile:ro

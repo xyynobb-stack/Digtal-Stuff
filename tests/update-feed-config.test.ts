@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "..");
-const intranetFeed = "http://192.168.2.254/jingyuai-updates";
+const intranetFeed = "http://192.168.31.254/jingyuai-updates";
 
 describe("desktop update feed", () => {
   // @lat: [[desktop-updates#Desktop Updates]]

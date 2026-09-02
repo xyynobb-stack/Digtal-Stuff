@@ -167,6 +167,7 @@ describe("packaged preset user content", () => {
       "hr-analysis-report-rag",
       "finance-analysis-report-rag",
       "skill-creator",
+      "project-manager",
     ];
     for (const name of managedNames) {
       writeFixture(
@@ -181,7 +182,7 @@ describe("packaged preset user content", () => {
 
     await expect(
       installManagedUserSkills(presetRoot, hermesHome),
-    ).resolves.toBe(4);
+    ).resolves.toBe(5);
 
     for (const name of managedNames) {
       expect(

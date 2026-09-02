@@ -2,7 +2,7 @@ import { execFileSync } from "child_process";
 import { join } from "path";
 import { homedir } from "os";
 import { promises as fs } from "fs";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import {
   HERMES_HOME,
   HERMES_PYTHON,
@@ -310,9 +310,19 @@ export function createProfile(
 
   try {
     mkdirSync(profileHome(id), { recursive: true });
+    const metaPath = join(profileHome(id), "profile-meta.json");
+    let existingMeta: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(readFileSync(metaPath, "utf-8")) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        existingMeta = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // A fresh profile has no desktop metadata yet.
+    }
     writeFileSync(
-      join(profileHome(id), "profile-meta.json"),
-      JSON.stringify({ name: agentName }, null, 2),
+      metaPath,
+      JSON.stringify({ ...existingMeta, name: agentName }, null, 2),
       "utf-8",
     );
   } catch (err) {

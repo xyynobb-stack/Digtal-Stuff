@@ -1,4 +1,4 @@
 interface:
-  display_name: "��Ŀ����"
-  short_description: "Plan scope, delivery, risks, and project coordination"
+  display_name: "项目管理"
+  short_description: "规划交付、风险、变更与项目协同"
   default_prompt: "Use $project-manager to turn this goal into an executable project plan."

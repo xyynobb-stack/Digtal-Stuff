@@ -1,4 +1,8 @@
 import type { AppLocale } from "../shared/i18n/types";
+import type {
+  EmployeeProfileBinding,
+  EmployeeProvisionResult,
+} from "../shared/employee-workspace";
 import type { Attachment } from "../shared/attachments";
 import type {
   ImportWritingTemplateResult,
@@ -253,8 +257,8 @@ interface HermesAPI {
   exportWorkRecord: (id: string) => Promise<string | null>;
   openWorkRecordAttachment: (id: string, index: number) => Promise<boolean>;
   onWorkRecordsChanged: (callback: (ids: string[]) => void) => () => void;
-    recordColdStartTiming: (event: ColdStartTimingEvent) => void;
-    recordTextIntegrityTrace: (event: TextIntegrityTraceEvent) => void;
+  recordColdStartTiming: (event: ColdStartTimingEvent) => void;
+  recordTextIntegrityTrace: (event: TextIntegrityTraceEvent) => void;
 
   // Installation
   checkInstall: () => Promise<InstallStatus>;
@@ -320,12 +324,21 @@ interface HermesAPI {
   // Configuration (profile-aware)
   getEnv: (profile?: string) => Promise<Record<string, string>>;
   setEnv: (key: string, value: string, profile?: string) => Promise<boolean>;
-  provisionEmployee: (phone: string) => Promise<{
-    ok: boolean;
-    realName: string;
-    models: string[];
+  provisionEmployee: (phone: string) => Promise<EmployeeProvisionResult>;
+  startFeishuOAuth: (
+    profile?: string,
+  ) => Promise<{ requestId: string; expiresIn: number }>;
+  getFeishuOAuthStatus: (
+    requestId: string,
+    profile?: string,
+  ) => Promise<{
+    status: "pending" | "connected" | "failed" | "expired";
+    error?: string;
   }>;
-  getEmployeeModelAccess: () => Promise<{ active: boolean }>;
+  getEmployeeModelAccess: (profile?: string) => Promise<{ active: boolean }>;
+  getEmployeeProfileBinding: (
+    profile?: string,
+  ) => Promise<EmployeeProfileBinding | null>;
   validateChatReadiness: (profile?: string) => Promise<{
     ok: boolean;
     code?:

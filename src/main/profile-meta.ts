@@ -15,7 +15,7 @@ export interface ProfileMeta {
   name?: string;
   /** Hex colour (e.g. "#3498DB"). When unset, a stable default is derived. */
   color?: string;
-  /** Avatar image as a data URL. When unset, a letter avatar is shown. */
+  /** Avatar image as a data URL. When unset, the JingYuAI logo is shown. */
   avatar?: string;
 }
 

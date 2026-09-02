@@ -9,6 +9,7 @@ import {
   patchCompanyResponsesFallbackSource,
   patchCompanyResponsesUserAgentSource,
   patchDesktopSkillToolsetSource,
+  patchFeishuDriveToolsetSource,
   patchExecuteCodeWindowsChildSource,
   patchGatewayServerSource,
   patchDesktopProtocolRoutingSource,
@@ -42,6 +43,7 @@ const workflowToolFiles = [
   "market_report_workflow_state.py",
   "market_report_workflow_tool.py",
 ];
+const feishuDriveToolFile = "feishu_drive_files_tool.py";
 const visibleLanguageRulesMarker = "<!-- JINGYU_VISIBLE_LANGUAGE_RULES -->";
 
 /** Keep development and packaged model-route RPCs on the same implementation. */
@@ -289,6 +291,26 @@ export function syncDevMarketReportWorkflowTools(
   return true;
 }
 
+/** Install the user-authorized Drive tool and expose it through development toolsets. */
+export function syncDevFeishuDriveTools(
+  agentRoot,
+  overlayRoot = path.join(projectRoot, "resources", "hermes-agent-overlays"),
+) {
+  const source = path.join(overlayRoot, "tools", feishuDriveToolFile);
+  const targetRoot = path.join(agentRoot, "tools");
+  const toolsetsPath = path.join(agentRoot, "toolsets.py");
+  if (!fs.existsSync(targetRoot) || !fs.existsSync(toolsetsPath)) return false;
+  if (!fs.existsSync(source)) {
+    throw new Error(`Feishu Drive tool is missing: ${source}`);
+  }
+  fs.copyFileSync(source, path.join(targetRoot, feishuDriveToolFile));
+  const toolsetsSource = fs.readFileSync(toolsetsPath, "utf8");
+  const patched = patchFeishuDriveToolsetSource(toolsetsSource);
+  if (patched !== toolsetsSource)
+    fs.writeFileSync(toolsetsPath, patched, "utf8");
+  return true;
+}
+
 /** Keep the development Agent and its default profile on the canonical Skill. */
 export function syncDevMarketReportSkill(
   agentRoot,
@@ -300,6 +322,7 @@ export function syncDevMarketReportSkill(
     "hr-analysis-report-rag",
     "finance-analysis-report-rag",
     "skill-creator",
+    "project-manager",
   ];
   for (const name of names) {
     const source = path.join(starterRoot, name);
@@ -348,6 +371,7 @@ export function prepareDevAgent() {
   ensureDevJingYuAgentIdentity(agentRoot);
   ensureDevVisibleLanguageRules();
   syncDevMarketReportWorkflowTools(agentRoot);
+  syncDevFeishuDriveTools(agentRoot);
   syncDevMarketReportSkill(agentRoot);
 }
 

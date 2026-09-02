@@ -11,6 +11,7 @@ interface InstalledSkill {
 interface SessionSkillPickerProps {
   profile?: string;
   activeSkills: string[];
+  lockedSkills?: string[];
   onChange: (names: string[]) => void;
 }
 
@@ -18,6 +19,7 @@ interface SessionSkillPickerProps {
 export function SessionSkillPicker({
   profile,
   activeSkills,
+  lockedSkills = [],
   onChange,
 }: SessionSkillPickerProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
@@ -40,6 +42,7 @@ export function SessionSkillPicker({
   }, [loadSkills]);
 
   function toggle(name: string): void {
+    if (lockedSkills.includes(name)) return;
     onChange(
       activeSkills.includes(name)
         ? activeSkills.filter((skill) => skill !== name)
@@ -75,7 +78,7 @@ export function SessionSkillPicker({
                 <button
                   type="button"
                   className="btn-ghost session-skill-clear"
-                  onClick={() => onChange([])}
+                  onClick={() => onChange([...lockedSkills])}
                 >
                   清空选择
                 </button>
@@ -103,12 +106,14 @@ export function SessionSkillPicker({
             <div className="session-skill-list">
               {skills.map((skill) => {
                 const selected = activeSkills.includes(skill.name);
+                const locked = lockedSkills.includes(skill.name);
                 return (
                   <button
                     type="button"
                     key={skill.name}
                     className={`session-skill-option ${selected ? "session-skill-option-selected" : ""}`}
                     onClick={() => toggle(skill.name)}
+                    disabled={locked}
                   >
                     <span className="session-skill-option-copy">
                       <strong>{skill.displayName || skill.name}</strong>
@@ -117,7 +122,7 @@ export function SessionSkillPicker({
                     {selected && (
                       <span className="session-skill-selected-label">
                         <Check size={15} />
-                        已启用
+                        {locked ? "岗位必需" : "已启用"}
                       </span>
                     )}
                   </button>

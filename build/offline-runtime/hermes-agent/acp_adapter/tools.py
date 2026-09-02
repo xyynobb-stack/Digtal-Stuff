@@ -74,6 +74,8 @@ _POLISHED_TOOLS = {
     "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
     "feishu_doc_read", "feishu_drive_list_comments", "feishu_drive_list_comment_replies",
     "feishu_drive_reply_comment", "feishu_drive_add_comment",
+    "feishu_drive_initialize", "feishu_drive_list_files", "feishu_drive_search_files",
+    "feishu_drive_create_folder", "feishu_drive_upload_file", "feishu_drive_delete_file",
     "kanban_create", "kanban_show", "kanban_comment", "kanban_complete",
     "kanban_block", "kanban_link", "kanban_heartbeat",
     "yb_query_group_info", "yb_query_group_members", "yb_search_sticker",

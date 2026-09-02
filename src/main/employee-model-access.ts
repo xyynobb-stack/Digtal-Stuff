@@ -1,13 +1,11 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { HERMES_HOME } from "./installer";
-import { safeWriteFile } from "./utils";
+import { profileHome, safeWriteFile } from "./utils";
 import type { SavedModel } from "./models";
 
-const EMPLOYEE_MODEL_ACCESS_FILE = join(
-  HERMES_HOME,
-  "employee-model-access.json",
-);
+function employeeModelAccessFile(profile?: string): string {
+  return join(profileHome(profile), "employee-model-access.json");
+}
 
 export interface EmployeeAvailableModelPayload {
   name?: unknown;
@@ -96,11 +94,14 @@ export function normalizeEmployeeChatModels(
   return result;
 }
 
-export function readEmployeeModelAccess(): EmployeeModelAccess | null {
+export function readEmployeeModelAccess(
+  profile?: string,
+): EmployeeModelAccess | null {
   try {
-    if (!existsSync(EMPLOYEE_MODEL_ACCESS_FILE)) return null;
+    const file = employeeModelAccessFile(profile);
+    if (!existsSync(file)) return null;
     const parsed = JSON.parse(
-      readFileSync(EMPLOYEE_MODEL_ACCESS_FILE, "utf-8"),
+      readFileSync(file, "utf-8"),
     ) as Partial<EmployeeModelAccess>;
     if (
       typeof parsed.provider !== "string" ||
@@ -134,6 +135,7 @@ export function writeEmployeeModelAccess(
   provider: string,
   baseUrl: string,
   models: string[],
+  profile?: string,
 ): EmployeeModelAccess {
   const access: EmployeeModelAccess = {
     provider,
@@ -146,7 +148,10 @@ export function writeEmployeeModelAccess(
   if (access.models.length === 0) {
     throw new Error("Employee model access cannot be empty.");
   }
-  safeWriteFile(EMPLOYEE_MODEL_ACCESS_FILE, JSON.stringify(access, null, 2));
+  safeWriteFile(
+    employeeModelAccessFile(profile),
+    JSON.stringify(access, null, 2),
+  );
   return access;
 }
 

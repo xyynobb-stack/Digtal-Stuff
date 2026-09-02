@@ -45,6 +45,7 @@ import {
   profileHome,
 } from "./utils";
 import { recordColdStartTiming } from "./cold-start-timing";
+import { stopChildProcessAndWait } from "./child-process-stop";
 import {
   textIntegrityTraceEnabled,
   textIntegrityTraceFilePath,
@@ -80,6 +81,7 @@ interface ManagedDashboard {
 }
 
 const dashboards = new Map<string, ManagedDashboard>();
+const dashboardStartSuspensions = new Set<string>();
 
 function resolveProfile(profile?: string): string | undefined {
   return normalizeProfileName(profile ?? getActiveProfileNameSync());
@@ -666,6 +668,14 @@ export async function startDashboard(
     return getRemoteDashboardStatusForConfig(config, profile);
   if (mode === "ssh") return getSshDashboardStatusForConfig(config, profile);
 
+  if (dashboardStartSuspensions.has(profileKey(profile))) {
+    return {
+      supported: true,
+      running: false,
+      error: "Dashboard is temporarily paused for employee history migration.",
+    };
+  }
+
   const existing = getManagedDashboard(profile);
   if (existing) {
     if (existing.phase === "starting") return existing.ready;
@@ -722,8 +732,7 @@ export async function startDashboard(
           HERMES_DESKTOP: "1",
           ...(textIntegrityTraceEnabled()
             ? {
-                HERMES_TEXT_INTEGRITY_TRACE_FILE:
-                  textIntegrityTraceFilePath(),
+                HERMES_TEXT_INTEGRITY_TRACE_FILE: textIntegrityTraceFilePath(),
               }
             : {}),
           // `hermes serve` also sets this itself. Exporting it protects older
@@ -852,6 +861,33 @@ export function stopDashboard(profile?: string): boolean {
   } catch {
     return false;
   }
+  if (typeof managed.proc.pid === "number") {
+    clearDashboardPid(managed.connection.profile, managed.proc.pid);
+  }
+  return true;
+}
+
+/** Prevent renderer reconnects from reopening a Profile DB during migration. */
+export function setDashboardStartSuspended(
+  profile: string | undefined,
+  suspended: boolean,
+): void {
+  const key = profileKey(profile);
+  if (suspended) dashboardStartSuspensions.add(key);
+  else dashboardStartSuspensions.delete(key);
+}
+
+/** Stop a local Dashboard and wait until its SQLite handles are released. */
+export async function stopDashboardAndWait(
+  profile?: string,
+  timeoutMs = 5000,
+): Promise<boolean> {
+  const key = profileKey(profile);
+  const managed = getManagedDashboard(profile);
+  if (!managed) return true;
+  dashboards.delete(key);
+  const stopped = await stopChildProcessAndWait(managed.proc, timeoutMs);
+  if (!stopped && managed.proc.exitCode === null) return false;
   if (typeof managed.proc.pid === "number") {
     clearDashboardPid(managed.connection.profile, managed.proc.pid);
   }

@@ -92,6 +92,12 @@ The profile chip preserves the old app-brand label for an unrenamed default prof
 
 The same per-profile appearance also drives the agent avatar inside the transcript. [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] passes `getAppearance(run.profile)` to each [[src/renderer/src/screens/Chat/Chat.tsx]] as `agentAppearance`, which forwards `{ name, color, avatar }` through [[src/renderer/src/screens/Chat/MessageList.tsx]] to every [[src/renderer/src/screens/Chat/MessageRow.tsx#HermesAvatar]] (and the reasoning/tool-activity rows in [[src/renderer/src/screens/Chat/HistoryRow.tsx]]). `HermesAvatar` shows the animated thinking-orb ([[loading-indicators]]) only while a turn is generating (`active`); once generation stops it swaps straight to the agent's [[src/renderer/src/components/common/ProfileAvatar.tsx]] so idle turns are identified by who produced them. The live typing indicator has no resolved agent yet, so it falls back to the orb.
 
+### Default profile avatar
+
+Every Profile without an explicitly uploaded avatar uses the bundled JingYuAI logo, so internal Profile ids never leak as letter avatars such as `E`.
+
+[[src/renderer/src/components/common/ProfileAvatar.tsx]] still gives a configured data-URL avatar priority. Removing that custom image returns the Profile to the shared logo in the sidebar, profile picker, modal, sessions bar, and transcript.
+
 ### SSH tunnel profile routing
 
 SSH tunnel chat must retarget the tunnel to the selected profile's port before sending a turn — the dashboard port for dashboard transport, or the api_server port on the gateway-only fallback.

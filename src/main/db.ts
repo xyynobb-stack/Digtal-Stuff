@@ -5,6 +5,7 @@ import { activeStateDbPath } from "./utils";
 let cachedDb: Database.Database | null = null;
 let cachedDbPath: string | null = null;
 let cachedDbReadonly: boolean | null = null;
+let connectionsSuspended = false;
 
 /**
  * Return a cached database connection for the active profile state DB.
@@ -12,6 +13,7 @@ let cachedDbReadonly: boolean | null = null;
  * the old database connection is cleanly closed and a new one is established.
  */
 export function getDbConnection(readonly = true): Database.Database | null {
+  if (connectionsSuspended) return null;
   const dbPath = activeStateDbPath();
   if (!existsSync(dbPath)) {
     closeDbConnection();
@@ -34,6 +36,15 @@ export function getDbConnection(readonly = true): Database.Database | null {
     console.error(`[db] Failed to open database at ${dbPath}:`, err);
     return null;
   }
+}
+
+/**
+ * Prevent renderer-driven session reads from reopening state.db while an
+ * employee continuity migration atomically replaces the active Profile DB.
+ */
+export function setDbConnectionsSuspended(suspended: boolean): void {
+  connectionsSuspended = suspended;
+  if (suspended) closeDbConnection();
 }
 
 /**

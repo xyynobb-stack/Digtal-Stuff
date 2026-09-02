@@ -23,6 +23,7 @@ const MANAGED_USER_SKILLS = [
   "hr-analysis-report-rag",
   "finance-analysis-report-rag",
   "skill-creator",
+  "project-manager",
 ] as const;
 // Keep the existing marker filename so report Skills installed by earlier
 // releases retain their revision history when Skill Creator joins this set.

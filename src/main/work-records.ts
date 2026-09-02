@@ -21,6 +21,10 @@ export class WorkRecordStore {
   private readonly db: Database.Database;
   private readonly pending = new Map<string, WorkRecordSnapshot>();
   private readonly deletedIds = new Set<string>();
+  private readonly profileReassignments = new Map<
+    string,
+    { profileId: string; profileName: string }
+  >();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private onChanged?: (ids: string[]) => void;
 
@@ -98,6 +102,14 @@ export class WorkRecordStore {
       !Number.isFinite(snapshot.revision)
     )
       return;
+    const reassigned = this.profileReassignments.get(snapshot.profileId);
+    if (reassigned) {
+      snapshot = {
+        ...snapshot,
+        profileId: reassigned.profileId,
+        profileName: reassigned.profileName,
+      };
+    }
     if (this.deletedIds.has(snapshot.id)) return;
     const current = this.pending.get(snapshot.id);
     if (!current || current.revision <= snapshot.revision)
@@ -290,6 +302,41 @@ export class WorkRecordStore {
       .run(normalized, Date.now(), id);
     if (result.changes) this.onChanged?.([id]);
     return result.changes > 0;
+  }
+
+  /** Move legacy records to the employee Profile that claimed default state. */
+  reassignProfile(
+    sourceProfileId: string,
+    targetProfileId: string,
+    targetProfileName: string,
+  ): number {
+    if (!sourceProfileId || !targetProfileId) return 0;
+    if (sourceProfileId === targetProfileId) return 0;
+    this.flush();
+    const ids = this.db
+      .prepare("SELECT id FROM work_records WHERE profile_id = ?")
+      .all(sourceProfileId) as Array<{ id: string }>;
+    if (ids.length === 0) {
+      this.profileReassignments.set(sourceProfileId, {
+        profileId: targetProfileId,
+        profileName: targetProfileName,
+      });
+      return 0;
+    }
+    const update = this.db.transaction(() =>
+      this.db
+        .prepare(
+          "UPDATE work_records SET profile_id = ?, profile_name = ? WHERE profile_id = ?",
+        )
+        .run(targetProfileId, targetProfileName, sourceProfileId),
+    );
+    const result = update();
+    this.profileReassignments.set(sourceProfileId, {
+      profileId: targetProfileId,
+      profileName: targetProfileName,
+    });
+    this.onChanged?.(ids.map((row) => row.id));
+    return result.changes;
   }
 
   // @lat: [[work-records#Deletion safety]]

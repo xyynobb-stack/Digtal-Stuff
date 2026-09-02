@@ -1,0 +1,18 @@
+[Unit]
+Description=JingYuAI Feishu OAuth service
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/jingyuai/feishu-oauth
+EnvironmentFile=/etc/jingyuai/feishu-oauth.env
+ExecStart=/usr/bin/node /opt/jingyuai/feishu-oauth/server.mjs
+Restart=on-failure
+RestartSec=3
+User=jingyuai
+Group=jingyuai
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

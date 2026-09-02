@@ -63,7 +63,7 @@ function sqliteNativeModuleIsUsable(): boolean {
 }
 
 describe.skipIf(!sqliteNativeModuleIsUsable())(
-  "WorkRecordStore deletion safety",
+  "WorkRecordStore persistence safety",
   () => {
     // @lat: [[work-records#Deletion safety]]
     it("does not let pending or late higher-revision snapshots recreate a deletion", () => {
@@ -83,6 +83,28 @@ describe.skipIf(!sqliteNativeModuleIsUsable())(
       reopened.flush();
       expect(reopened.get("turn-race")).toBeNull();
       reopened.close();
+    });
+
+    it("reassigns legacy default records in one profile-scoped update", () => {
+      // @lat: [[work-records#Employee workspace continuity]]
+      const { store } = createStore();
+      store.enqueue(snapshot(1));
+      store.flush();
+
+      expect(store.reassignProfile("default", "employee-one", "员工甲")).toBe(
+        1,
+      );
+      expect(store.list({ profileId: "default" })).toHaveLength(0);
+      expect(store.list({ profileId: "employee-one" })).toHaveLength(1);
+      expect(store.get("turn-race")?.profileName).toBe("员工甲");
+      expect(store.reassignProfile("default", "employee-one", "员工甲")).toBe(
+        0,
+      );
+      store.enqueue(snapshot(2));
+      store.flush();
+      expect(store.list({ profileId: "default" })).toHaveLength(0);
+      expect(store.list({ profileId: "employee-one" })[0]?.updatedAt).toBe(102);
+      store.close();
     });
   },
 );

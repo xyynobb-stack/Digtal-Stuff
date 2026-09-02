@@ -1,9 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { rmSync } from "fs";
+import { join } from "path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./installer", () => ({ HERMES_HOME: "C:/tmp/hermes-test" }));
+vi.mock("./installer", () => ({
+  HERMES_HOME: join(
+    process.env.TEMP || "C:\\tmp",
+    `hermes-model-access-${process.pid}`,
+  ),
+}));
 import {
   filterModelsForEmployeeAccess,
   normalizeEmployeeChatModels,
+  readEmployeeModelAccess,
+  writeEmployeeModelAccess,
   type EmployeeModelAccess,
 } from "./employee-model-access";
 import type { SavedModel } from "./models";
@@ -14,6 +23,19 @@ const access: EmployeeModelAccess = {
   models: ["glm-5.1", "Kimi-2.6"],
   updatedAt: 1,
 };
+const modelAccessTestRoot = join(
+  process.env.TEMP || "C:\\tmp",
+  `hermes-model-access-${process.pid}`,
+);
+
+afterEach(() => {
+  for (const profile of ["employee-a", "employee-b"]) {
+    rmSync(join(modelAccessTestRoot, "profiles", profile), {
+      recursive: true,
+      force: true,
+    });
+  }
+});
 
 const models: SavedModel[] = [
   {
@@ -100,5 +122,18 @@ describe("employee model access", () => {
 
   it("leaves the normal model library unchanged without an employee grant", () => {
     expect(filterModelsForEmployeeAccess(models, null)).toBe(models);
+  });
+
+  it("keeps model grants isolated between employee Profiles", () => {
+    // @lat: [[model-selection#Session model override#Employee phone model allowlist#Profile-scoped employee grants]]
+    writeEmployeeModelAccess(
+      "custom",
+      "https://company.example/v1",
+      ["model-a"],
+      "employee-a",
+    );
+
+    expect(readEmployeeModelAccess("employee-a")?.models).toEqual(["model-a"]);
+    expect(readEmployeeModelAccess("employee-b")).toBeNull();
   });
 });

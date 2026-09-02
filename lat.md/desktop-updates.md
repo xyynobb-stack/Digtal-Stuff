@@ -2,7 +2,7 @@
 
 Desktop automatic updates use Windows NSIS packages mirrored onto the company intranet update service. GitHub Releases remain the build artifact source, while unsigned macOS builds are published separately for manual installation.
 
-The packaged `electron-updater` feed is generated from `electron-builder.yml` as the generic URL `http://192.168.2.254/jingyuai-updates`. Each stable GitHub build still publishes the matching `latest.yml`, NSIS setup executable, and blockmap; operators copy that immutable set to the intranet service, publishing `latest.yml` last so clients never observe metadata before its payloads. [[src/main/app/updater.ts#setupUpdater]] persists the auto-download preference under Electron `userData` and disables updates for development, portable execution, and unsigned manual macOS builds.
+The packaged `electron-updater` feed is generated from `electron-builder.yml` as the generic URL `http://192.168.31.254/jingyuai-updates`. Each stable GitHub build still publishes the matching `latest.yml`, NSIS setup executable, and blockmap; operators copy that immutable set to the intranet service, publishing `latest.yml` last so clients never observe metadata before its payloads. [[src/main/app/updater.ts#setupUpdater]] persists the auto-download preference under Electron `userData` and disables updates for development, portable execution, and unsigned manual macOS builds.
 
 When the intranet feed reports a newer release, [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] shows an upgrade button in the sidebar footer. The button downloads the update when needed, shows progress, and becomes a restart action after the update is ready.
 

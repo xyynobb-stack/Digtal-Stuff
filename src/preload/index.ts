@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppLocale } from "../shared/i18n/types";
+import type {
+  EmployeeProfileBinding,
+  EmployeeProvisionResult,
+} from "../shared/employee-workspace";
 import type { Attachment } from "../shared/attachments";
 import type {
   ImportWritingTemplateResult,
@@ -295,15 +299,25 @@ const hermesAPI = {
 
   setEnv: (key: string, value: string, profile?: string): Promise<boolean> =>
     ipcRenderer.invoke("set-env", key, value, profile),
-  provisionEmployee: (
-    phone: string,
+  provisionEmployee: (phone: string): Promise<EmployeeProvisionResult> =>
+    ipcRenderer.invoke("provision-employee", phone),
+  startFeishuOAuth: (
+    profile?: string,
+  ): Promise<{ requestId: string; expiresIn: number }> =>
+    ipcRenderer.invoke("feishu-oauth-start", profile),
+  getFeishuOAuthStatus: (
+    requestId: string,
+    profile?: string,
   ): Promise<{
-    ok: boolean;
-    realName: string;
-    models: string[];
-  }> => ipcRenderer.invoke("provision-employee", phone),
-  getEmployeeModelAccess: (): Promise<{ active: boolean }> =>
-    ipcRenderer.invoke("get-employee-model-access"),
+    status: "pending" | "connected" | "failed" | "expired";
+    error?: string;
+  }> => ipcRenderer.invoke("feishu-oauth-status", requestId, profile),
+  getEmployeeModelAccess: (profile?: string): Promise<{ active: boolean }> =>
+    ipcRenderer.invoke("get-employee-model-access", profile),
+  getEmployeeProfileBinding: (
+    profile?: string,
+  ): Promise<EmployeeProfileBinding | null> =>
+    ipcRenderer.invoke("get-employee-profile-binding", profile),
 
   validateChatReadiness: (
     profile?: string,

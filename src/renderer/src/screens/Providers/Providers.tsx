@@ -5,14 +5,12 @@ import {
   rememberConfiguredEmployee,
 } from "../../utils/employeePhones";
 
-interface ProvidersProps {
-  profile?: string;
-}
-
-function Providers({ profile = "default" }: ProvidersProps): React.JSX.Element {
+function Providers(): React.JSX.Element {
   const [employeePhone, setEmployeePhone] = useState("");
   const [employeeProvisioning, setEmployeeProvisioning] = useState(false);
   const [employeeError, setEmployeeError] = useState("");
+  const [feishuConnectingPhone, setFeishuConnectingPhone] = useState("");
+  const [feishuMessage, setFeishuMessage] = useState("");
   const [configuredEmployees, setConfiguredEmployees] = useState(
     loadConfiguredEmployees,
   );
@@ -24,21 +22,19 @@ function Providers({ profile = "default" }: ProvidersProps): React.JSX.Element {
 
     try {
       const result = await window.hermesAPI.provisionEmployee(normalized);
-      const realName = result.realName;
-      if (realName) {
-        const renamed = await window.hermesAPI.setProfileName(
-          profile,
-          realName,
-        );
-        if (!renamed.success) {
-          throw new Error(renamed.error || "姓名自动填写失败。");
-        }
+      if (!result.activated) {
+        setEmployeeError("已有更新的员工配置请求，本次结果未切换为当前员工。");
+        return;
       }
+      const realName = result.realName;
       setConfiguredEmployees(
         rememberConfiguredEmployee({
           phone: normalized,
           realName,
           models: result.models,
+          profileId: result.profileId,
+          roleName: result.role.roleName || undefined,
+          roleStatus: result.role.status,
         }),
       );
       setEmployeePhone("");
@@ -49,6 +45,44 @@ function Providers({ profile = "default" }: ProvidersProps): React.JSX.Element {
       );
     } finally {
       setEmployeeProvisioning(false);
+    }
+  }
+
+  async function handleConnectFeishu(
+    phone: string,
+    profileId?: string,
+  ): Promise<void> {
+    setFeishuConnectingPhone(phone);
+    setEmployeeError("");
+    setFeishuMessage("正在打开飞书授权页面，请在浏览器中完成授权…");
+    try {
+      const started = await window.hermesAPI.startFeishuOAuth(profileId);
+      const deadline = Date.now() + started.expiresIn * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+        const result = await window.hermesAPI.getFeishuOAuthStatus(
+          started.requestId,
+          profileId,
+        );
+        if (result.status === "connected") {
+          setFeishuMessage("飞书连接成功，可以关闭浏览器授权页面。");
+          return;
+        }
+        if (result.status === "failed") {
+          throw new Error(result.error || "飞书授权失败，请重试。");
+        }
+        if (result.status === "expired") {
+          throw new Error("飞书授权已超时，请重新连接。");
+        }
+      }
+      throw new Error("飞书授权已超时，请重新连接。");
+    } catch (error) {
+      setFeishuMessage("");
+      setEmployeeError(
+        error instanceof Error ? error.message : "飞书连接失败。",
+      );
+    } finally {
+      setFeishuConnectingPhone("");
     }
   }
 
@@ -97,6 +131,15 @@ function Providers({ profile = "default" }: ProvidersProps): React.JSX.Element {
                     <span>姓名</span>
                     <strong>{employee.realName || "重新配置后显示"}</strong>
                   </div>
+                  <div className="employee-configured-row">
+                    <span>岗位</span>
+                    <strong>
+                      {employee.roleName ||
+                        (employee.roleStatus === "unmapped"
+                          ? "岗位能力待配置"
+                          : "等待接口返回")}
+                    </strong>
+                  </div>
                   <div className="employee-configured-models">
                     <span>可用模型</span>
                     <div className="employee-configured-model-list">
@@ -111,6 +154,22 @@ function Providers({ profile = "default" }: ProvidersProps): React.JSX.Element {
                       )}
                     </div>
                   </div>
+                  <div className="settings-gateway-row">
+                    <button
+                      className="btn btn-primary"
+                      disabled={feishuConnectingPhone === employee.phone}
+                      onClick={() =>
+                        void handleConnectFeishu(
+                          employee.phone,
+                          employee.profileId,
+                        )
+                      }
+                    >
+                      {feishuConnectingPhone === employee.phone
+                        ? "等待飞书授权…"
+                        : "连接飞书"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -119,6 +178,11 @@ function Providers({ profile = "default" }: ProvidersProps): React.JSX.Element {
         {employeeError && (
           <p className="settings-section-hint" role="alert">
             {employeeError}
+          </p>
+        )}
+        {feishuMessage && (
+          <p className="settings-section-hint" role="status">
+            {feishuMessage}
           </p>
         )}
       </div>

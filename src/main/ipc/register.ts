@@ -17,6 +17,7 @@ import type { Attachment } from "../../shared/attachments";
 import type { SessionModelOverride } from "../../shared/model-override";
 import type { SessionContextSettings } from "../../shared/session-output";
 import type { AppLocale } from "../../shared/i18n/types";
+import type { EmployeeProvisionResult } from "../../shared/employee-workspace";
 import type {
   WorkRecordQuery,
   WorkRecordSnapshot,
@@ -143,16 +144,21 @@ import {
   isGatewayRunning,
   testRemoteConnection,
   restartGateway,
+  startGatewayWithRecovery,
+  stopGatewayAndWait,
   notifyProfileSwitched,
   setSshRemoteApiKey,
   resolvePendingClarify,
   resolvePendingApproval,
 } from "../hermes";
+import { setDbConnectionsSuspended } from "../db";
 import {
   freshDashboardWebSocketUrl,
   getDashboardStatus,
+  setDashboardStartSuspended,
   startDashboard,
   stopDashboard,
+  stopDashboardAndWait,
 } from "../dashboard";
 import {
   clearRemoteOAuthSession,
@@ -161,6 +167,11 @@ import {
   probeRemoteAuthMode,
   remoteOAuthSessionState,
 } from "../remote-oauth";
+import {
+  feishuOAuthServiceBaseUrl,
+  getFeishuUserOAuthStatus,
+  startFeishuUserOAuth,
+} from "../feishu-user-oauth";
 import {
   startSshTunnel,
   ensureSshTunnel,
@@ -275,6 +286,24 @@ import {
   writeEmployeeModelAccess,
   type EmployeeAvailableModelPayload,
 } from "../employee-model-access";
+import {
+  abortEmployeeProvision,
+  beginEmployeeProvision,
+  commitEmployeeProvision,
+  completeLegacyEmployeeMigration,
+  createEmployeeProfileBinding,
+  employeeProfileIdAvailable,
+  employeeProfileIdForUserId,
+  findEmployeeProfile,
+  mergeEmployeeSoul,
+  parseEmployeeIdentity,
+  planLegacyEmployeeMigration,
+  prepareLegacyEmployeeMigration,
+  readEmployeeProfileBinding,
+  restoreEmployeeProfile,
+  resolveEmployeeRole,
+  snapshotEmployeeProfile,
+} from "../employee-workspace";
 import {
   mirrorCompanyFallbackProvider,
   upsertAgentUserProvider,
@@ -702,6 +731,59 @@ function resolveLibraryModelEntry(
   return matches.find((m) => norm(m.baseUrl) === target) ?? matches[0];
 }
 
+const employeeProvisionByPhone = new Map<
+  string,
+  Promise<EmployeeProvisionResult>
+>();
+const employeeProvisionTailByUser = new Map<string, Promise<void>>();
+let employeeProvisionRequestSequence = 0;
+let employeeLegacyMigrationTail: Promise<void> = Promise.resolve();
+const feishuOAuthRequests = new Map<
+  string,
+  { profile: string; employeeUserId: string }
+>();
+
+async function withEmployeeProvisionLock<T>(
+  userId: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const previous = employeeProvisionTailByUser.get(userId) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.catch(() => undefined).then(() => gate);
+  employeeProvisionTailByUser.set(userId, tail);
+  await previous.catch(() => undefined);
+  try {
+    return await work();
+  } finally {
+    release();
+    if (employeeProvisionTailByUser.get(userId) === tail) {
+      employeeProvisionTailByUser.delete(userId);
+    }
+  }
+}
+
+async function withEmployeeLegacyMigrationLock<T>(
+  work: () => Promise<T>,
+): Promise<T> {
+  const previous = employeeLegacyMigrationTail;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  employeeLegacyMigrationTail = previous
+    .catch(() => undefined)
+    .then(() => gate);
+  await previous.catch(() => undefined);
+  try {
+    return await work();
+  } finally {
+    release();
+  }
+}
+
 export function registerIpcHandlers(context: IpcContext): void {
   const {
     activeRuns,
@@ -1090,123 +1172,428 @@ export function registerIpcHandlers(context: IpcContext): void {
     },
   );
 
-  ipcMain.handle("provision-employee", async (_event, phone: string) => {
+  ipcMain.handle("provision-employee", (_event, phone: string) => {
     const normalized = String(phone || "").replace(/\s|-/g, "");
     if (!/^1\d{10}$/.test(normalized)) throw new Error("请输入 11 位手机号。");
-    const adminToken = (readEnv().EMPLOYEE_LOOKUP_ADMIN_TOKEN || "").trim();
-    if (!adminToken) throw new Error("未配置 EMPLOYEE_LOOKUP_ADMIN_TOKEN。");
-    const response = await fetch(
-      "http://183.230.227.39:18600/api/admin/users/lookup-by-phone",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${adminToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ phone: normalized }),
-        signal: AbortSignal.timeout(15_000),
-      },
-    );
-    if (!response.ok)
-      throw new Error(`员工查询失败（HTTP ${response.status}）。`);
-    const employee = (await response.json()) as {
-      api_key?: unknown;
-      fallback_api_key?: unknown;
-      real_name?: unknown;
-      available_models?: EmployeeAvailableModelPayload[];
-    };
-    const apiKey =
-      typeof employee.api_key === "string" ? employee.api_key.trim() : "";
-    if (!apiKey) throw new Error("查询结果未包含员工 API Key。");
-    const available = normalizeEmployeeChatModels(employee.available_models);
-    const model = available.some((m) => m.model === "Kimi-2.6")
-      ? "Kimi-2.6"
-      : String(available[0]?.model || "");
-    if (!model) throw new Error("该员工没有可用于聊天的 OpenAI 模型。");
-    const baseUrl = "http://183.230.227.39:18600/v1";
-    const envKey = "CUSTOM_PROVIDER_COMPANY_PLATFORM_KEY";
-    setEnvValue(envKey, apiKey);
-    for (const route of EMPLOYEE_MODEL_ROUTES) {
-      upsertAgentUserProvider(undefined, {
-        name: route.name,
-        slug: route.slug,
-        baseUrl,
-        keyEnv: envKey,
-        apiMode: route.apiMode,
-        models: available
-          .filter((entry) => entry.apiMode === route.apiMode)
-          .map((entry) => entry.model),
-      });
-    }
-    // The backup credential is deliberately not compiled into the desktop.
-    // Production can return it with the employee grant; development and
-    // managed installations may inject AIHUB_API_KEY into the profile env.
-    const existingEnv = readEnv();
-    const fallbackApiKey =
-      String(
-        existingEnv.AIHUB_API_KEY || process.env.AIHUB_API_KEY || "",
-      ).trim() ||
-      (typeof employee.fallback_api_key === "string"
-        ? employee.fallback_api_key.trim()
-        : "");
-    let fallbackConfigured = false;
-    if (fallbackApiKey) {
-      const fallbackEnvKey = "AIHUB_API_KEY";
-      setEnvValue(fallbackEnvKey, fallbackApiKey);
-      fallbackConfigured = mirrorCompanyFallbackProvider();
-    }
-    for (const entry of available) {
-      const route = EMPLOYEE_MODEL_ROUTES.find(
-        (route) => route.apiMode === entry.apiMode,
-      )!;
-      const savedModel = addModel(
-        entry.name,
-        "custom",
-        entry.model,
-        baseUrl,
-        entry.contextLength,
-        route.name,
-        entry.apiMode,
-      );
+    const existing = employeeProvisionByPhone.get(normalized);
+    if (existing) return existing;
+    const requestSequence = ++employeeProvisionRequestSequence;
 
-      // 模型 ID 已存在时，addModel 会保留旧名称；
-      // 这里以本次接口返回的 display_name 同步更新显示名。
-      if (savedModel.name !== entry.name) {
-        updateModel(savedModel.id, { name: entry.name });
+    const provision = (async (): Promise<EmployeeProvisionResult> => {
+      const conn = getConnectionConfig();
+      if (conn.mode !== "local") {
+        throw new Error("员工数字工作区目前只支持本地模式初始化。");
       }
-    }
-    // Persist the endpoint grant separately from models.json. The model library
-    // remains intact, but every renderer-facing local model list is restricted
-    // to the latest phone lookup response.
-    writeEmployeeModelAccess(
-      "custom",
-      baseUrl,
-      available.map((entry) => entry.model),
-    );
-    const selected = available.find((entry) => entry.model === model)!;
-    setModelConfig(
-      "custom",
-      model,
-      baseUrl,
-      undefined,
-      selected.contextLength ?? null,
-      selected.apiMode,
-    );
-    if (isGatewayRunning()) restartGateway();
-    return {
-      ok: true,
-      realName:
-        typeof employee.real_name === "string" ? employee.real_name.trim() : "",
-      models: available.map((entry) => entry.name),
-      fallbackConfigured,
+      const adminToken = (
+        readEnv("default").EMPLOYEE_LOOKUP_ADMIN_TOKEN || ""
+      ).trim();
+      if (!adminToken) throw new Error("未配置 EMPLOYEE_LOOKUP_ADMIN_TOKEN。");
+      const response = await fetch(
+        "http://183.230.227.39:18600/api/admin/users/lookup-by-phone",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${adminToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ phone: normalized }),
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`员工查询失败（HTTP ${response.status}）。`);
+      }
+      const employee = (await response.json()) as {
+        user_id?: unknown;
+        username?: unknown;
+        real_name?: unknown;
+        phone?: unknown;
+        email?: unknown;
+        department?: unknown;
+        department_name?: unknown;
+        position?: unknown;
+        role?: unknown;
+        job_title?: unknown;
+        jobTitle?: unknown;
+        api_key?: unknown;
+        fallback_api_key?: unknown;
+        available_models?: EmployeeAvailableModelPayload[];
+      };
+      const identity = parseEmployeeIdentity(employee, normalized);
+      const role = resolveEmployeeRole(employee);
+
+      return withEmployeeProvisionLock(identity.userId, async () => {
+        const apiKey =
+          typeof employee.api_key === "string" ? employee.api_key.trim() : "";
+        if (!apiKey) throw new Error("查询结果未包含员工 API Key。");
+        const available = normalizeEmployeeChatModels(
+          employee.available_models,
+        );
+        const model = available.some((entry) => entry.model === "Kimi-2.6")
+          ? "Kimi-2.6"
+          : String(available[0]?.model || "");
+        if (!model) throw new Error("该员工没有可用于聊天的 OpenAI 模型。");
+
+        let targetProfile = findEmployeeProfile(identity.userId);
+        if (!targetProfile) {
+          targetProfile = employeeProfileIdForUserId(identity.userId);
+          if (!employeeProfileIdAvailable(targetProfile, identity.userId)) {
+            throw new Error(`员工 Profile 标识冲突：${targetProfile}。`);
+          }
+          const created = createProfile(targetProfile, "default");
+          if (!created.success || !created.id) {
+            throw new Error(created.error || "员工 Profile 创建失败。");
+          }
+          targetProfile = created.id;
+        }
+
+        await installBundledProfileContent(targetProfile);
+        const binding = createEmployeeProfileBinding(identity, role);
+        const snapshot = snapshotEmployeeProfile(targetProfile);
+        const gatewayWasRunning = isGatewayRunning(targetProfile);
+        beginEmployeeProvision(targetProfile, binding);
+        try {
+          const baseUrl = "http://183.230.227.39:18600/v1";
+          const envKey = "CUSTOM_PROVIDER_COMPANY_PLATFORM_KEY";
+          setEnvValue(envKey, apiKey, targetProfile);
+          for (const route of EMPLOYEE_MODEL_ROUTES) {
+            upsertAgentUserProvider(targetProfile, {
+              name: route.name,
+              slug: route.slug,
+              baseUrl,
+              keyEnv: envKey,
+              apiMode: route.apiMode,
+              models: available
+                .filter((entry) => entry.apiMode === route.apiMode)
+                .map((entry) => entry.model),
+            });
+          }
+
+          // Secrets remain profile-scoped and are never copied into the
+          // employee binding or returned to the renderer.
+          const existingEnv = readEnv(targetProfile);
+          const fallbackApiKey =
+            String(
+              existingEnv.AIHUB_API_KEY || process.env.AIHUB_API_KEY || "",
+            ).trim() ||
+            (typeof employee.fallback_api_key === "string"
+              ? employee.fallback_api_key.trim()
+              : "");
+          let fallbackConfigured = false;
+          if (fallbackApiKey) {
+            setEnvValue("AIHUB_API_KEY", fallbackApiKey, targetProfile);
+            fallbackConfigured = mirrorCompanyFallbackProvider(targetProfile);
+          }
+
+          for (const entry of available) {
+            const route = EMPLOYEE_MODEL_ROUTES.find(
+              (candidate) => candidate.apiMode === entry.apiMode,
+            )!;
+            const savedModel = addModel(
+              entry.name,
+              "custom",
+              entry.model,
+              baseUrl,
+              entry.contextLength,
+              route.name,
+              entry.apiMode,
+            );
+            if (savedModel.name !== entry.name) {
+              updateModel(savedModel.id, { name: entry.name });
+            }
+          }
+          writeEmployeeModelAccess(
+            "custom",
+            baseUrl,
+            available.map((entry) => entry.model),
+            targetProfile,
+          );
+          const selected = available.find((entry) => entry.model === model)!;
+          setModelConfig(
+            "custom",
+            model,
+            baseUrl,
+            targetProfile,
+            selected.contextLength ?? null,
+            selected.apiMode,
+          );
+
+          const soul = mergeEmployeeSoul(readSoul(targetProfile), binding);
+          if (!writeSoul(soul, targetProfile)) {
+            throw new Error("员工 SOUL.md 写入失败。");
+          }
+          if (role.status === "configured") {
+            const installed = new Set(
+              listInstalledSkills(targetProfile).map((skill) => skill.name),
+            );
+            const missing = role.mandatorySkills.filter(
+              (skill) => !installed.has(skill),
+            );
+            if (missing.length > 0) {
+              throw new Error(`岗位能力尚未安装：${missing.join(", ")}。`);
+            }
+          }
+
+          const continuityPrepared = await withEmployeeLegacyMigrationLock(
+            async () => {
+              const plan = planLegacyEmployeeMigration(
+                targetProfile,
+                identity.userId,
+              );
+              if (!plan.shouldMigrate) return false;
+              if (activeRuns.size > 0) {
+                throw new Error(
+                  "检测到正在运行的对话，请等待任务完成后再重新配置员工工作区。",
+                );
+              }
+              const defaultGatewayWasRunning = isGatewayRunning("default");
+              const targetGatewayWasRunning = isGatewayRunning(targetProfile);
+              setDashboardStartSuspended("default", true);
+              setDashboardStartSuspended(targetProfile, true);
+              const [defaultDashboardStatus, targetDashboardStatus] =
+                await Promise.all([
+                  getDashboardStatus("default").catch(() => null),
+                  getDashboardStatus(targetProfile).catch(() => null),
+                ]);
+              const defaultDashboardWasRunning =
+                defaultDashboardStatus?.running === true &&
+                defaultDashboardStatus.connection?.mode === "local";
+              const targetDashboardWasRunning =
+                targetDashboardStatus?.running === true &&
+                targetDashboardStatus.connection?.mode === "local";
+              let preparationFailed = false;
+              let defaultRestoreFailed = false;
+              let defaultDashboardRestoreFailed = false;
+              let targetDashboardRestoreFailed = false;
+              let defaultDashboardStopped = false;
+              let targetDashboardStopped = false;
+              let prepared = false;
+              setDbConnectionsSuspended(true);
+              try {
+                if (defaultDashboardWasRunning) {
+                  defaultDashboardStopped =
+                    await stopDashboardAndWait("default");
+                  if (!defaultDashboardStopped) {
+                    throw new Error(
+                      "默认工作区仍在读取历史数据，暂时无法安全迁移。",
+                    );
+                  }
+                }
+                if (targetDashboardWasRunning) {
+                  targetDashboardStopped =
+                    await stopDashboardAndWait(targetProfile);
+                  if (!targetDashboardStopped) {
+                    throw new Error(
+                      "员工工作区仍在读取历史数据，暂时无法安全迁移。",
+                    );
+                  }
+                }
+                if (
+                  defaultGatewayWasRunning &&
+                  !(await stopGatewayAndWait("default"))
+                ) {
+                  throw new Error(
+                    "默认工作区仍在写入数据，暂时无法安全迁移历史。",
+                  );
+                }
+                if (
+                  targetGatewayWasRunning &&
+                  !(await stopGatewayAndWait(targetProfile))
+                ) {
+                  throw new Error(
+                    "员工工作区仍在写入数据，暂时无法安全迁移历史。",
+                  );
+                }
+                prepared = await prepareLegacyEmployeeMigration(plan);
+              } catch (error) {
+                preparationFailed = true;
+                throw error;
+              } finally {
+                setDbConnectionsSuspended(false);
+                setDashboardStartSuspended("default", false);
+                setDashboardStartSuspended(targetProfile, false);
+                if (defaultGatewayWasRunning) {
+                  const defaultRestored = await startGatewayWithRecovery(
+                    "default",
+                  ).catch(() => false);
+                  defaultRestoreFailed = !defaultRestored;
+                }
+                if (defaultDashboardStopped) {
+                  const restored = await startDashboard("default").catch(
+                    () => null,
+                  );
+                  defaultDashboardRestoreFailed = !restored?.running;
+                }
+                if (targetDashboardStopped) {
+                  const restored = await startDashboard(targetProfile).catch(
+                    () => null,
+                  );
+                  targetDashboardRestoreFailed = !restored?.running;
+                }
+              }
+              if (
+                (defaultRestoreFailed ||
+                  defaultDashboardRestoreFailed ||
+                  targetDashboardRestoreFailed) &&
+                !preparationFailed
+              ) {
+                throw new Error(
+                  "员工历史已准备，但原有本地服务未能全部恢复，请重试配置。",
+                );
+              }
+              return prepared;
+            },
+          );
+
+          const gatewayReady = isGatewayRunning(targetProfile)
+            ? await restartGateway(targetProfile)
+            : await startGatewayWithRecovery(targetProfile);
+          if (!gatewayReady) {
+            throw new Error("员工 Profile 已生成，但网关未能通过健康检查。");
+          }
+
+          const displayName = identity.realName;
+          if (displayName) {
+            const renamed = await setProfileName(targetProfile, displayName);
+            if (!renamed.success) {
+              console.warn(
+                `[employee:${identity.userId}] Profile display name was not saved: ${renamed.error || "unknown error"}`,
+              );
+            }
+          }
+          if (continuityPrepared) {
+            if (!workRecords) {
+              throw new Error("我的记录数据库不可用，员工历史迁移未完成。");
+            }
+            workRecords.reassignProfile(
+              "default",
+              targetProfile,
+              displayName || identity.username || targetProfile,
+            );
+            completeLegacyEmployeeMigration(targetProfile, identity.userId);
+          }
+          // Publish the ready identity only after every continuity operation
+          // has completed. Until here the failed/pending binding keeps Chat
+          // from observing a half-migrated employee workspace.
+          commitEmployeeProvision(targetProfile, binding);
+          const activated =
+            requestSequence === employeeProvisionRequestSequence;
+          if (activated) {
+            setActiveProfile(targetProfile);
+            notifyProfileSwitched();
+          }
+          return {
+            ok: true,
+            profileId: targetProfile,
+            userId: identity.userId,
+            realName: identity.realName,
+            models: available.map((entry) => entry.name),
+            fallbackConfigured,
+            role,
+            activated,
+          };
+        } catch (error) {
+          restoreEmployeeProfile(targetProfile, snapshot);
+          abortEmployeeProvision(targetProfile, error);
+          if (gatewayWasRunning) {
+            await restartGateway(targetProfile).catch(() => false);
+          } else if (isGatewayRunning(targetProfile)) {
+            stopGateway(targetProfile, true);
+          }
+          throw error;
+        }
+      });
+    })();
+    employeeProvisionByPhone.set(normalized, provision);
+    const clearProvision = (): void => {
+      if (employeeProvisionByPhone.get(normalized) === provision) {
+        employeeProvisionByPhone.delete(normalized);
+      }
     };
+    void provision.then(clearProvision, clearProvision);
+    return provision;
   });
 
-  ipcMain.handle("get-employee-model-access", () => {
+  ipcMain.handle("get-employee-model-access", (_event, profile?: string) => {
     const conn = getConnectionConfig();
     const isLocal = conn.mode !== "remote" && conn.mode !== "ssh";
-    return { active: isLocal && readEmployeeModelAccess() !== null };
+    return {
+      active:
+        isLocal &&
+        readEmployeeModelAccess(profile || getActiveProfileNameSync()) !== null,
+    };
   });
+
+  ipcMain.handle("get-employee-profile-binding", (_event, profile?: string) =>
+    readEmployeeProfileBinding(profile || getActiveProfileNameSync()),
+  );
+
+  ipcMain.handle("feishu-oauth-start", async (_event, profile?: string) => {
+    const targetProfile = profile || getActiveProfileNameSync();
+    const binding = readEmployeeProfileBinding(targetProfile);
+    if (!binding) {
+      throw new Error("请先通过手机号完成数字员工配置。");
+    }
+    const result = await startFeishuUserOAuth(binding.employee.userId);
+    feishuOAuthRequests.set(result.requestId, {
+      profile: targetProfile,
+      employeeUserId: binding.employee.userId,
+    });
+    return result;
+  });
+
+  ipcMain.handle(
+    "feishu-oauth-status",
+    async (_event, requestId: string, profile?: string) => {
+      const targetProfile = profile || getActiveProfileNameSync();
+      const binding = readEmployeeProfileBinding(targetProfile);
+      if (!binding) {
+        throw new Error("请先通过手机号完成数字员工配置。");
+      }
+      const pending = feishuOAuthRequests.get(requestId);
+      if (
+        !pending ||
+        pending.profile !== targetProfile ||
+        pending.employeeUserId !== binding.employee.userId
+      ) {
+        throw new Error("飞书授权请求与当前员工不匹配，请重新连接。");
+      }
+      const result = await getFeishuUserOAuthStatus(requestId);
+      if (result.status !== "pending") {
+        feishuOAuthRequests.delete(requestId);
+      }
+      if (result.status === "connected") {
+        if (!result.connectionToken) {
+          throw new Error("飞书授权已完成，但连接凭据已过期，请重新连接。");
+        }
+        const existing = readEnv(targetProfile);
+        const serviceUrl = feishuOAuthServiceBaseUrl();
+        const changed =
+          existing.FEISHU_OAUTH_CONNECTION_TOKEN !== result.connectionToken ||
+          existing.FEISHU_OAUTH_BASE_URL !== serviceUrl;
+        if (changed) {
+          setEnvValue(
+            "FEISHU_OAUTH_CONNECTION_TOKEN",
+            result.connectionToken,
+            targetProfile,
+          );
+          setEnvValue("FEISHU_OAUTH_BASE_URL", serviceUrl, targetProfile);
+          if (
+            isGatewayRunning(targetProfile) &&
+            !(await restartGateway(targetProfile))
+          ) {
+            throw new Error(
+              "飞书连接已保存，但本地网关重启失败；请重启数字员工后使用。",
+            );
+          }
+        }
+      }
+      return {
+        status: result.status,
+        ...(result.error ? { error: result.error } : {}),
+      };
+    },
+  );
 
   ipcMain.handle("get-config", (_event, key: string, profile?: string) => {
     const conn = getConnectionConfig();
@@ -2886,6 +3273,7 @@ export function registerIpcHandlers(context: IpcContext): void {
     // that profile's config.yaml are merged into the library on read.
     return filterModelsForEmployeeAccess(
       listModels(getActiveProfileNameSync()),
+      readEmployeeModelAccess(getActiveProfileNameSync()),
     );
   });
   ipcMain.handle(

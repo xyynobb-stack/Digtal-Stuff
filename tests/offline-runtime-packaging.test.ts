@@ -22,6 +22,7 @@ import {
   patchCompanyResponsesFallbackSource,
   patchCompanyResponsesUserAgentSource,
   patchDesktopSkillToolsetSource,
+  patchFeishuDriveToolsetSource,
   patchDesktopProtocolRoutingSource,
   patchExecuteCodeWindowsChildSource,
   patchJingYuAgentIdentitySource,
@@ -39,6 +40,7 @@ import {
   ensureDevVisibleLanguageRules,
   syncDevMarketReportSkill,
   syncDevMarketReportWorkflowTools,
+  syncDevFeishuDriveTools,
   syncDevDesktopModelRouting,
 } from "../scripts/prepare-dev-agent.mjs";
 import {
@@ -445,6 +447,7 @@ describe("desktop DDGS web search", () => {
     );
     expect(requirements).toContain("primp==1.3.1");
     expect(requirements).toContain("ddgs==9.16.0");
+    expect(requirements).toContain("lark-oapi==1.6.8");
 
     for (const workflow of ["release.yml", "beta-release.yml"]) {
       const source = readFileSync(
@@ -641,6 +644,77 @@ describe("market report workflow development overlay", () => {
     ).toBe("market_report_workflow_tool.py");
   });
 
+  it("copies the user-authorized Feishu Drive tool and enables desktop access", () => {
+    const root = mkdtempSync(join(tmpdir(), "hermes-feishu-drive-"));
+    tempRoots.push(root);
+    const overlay = join(root, "overlay");
+    const agent = join(root, "agent");
+    mkdirSync(join(overlay, "tools"), { recursive: true });
+    mkdirSync(join(agent, "tools"), { recursive: true });
+    writeFileSync(
+      join(overlay, "tools", "feishu_drive_files_tool.py"),
+      "registered drive tools",
+      "utf8",
+    );
+    writeFileSync(
+      join(agent, "toolsets.py"),
+      `_HERMES_CORE_TOOLS = [
+    "execute_code", "delegate_task",
+]
+
+# Webhook
+    "feishu_drive": {
+        "description": "Feishu/Lark document comment operations (list, reply, add)",
+        "tools": [
+            "feishu_drive_list_comments", "feishu_drive_list_comment_replies",
+            "feishu_drive_reply_comment", "feishu_drive_add_comment",
+        ],
+    },
+    "hermes-acp": {
+        "tools": [
+            "session_search",
+            "execute_code", "delegate_task",
+        ],
+    },
+    "hermes-api-server": {
+        "tools": [
+            "session_search",
+            "execute_code", "delegate_task",
+        ],
+    },
+`,
+      "utf8",
+    );
+
+    expect(syncDevFeishuDriveTools(agent, overlay)).toBe(true);
+    expect(
+      readFileSync(join(agent, "tools", "feishu_drive_files_tool.py"), "utf8"),
+    ).toBe("registered drive tools");
+    const toolsets = readFileSync(join(agent, "toolsets.py"), "utf8");
+    expect(toolsets).toContain('"feishu_drive_upload_file"');
+    expect(toolsets).not.toContain('"feishu_drive_initialize"');
+    expect(toolsets.match(/"feishu_drive_list_files"/g)).toHaveLength(4);
+    expect(toolsets).toContain('"feishu_user_drive": {');
+    expect(toolsets).toContain(
+      '"description": "Connected-user Feishu/Lark personal Drive file operations"',
+    );
+    expect(toolsets).toContain('"hermes-api-server"');
+    expect(toolsets).toContain("_HERMES_CORE_TOOLS = [");
+    expect(patchFeishuDriveToolsetSource(toolsets)).toBe(toolsets);
+    expect(
+      readFileSync(
+        join(
+          process.cwd(),
+          "resources",
+          "hermes-agent-overlays",
+          "tools",
+          "feishu_drive_files_tool.py",
+        ),
+        "utf8",
+      ),
+    ).toContain('toolset="feishu_user_drive"');
+  });
+
   it("syncs maintained user Skills into the development custom profile", () => {
     const root = mkdtempSync(join(tmpdir(), "hermes-report-skill-"));
     tempRoots.push(root);
@@ -652,6 +726,7 @@ describe("market report workflow development overlay", () => {
       "hr-analysis-report-rag",
       "finance-analysis-report-rag",
       "skill-creator",
+      "project-manager",
     ]) {
       const sourceSkill = join(starters, name);
       mkdirSync(sourceSkill, { recursive: true });
@@ -670,6 +745,7 @@ describe("market report workflow development overlay", () => {
       "hr-analysis-report-rag",
       "finance-analysis-report-rag",
       "skill-creator",
+      "project-manager",
     ]) {
       expect(
         readFileSync(join(profileSkills, "custom", name, "SKILL.md"), "utf8"),

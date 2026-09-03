@@ -6,6 +6,12 @@ The desktop talks to the hermes-agent gateway over JSON-RPC. A normal message go
 
 **Profile scoping over the unified SSH dashboard.** In SSH mode one machine dashboard serves every profile (see [[main-process#SSH dashboard transport]]), so chat calls must carry the active `profile` or the gateway runs them under its launch profile (`default`) — the agent would then answer as `default` even when a named profile is selected. [[src/main/remote-sessions.ts#RemoteSessionConfig]]`.profile` scopes the `/api/*` HTTP ops, and the `/api/ws` chat client passes `profile` on `session.create`/`session.resume` **and** `prompt.submit`/`prompt.background` ([[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#submitDashboardPromptWithRecovery]]); `session.create` builds the agent and persists against that profile's `HERMES_HOME`/`state.db`, and each turn re-binds it. Omitted/`default` → the launch profile (unchanged for local and per-profile-remote setups).
 
+### Durable Profile session boundary
+
+A live gateway session owns one immutable Profile, Home, secret scope, database, and working directory for its entire lifetime, including asynchronous work.
+
+[[build/offline-runtime/hermes-agent/tui_gateway/server.py#_session_db]] opens the database captured on the session and raises when a named Profile database cannot open; it never falls back to the launch Profile. [[build/offline-runtime/hermes-agent/tui_gateway/server.py#_session_environment]] rebinds Profile, Home, secrets, database selection, and cwd for background prompts, notification polling, and automatic titles. Edit, regenerate, both undo paths, live history, and notification ownership use this session database, while [[build/offline-runtime/hermes-agent/agent/title_generator.py#maybe_auto_title]] creates and enters its database scope inside the title worker so the handle remains valid until persistence finishes.
+
 ## Routing pipeline
 
 The pure routing logic lives in [[src/renderer/src/screens/Chat/slashExec.ts#executeSlash]]: try `slash.exec`, accept either rendered output or a structured dispatch result, and on rejection fall back to `command.dispatch`, returning `done`, `send`, or `error`.

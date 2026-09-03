@@ -719,7 +719,10 @@ interface HermesAPI {
     settings: SessionContextSettings,
   ) => Promise<boolean>;
   getDefaultOutputDirectory: () => Promise<string>;
-  listRecentSessionContextFolders: (limit?: number) => Promise<string[]>;
+  listRecentSessionContextFolders: (
+    profile: string,
+    limit?: number,
+  ) => Promise<string[]>;
   getSessionModelOverride: (
     sessionId: string,
   ) => Promise<SessionModelOverride | null>;
@@ -906,6 +909,7 @@ interface HermesAPI {
 
   // Session cache
   listCachedSessions: (
+    profile: string,
     limit?: number,
     offset?: number,
   ) => Promise<
@@ -919,7 +923,7 @@ interface HermesAPI {
       contextFolder: string | null;
     }>
   >;
-  syncSessionCache: () => Promise<
+  syncSessionCache: (profile: string) => Promise<
     Array<{
       id: string;
       title: string;
@@ -930,14 +934,20 @@ interface HermesAPI {
       contextFolder: string | null;
     }>
   >;
-  updateSessionTitle: (sessionId: string, title: string) => Promise<void>;
-  deleteSession: (sessionId: string) => Promise<void>;
+  updateSessionTitle: (
+    profile: string,
+    sessionId: string,
+    title: string,
+  ) => Promise<void>;
+  deleteSession: (profile: string, sessionId: string) => Promise<void>;
   deleteSessions: (
+    profile: string,
     sessionIds: string[],
   ) => Promise<{ requested: number; deleted: number }>;
 
   // Session search
   searchSessions: (
+    profile: string,
     query: string,
     limit?: number,
   ) => Promise<

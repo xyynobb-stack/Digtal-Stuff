@@ -381,7 +381,7 @@ describe("deleteSession", () => {
     expect(beforeMessages).toHaveLength(2);
 
     // Act: delete the session
-    expect(() => deleteSession("session-to-delete")).not.toThrow();
+    expect(() => deleteSession("default", "session-to-delete")).not.toThrow();
 
     // Assert: target session gone, other session untouched
     const afterSessions = listSessions();
@@ -412,7 +412,7 @@ describe("deleteSession", () => {
 
     expect(existsSync(stagingDir)).toBe(true);
 
-    deleteSession("session-with-staged-files");
+    deleteSession("default", "session-with-staged-files");
 
     expect(existsSync(stagingDir)).toBe(false);
     expect(getSessionMessages("session-with-staged-files")).toHaveLength(0);
@@ -433,7 +433,7 @@ describe("deleteSession", () => {
     expect(beforeSessions).toHaveLength(1);
 
     // Deleting a non-existent session should not throw
-    expect(() => deleteSession("nonexistent")).not.toThrow();
+    expect(() => deleteSession("default", "nonexistent")).not.toThrow();
 
     // Existing session should still be there
     const afterSessions = listSessions();
@@ -443,7 +443,7 @@ describe("deleteSession", () => {
 
   it("returns early when the database file does not exist", () => {
     // No DB seeded — HERMES_HOME/state.db doesn't exist
-    expect(() => deleteSession("any-session")).not.toThrow();
+    expect(() => deleteSession("default", "any-session")).not.toThrow();
   });
 });
 
@@ -466,7 +466,7 @@ describe("searchSessions", () => {
       },
     ]);
 
-    const results = searchSessions("1780363992423");
+    const results = searchSessions("default", "1780363992423");
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -494,7 +494,7 @@ describe("searchSessions", () => {
       },
     ]);
 
-    const results = searchSessions("295d");
+    const results = searchSessions("default", "295d");
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -531,7 +531,10 @@ describe("deleteSessions", () => {
       },
     ]);
 
-    const result = deleteSessions(["bulk-delete-a", "bulk-delete-b"]);
+    const result = deleteSessions("default", [
+      "bulk-delete-a",
+      "bulk-delete-b",
+    ]);
 
     expect(result).toEqual({ requested: 2, deleted: 2 });
     expect(listSessions().map((s) => s.id)).toEqual(["bulk-keep"]);
@@ -551,7 +554,7 @@ describe("deleteSessions", () => {
       },
     ]);
 
-    const result = deleteSessions([
+    const result = deleteSessions("default", [
       "",
       " ",
       "dedupe-me",
@@ -576,7 +579,7 @@ describe("deleteSessions", () => {
     writeFileSync(join(stagingA, "a.txt"), "a");
     writeFileSync(join(stagingB, "b.txt"), "b");
 
-    deleteSessions(["bulk-staged-a", "bulk-staged-b"]);
+    deleteSessions("default", ["bulk-staged-a", "bulk-staged-b"]);
 
     expect(existsSync(stagingA)).toBe(false);
     expect(existsSync(stagingB)).toBe(false);

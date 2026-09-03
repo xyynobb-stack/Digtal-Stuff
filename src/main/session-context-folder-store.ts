@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { getDbConnection } from "./db";
+import { getDbConnection, getProfileDbConnection } from "./db";
 import type {
   SessionContextSettings,
   SessionOutputDestination,
@@ -157,10 +157,13 @@ export function getSessionContextFolder(sessionId: string): string | null {
  */
 export function getSessionContextFolders(
   sessionIds: string[],
+  profile?: string,
 ): Map<string, string> {
   const result = new Map<string, string>();
   if (sessionIds.length === 0) return result;
-  const db = getDbConnection(true);
+  const db = profile
+    ? getProfileDbConnection(profile, true)
+    : getDbConnection(true);
   if (!db || !tableExists(db)) return result;
 
   // Chunk well under SQLITE_MAX_VARIABLE_NUMBER for portability, matching the
@@ -195,8 +198,13 @@ export function deleteSessionContextFolderForSession(
 }
 
 /** Get recent distinct context folder paths ordered by most recently updated. */
-export function getRecentSessionContextFolders(limit = 20): string[] {
-  const db = getDbConnection(true);
+export function getRecentSessionContextFolders(
+  limit = 20,
+  profile?: string,
+): string[] {
+  const db = profile
+    ? getProfileDbConnection(profile, true)
+    : getDbConnection(true);
   if (!db || !tableExists(db)) return [];
   // GROUP BY (not DISTINCT) so each folder appears once ordered by its most
   // recent use. A `DISTINCT folder_path ... ORDER BY updated_at` collapses the

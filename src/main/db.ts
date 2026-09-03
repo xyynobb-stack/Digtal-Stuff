@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { existsSync } from "fs";
-import { activeStateDbPath } from "./utils";
+import { join } from "path";
+import { activeStateDbPath, profileHome } from "./utils";
 
 let cachedDb: Database.Database | null = null;
 let cachedDbPath: string | null = null;
@@ -13,8 +14,25 @@ let connectionsSuspended = false;
  * the old database connection is cleanly closed and a new one is established.
  */
 export function getDbConnection(readonly = true): Database.Database | null {
+  return getDbConnectionAtPath(activeStateDbPath(), readonly);
+}
+
+/** Open the state database for an explicit profile captured by the caller. */
+export function getProfileDbConnection(
+  profile: string,
+  readonly = true,
+): Database.Database | null {
+  return getDbConnectionAtPath(
+    join(profileHome(profile), "state.db"),
+    readonly,
+  );
+}
+
+function getDbConnectionAtPath(
+  dbPath: string,
+  readonly: boolean,
+): Database.Database | null {
   if (connectionsSuspended) return null;
-  const dbPath = activeStateDbPath();
   if (!existsSync(dbPath)) {
     closeDbConnection();
     return null;

@@ -20,6 +20,7 @@ vi.mock("../../components/useI18n", () => ({
 import Sessions, { SESSIONS_REFRESH_MS } from "./Sessions";
 
 const baseProps = {
+  activeProfile: "default",
   onResumeSession: (): void => {},
   onNewChat: (): void => {},
   currentSessionId: null,
@@ -249,7 +250,7 @@ describe("Sessions tab live refresh (#322)", () => {
     let resolveBroadSearch:
       | ((value: ReturnType<typeof sessionSearchResult>[]) => void)
       | undefined;
-    api.searchSessions.mockImplementation((query: string) => {
+    api.searchSessions.mockImplementation((_profile: string, query: string) => {
       if (query === "h") {
         return new Promise((resolve) => {
           resolveBroadSearch = resolve;
@@ -383,7 +384,7 @@ describe("Sessions tab — delete affordance (#408)", () => {
       );
     });
 
-    expect(api.deleteSession).toHaveBeenCalledWith("sess-abc-123");
+    expect(api.deleteSession).toHaveBeenCalledWith("default", "sess-abc-123");
   });
 
   it("does NOT call deleteSession when the confirm is cancelled", async () => {
@@ -522,7 +523,10 @@ describe("Sessions tab — bulk delete selection (#490)", () => {
     });
 
     await waitFor(() => {
-      expect(api.deleteSessions).toHaveBeenCalledWith(["sess-one", "sess-two"]);
+      expect(api.deleteSessions).toHaveBeenCalledWith("default", [
+        "sess-one",
+        "sess-two",
+      ]);
     });
     expect(api.deleteSession).not.toHaveBeenCalled();
   });
@@ -576,12 +580,14 @@ describe("Sessions tab — bulk delete selection (#490)", () => {
     });
 
     await waitFor(() => {
-      expect(api.deleteSessions).toHaveBeenCalledWith([
+      expect(api.deleteSessions).toHaveBeenCalledWith("default", [
         "search-one",
         "search-two",
       ]);
     });
-    expect(api.deleteSessions).not.toHaveBeenCalledWith(["main-session"]);
+    expect(api.deleteSessions).not.toHaveBeenCalledWith("default", [
+      "main-session",
+    ]);
   });
 
   it("does not delete selected sessions when the bulk confirm is cancelled", async () => {

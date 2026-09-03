@@ -250,7 +250,11 @@ describe("remote session REST bridge", () => {
           return;
         }
 
-        if (req.method === "PATCH" && req.url === "/api/sessions/sess-title") {
+        if (
+          req.method === "PATCH" &&
+          (req.url === "/api/sessions/sess-title" ||
+            req.url === "/api/sessions/sess-profile?profile=project-manager")
+        ) {
           res.end(JSON.stringify({ ok: true }));
           return;
         }
@@ -532,6 +536,23 @@ describe("remote session REST bridge", () => {
       method: "DELETE",
       url: "/api/sessions/sess-delete",
       token: "test-token",
+    });
+  });
+
+  it("keeps a captured profile on remote title routing and persistence", async () => {
+    await remoteUpdateSessionTitle(
+      { ...config(), profile: "project-manager" },
+      "sess-profile",
+      "Scoped title",
+    );
+
+    expect(requests[0]).toMatchObject({
+      method: "PATCH",
+      url: "/api/sessions/sess-profile?profile=project-manager",
+      body: JSON.stringify({
+        title: "Scoped title",
+        profile: "project-manager",
+      }),
     });
   });
 });

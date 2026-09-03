@@ -23,6 +23,7 @@ interface SearchResult {
 }
 
 interface SessionsProps {
+  activeProfile: string;
   onResumeSession: (sessionId: string) => void;
   onNewChat: () => void;
   currentSessionId: string | null;
@@ -289,6 +290,7 @@ const SessionCard = memo(function SessionCard({
 export const SESSIONS_REFRESH_MS = 30_000;
 
 function Sessions({
+  activeProfile,
   onResumeSession,
   onNewChat,
   currentSessionId,
@@ -332,7 +334,7 @@ function Sessions({
   // loading state, so it can run on a timer or on focus with no spinner flash.
   const refreshSessions = useCallback(async (): Promise<void> => {
     const requestId = ++loadRequestId.current;
-    const synced = await window.hermesAPI.syncSessionCache();
+    const synced = await window.hermesAPI.syncSessionCache(activeProfile);
     if (loadRequestId.current !== requestId) return;
     setSessions((prev) => {
       if (synced.length === 0 && prev.length > 0) {
@@ -340,19 +342,22 @@ function Sessions({
       }
       return synced.slice(0, 50);
     });
-  }, []);
+  }, [activeProfile]);
 
   const loadSessions = useCallback(async (): Promise<void> => {
     const requestId = ++loadRequestId.current;
     setLoading(true);
     try {
-      const synced = await window.hermesAPI.syncSessionCache();
+      const synced = await window.hermesAPI.syncSessionCache(activeProfile);
       if (loadRequestId.current !== requestId) return;
       setSessions(synced.slice(0, 50));
     } catch (error) {
       console.error("Failed to load sessions", error);
       try {
-        const cached = await window.hermesAPI.listCachedSessions(50);
+        const cached = await window.hermesAPI.listCachedSessions(
+          activeProfile,
+          50,
+        );
         if (loadRequestId.current === requestId) {
           setSessions(cached);
         }
@@ -364,7 +369,7 @@ function Sessions({
         setLoading(false);
       }
     }
-  }, []);
+  }, [activeProfile]);
 
   useEffect(() => {
     loadSessions();
@@ -417,7 +422,11 @@ function Sessions({
         );
       });
       try {
-        await window.hermesAPI.updateSessionTitle(sessionId, trimmed);
+        await window.hermesAPI.updateSessionTitle(
+          activeProfile,
+          sessionId,
+          trimmed,
+        );
       } catch (err) {
         console.error("Failed to rename session", sessionId, err);
         // Rollback optimistic update
@@ -441,7 +450,7 @@ function Sessions({
         setEditingTitle("");
       }
     },
-    [cancelRename],
+    [activeProfile, cancelRename],
   );
 
   const cancelDelete = useCallback((): void => {
@@ -460,7 +469,7 @@ function Sessions({
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       setSearchResults((prev) => prev.filter((r) => r.sessionId !== sessionId));
       try {
-        await window.hermesAPI.deleteSession(sessionId);
+        await window.hermesAPI.deleteSession(activeProfile, sessionId);
       } catch (err) {
         console.error("Failed to delete session", sessionId, err);
       } finally {
@@ -469,7 +478,7 @@ function Sessions({
         setPendingDeleteSessionId(null);
       }
     },
-    [refreshSessions],
+    [activeProfile, refreshSessions],
   );
 
   const toggleSelectionMode = useCallback((): void => {
@@ -513,7 +522,7 @@ function Sessions({
       setSessions((prev) => prev.filter((s) => !idSet.has(s.id)));
       setSearchResults((prev) => prev.filter((r) => !idSet.has(r.sessionId)));
       try {
-        await window.hermesAPI.deleteSessions(ids);
+        await window.hermesAPI.deleteSessions(activeProfile, ids);
       } catch (err) {
         console.error("Failed to delete selected sessions", ids, err);
       } finally {
@@ -524,7 +533,7 @@ function Sessions({
         setIsSelectionMode(false);
       }
     },
-    [refreshSessions],
+    [activeProfile, refreshSessions],
   );
 
   useEffect(() => {
@@ -606,9 +615,12 @@ function Sessions({
     setIsSearching(true);
     searchTimer.current = setTimeout(async () => {
       try {
-        await window.hermesAPI.syncSessionCache().catch(() => []);
+        await window.hermesAPI.syncSessionCache(activeProfile).catch(() => []);
         if (searchRequestId.current !== requestId) return;
-        const results = await window.hermesAPI.searchSessions(query);
+        const results = await window.hermesAPI.searchSessions(
+          activeProfile,
+          query,
+        );
         if (searchRequestId.current !== requestId) return;
         setSearchResults(results);
       } finally {
@@ -620,7 +632,7 @@ function Sessions({
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-  }, [searchQuery]);
+  }, [activeProfile, searchQuery]);
 
   const isShowingSearch = searchQuery.trim().length > 0;
   const grouped = groupSessions(sessions);

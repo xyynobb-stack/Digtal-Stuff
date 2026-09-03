@@ -893,6 +893,7 @@ function Layout({
                 onClick={(e) => e.stopPropagation()}
               >
                 <Sessions
+                  activeProfile={activeProfile}
                   onResumeSession={(id) => {
                     setSessionsModalOpen(false);
                     void handleResumeSession(id);

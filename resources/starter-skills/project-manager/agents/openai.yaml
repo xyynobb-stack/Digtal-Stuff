@@ -1,4 +1,4 @@
 interface:
-  display_name: "项目管理"
-  short_description: "规划交付、风险、变更与项目协同"
-  default_prompt: "Use $project-manager to turn this goal into an executable project plan."
+  display_name: "项目经理"
+  short_description: "推进计划、交付、风险、变更与客户协同"
+  default_prompt: "使用 $project-manager 将项目目标整理为可执行、可验收且风险前置的交付计划。"

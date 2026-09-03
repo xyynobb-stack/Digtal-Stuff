@@ -2695,11 +2695,11 @@ export function registerIpcHandlers(context: IpcContext): void {
 
   ipcMain.handle(
     "list-recent-session-context-folders",
-    (_event, limit?: number) => {
+    (_event, profile: string, limit?: number) => {
       const lim = typeof limit === "number" && limit > 0 ? limit : 20;
-      const folders = getRecentSessionContextFolders(lim);
+      const folders = getRecentSessionContextFolders(lim, profile);
       if (folders.length < lim) {
-        const cached = listCachedSessions(100);
+        const cached = listCachedSessions(profile, 100);
         const seen = new Set(folders);
         for (const s of cached) {
           if (s.contextFolder && !seen.has(s.contextFolder)) {
@@ -2727,32 +2727,40 @@ export function registerIpcHandlers(context: IpcContext): void {
     },
   );
 
-  ipcMain.handle("delete-session", (_event, sessionId: string) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteDeleteSession(conn, sessionId);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) => remoteDeleteSession(config, sessionId),
-        undefined,
-        activeSshProfile(),
-      );
-    return deleteSession(sessionId);
-  });
+  ipcMain.handle(
+    "delete-session",
+    (_event, profile: string, sessionId: string) => {
+      const conn = getConnectionConfig();
+      if (conn.mode === "remote")
+        return remoteDeleteSession({ ...conn, profile }, sessionId);
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteDeleteSession(config, sessionId),
+          undefined,
+          activeSshProfile(profile),
+        );
+      return deleteSession(profile, sessionId);
+    },
+  );
 
-  ipcMain.handle("delete-sessions", (_event, sessionIds: string[]) => {
-    const ids = Array.isArray(sessionIds) ? sessionIds : [];
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteDeleteSessions(conn, ids);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) => remoteDeleteSessions(config, ids),
-        undefined,
-        activeSshProfile(),
-      );
-    return deleteSessions(ids);
-  });
+  ipcMain.handle(
+    "delete-sessions",
+    (_event, profile: string, sessionIds: string[]) => {
+      const ids = Array.isArray(sessionIds) ? sessionIds : [];
+      const conn = getConnectionConfig();
+      if (conn.mode === "remote")
+        return remoteDeleteSessions({ ...conn, profile }, ids);
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteDeleteSessions(config, ids),
+          undefined,
+          activeSshProfile(profile),
+        );
+      return deleteSessions(profile, ids);
+    },
+  );
 
   // Profiles
   ipcMain.handle("list-profiles", async () => {
@@ -3148,67 +3156,72 @@ export function registerIpcHandlers(context: IpcContext): void {
   // Session cache (fast local cache with generated titles)
   ipcMain.handle(
     "list-cached-sessions",
-    (_event, limit?: number, offset?: number) => {
+    (_event, profile: string, limit?: number, offset?: number) => {
       const conn = getConnectionConfig();
       if (conn.mode === "remote")
-        return remoteListCachedSessions(conn, limit, offset);
+        return remoteListCachedSessions({ ...conn, profile }, limit, offset);
       if (conn.mode === "ssh" && conn.ssh)
         return withSshDashboardSessions(
           conn,
           (config) => remoteListCachedSessions(config, limit, offset),
           () => sshListCachedSessions(conn.ssh, limit, offset),
-          activeSshProfile(),
+          activeSshProfile(profile),
         );
-      return listCachedSessions(limit, offset);
+      return listCachedSessions(profile, limit, offset);
     },
   );
-  ipcMain.handle("sync-session-cache", () => {
+  ipcMain.handle("sync-session-cache", (_event, profile: string) => {
     const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteListCachedSessions(conn, 50);
+    if (conn.mode === "remote")
+      return remoteListCachedSessions({ ...conn, profile }, 50);
     if (conn.mode === "ssh" && conn.ssh)
       return withSshDashboardSessions(
         conn,
         (config) => remoteListCachedSessions(config, 50),
         () => sshListCachedSessions(conn.ssh, 50),
-        activeSshProfile(),
+        activeSshProfile(profile),
       );
     try {
-      return syncSessionCache();
+      return syncSessionCache(profile);
     } catch (error) {
       console.error("sync-session-cache failed; using local cache", error);
-      return listCachedSessions(50);
+      return listCachedSessions(profile, 50);
     }
   });
   ipcMain.handle(
     "update-session-title",
-    (_event, sessionId: string, title: string) => {
+    (_event, profile: string, sessionId: string, title: string) => {
       const conn = getConnectionConfig();
       if (conn.mode === "remote")
-        return remoteUpdateSessionTitle(conn, sessionId, title);
+        return remoteUpdateSessionTitle({ ...conn, profile }, sessionId, title);
       if (conn.mode === "ssh" && conn.ssh)
         return withSshDashboardSessions(
           conn,
           (config) => remoteUpdateSessionTitle(config, sessionId, title),
           undefined,
-          activeSshProfile(),
+          activeSshProfile(profile),
         );
-      return updateSessionTitle(sessionId, title);
+      return updateSessionTitle(profile, sessionId, title);
     },
   );
 
   // Session search
-  ipcMain.handle("search-sessions", (_event, query: string, limit?: number) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteSearchSessions(conn, query, limit);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) => remoteSearchSessions(config, query, limit),
-        () => sshSearchSessions(conn.ssh, query, limit),
-        activeSshProfile(),
-      );
-    return searchSessions(query, limit);
-  });
+  ipcMain.handle(
+    "search-sessions",
+    (_event, profile: string, query: string, limit?: number) => {
+      const conn = getConnectionConfig();
+      if (conn.mode === "remote")
+        return remoteSearchSessions({ ...conn, profile }, query, limit);
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteSearchSessions(config, query, limit),
+          () => sshSearchSessions(conn.ssh, query, limit),
+          activeSshProfile(profile),
+        );
+      return searchSessions(profile, query, limit);
+    },
+  );
 
   // Credential Pool — profile-aware. When `profile` is omitted, the
   // credential pool helpers default to the currently active profile's

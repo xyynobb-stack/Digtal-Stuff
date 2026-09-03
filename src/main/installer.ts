@@ -29,7 +29,10 @@ import { getActiveProfileNameSync, profileHome, stripAnsi } from "./utils";
 import { setupAskpass, AskpassHandle } from "./askpass";
 import { precacheSudoCredentials } from "./sudoCreds";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
-import { installPackagedPresetContent } from "./preset-content";
+import {
+  installManagedUserSkillsFromDirectory,
+  installPackagedPresetContent,
+} from "./preset-content";
 import { mergeBundledEmployeeLookupToken } from "./employee-lookup-token";
 import { mergeBundledAihubKey } from "./managed-aihub-key";
 import {
@@ -857,8 +860,20 @@ export const HERMES_HOME =
 export async function installBundledProfileContent(
   profile?: string,
 ): Promise<void> {
-  if (!BUNDLED_RUNTIME_REPO || !app.isPackaged) return;
   const targetHome = profileHome(profile);
+  if (!app.isPackaged) {
+    try {
+      await installManagedUserSkillsFromDirectory(
+        join(app.getAppPath(), "resources", "starter-skills"),
+        targetHome,
+      );
+    } catch {
+      // Provisioning performs a fail-closed mandatory Skill check and reports
+      // a role-specific error if the development source is unavailable.
+    }
+    return;
+  }
+  if (!BUNDLED_RUNTIME_REPO) return;
   try {
     await installPackagedPresetContent(
       join(BUNDLED_RUNTIME_ROOT, "preset-content"),
@@ -926,12 +941,22 @@ const STOCK_SOUL_IDENTITY_REPLACEMENTS = [
   ],
   ["This offline build of Hermes One", "This offline build of JingYu Agent"],
 ] as const;
+const STALE_OFFLINE_TOOLING_GUIDANCE =
+  "This offline build of JingYu Agent does not come with Git Bash, curl, or wget pre-installed.\n" +
+  "For tasks such as reading web pages, calling HTTP interfaces, and downloading public text content, prioritize using the built-in Python 3 and its standard library urllib.request for implementation. Do not mark a task as unfeasible simply because Git Bash, curl or wget are unavailable.\n" +
+  "Only resort to browser tools or other accessible tools when the target webpage requires JavaScript interaction, user login, or the Python request attempt fails.";
+const CURRENT_OFFLINE_TOOLING_GUIDANCE =
+  "On Windows, this managed offline build includes PortableGit and exposes its Git Bash runtime to agent terminal tools. Optional commands such as curl or wget must still be detected at runtime before use; choose among terminal, Python, and browser tools according to the task.";
 
 /** Replace only exact legacy stock identity text inside a user's SOUL prompt. */
 export function migrateStockSoulIdentity(content: string): string {
-  return STOCK_SOUL_IDENTITY_REPLACEMENTS.reduce(
+  const migrated = STOCK_SOUL_IDENTITY_REPLACEMENTS.reduce(
     (updated, [from, to]) => updated.replaceAll(from, to),
     content,
+  );
+  return migrated.replaceAll(
+    STALE_OFFLINE_TOOLING_GUIDANCE,
+    CURRENT_OFFLINE_TOOLING_GUIDANCE,
   );
 }
 

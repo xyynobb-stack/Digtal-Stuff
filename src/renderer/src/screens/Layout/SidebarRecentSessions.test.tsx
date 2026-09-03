@@ -72,4 +72,103 @@ describe("SidebarRecentSessions live titles", () => {
       screen.queryByText("Active session skills: report"),
     ).not.toBeInTheDocument();
   });
+
+  it("keeps an old profile response from overwriting the newly selected profile", async () => {
+    let resolveAlpha!: (value: Array<{ id: string; title: string }>) => void;
+    const alphaSync = new Promise<Array<{ id: string; title: string }>>(
+      (resolve) => {
+        resolveAlpha = resolve;
+      },
+    );
+    const syncSessionCache = vi.fn((profile: string) =>
+      profile === "alpha"
+        ? alphaSync
+        : Promise.resolve([{ id: "beta-id", title: "Beta session" }]),
+    );
+    Object.defineProperty(window, "hermesAPI", {
+      configurable: true,
+      value: {
+        listCachedSessions: vi.fn(async () => []),
+        syncSessionCache,
+      },
+    });
+
+    const props = {
+      open: true,
+      currentSessionId: null,
+      loadingSessionIds: new Set<string>(),
+      resumingSessionId: null,
+      onSelect: vi.fn(),
+      scrollRootRef: createRef<HTMLDivElement>(),
+    };
+    const view = render(
+      <SidebarRecentSessions {...props} activeProfile="alpha" />,
+    );
+    view.rerender(<SidebarRecentSessions {...props} activeProfile="beta" />);
+
+    expect(await screen.findByText("Beta session")).toBeInTheDocument();
+    await act(async () => {
+      resolveAlpha([{ id: "alpha-id", title: "Alpha session" }]);
+      await alphaSync;
+    });
+
+    expect(screen.getByText("Beta session")).toBeInTheDocument();
+    expect(screen.queryByText("Alpha session")).not.toBeInTheDocument();
+    expect(syncSessionCache).toHaveBeenCalledWith("alpha");
+    expect(syncSessionCache).toHaveBeenCalledWith("beta");
+  });
+
+  it("refreshes the selected profile after a new session is created", async () => {
+    // @lat: [[sidebar-navigation#Infinite sidebar list]]
+    const syncSessionCache = vi.fn(async () => []);
+    Object.defineProperty(window, "hermesAPI", {
+      configurable: true,
+      value: {
+        listCachedSessions: vi.fn(async () => []),
+        syncSessionCache,
+      },
+    });
+
+    const props = {
+      open: true,
+      loadingSessionIds: new Set<string>(),
+      resumingSessionId: null,
+      onSelect: vi.fn(),
+      scrollRootRef: createRef<HTMLDivElement>(),
+    };
+    const view = render(
+      <SidebarRecentSessions
+        {...props}
+        activeProfile="default"
+        currentSessionId={null}
+      />,
+    );
+    view.rerender(
+      <SidebarRecentSessions
+        {...props}
+        activeProfile="employee-profile"
+        currentSessionId={null}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(syncSessionCache).toHaveBeenCalledWith("employee-profile");
+    });
+    syncSessionCache.mockClear();
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 10_000);
+
+    view.rerender(
+      <SidebarRecentSessions
+        {...props}
+        activeProfile="employee-profile"
+        currentSessionId="new-employee-session"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(syncSessionCache).toHaveBeenCalledWith("employee-profile");
+    });
+    expect(syncSessionCache).not.toHaveBeenCalledWith("default");
+  });
 });

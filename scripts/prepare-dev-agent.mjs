@@ -17,6 +17,7 @@ import {
 } from "./apply-offline-runtime-overlays.mjs";
 import { patchDesktopDdgsSource } from "./patch-desktop-ddgs.mjs";
 import { patchCronOutputDirectories } from "./patch-cron-output-directories.mjs";
+import { patchProfileSessionIsolation } from "./patch-profile-session-isolation.mjs";
 import { patchCompanyCodexRetries } from "./patch-company-fallback-safety.mjs";
 import {
   patchDashboardOutputDirectoryComputeHostSource,
@@ -45,6 +46,12 @@ const workflowToolFiles = [
 ];
 const feishuDriveToolFile = "feishu_drive_files_tool.py";
 const visibleLanguageRulesMarker = "<!-- JINGYU_VISIBLE_LANGUAGE_RULES -->";
+const staleOfflineToolingGuidance =
+  "This offline build of JingYu Agent does not come with Git Bash, curl, or wget pre-installed.\n" +
+  "For tasks such as reading web pages, calling HTTP interfaces, and downloading public text content, prioritize using the built-in Python 3 and its standard library urllib.request for implementation. Do not mark a task as unfeasible simply because Git Bash, curl or wget are unavailable.\n" +
+  "Only resort to browser tools or other accessible tools when the target webpage requires JavaScript interaction, user login, or the Python request attempt fails.";
+const currentOfflineToolingGuidance =
+  "On Windows, this managed offline build includes PortableGit and exposes its Git Bash runtime to agent terminal tools. Optional commands such as curl or wget must still be detected at runtime before use; choose among terminal, Python, and browser tools according to the task.";
 
 /** Keep development and packaged model-route RPCs on the same implementation. */
 export function syncDevDesktopModelRouting(agentRoot) {
@@ -265,9 +272,14 @@ export function ensureDevVisibleLanguageRules(
     if (!fs.existsSync(soulPath)) continue;
     found = true;
     const source = fs.readFileSync(soulPath, "utf8");
-    if (source.includes(visibleLanguageRulesMarker)) continue;
-    const next = `${source.trimEnd()}${source.trimEnd() ? "\n\n" : ""}${rules}\n`;
-    fs.writeFileSync(soulPath, next, "utf8");
+    const migrated = source.replaceAll(
+      staleOfflineToolingGuidance,
+      currentOfflineToolingGuidance,
+    );
+    const next = migrated.includes(visibleLanguageRulesMarker)
+      ? migrated
+      : `${migrated.trimEnd()}${migrated.trimEnd() ? "\n\n" : ""}${rules}\n`;
+    if (next !== source) fs.writeFileSync(soulPath, next, "utf8");
   }
   return found;
 }
@@ -323,6 +335,7 @@ export function syncDevMarketReportSkill(
     "finance-analysis-report-rag",
     "skill-creator",
     "project-manager",
+    "research-development",
   ];
   for (const name of names) {
     const source = path.join(starterRoot, name);
@@ -361,6 +374,7 @@ export function syncDevMarketReportSkill(
 
 export function prepareDevAgent() {
   const agentRoot = path.join(hermesHome, "hermes-agent");
+  patchProfileSessionIsolation(agentRoot);
   syncDevDesktopModelRouting(agentRoot);
   patchCronOutputDirectories(agentRoot);
   ensureDevAgentSkillToolset(agentRoot);

@@ -4,6 +4,7 @@ import { useI18n } from "../../components/useI18n";
 import type { SessionOutputDestination } from "../../../../shared/session-output";
 
 interface ContextFolderChipProps {
+  profile: string;
   /** Working folder bound to this conversation (issue #27), or null. */
   contextFolder: string | null;
   outputDestination: SessionOutputDestination;
@@ -30,6 +31,7 @@ function folderName(p: string): string {
  * dropdown popup showing recent project folders and an "Open folder..." option.
  */
 export const ContextFolderChip = memo(function ContextFolderChip({
+  profile,
   contextFolder,
   outputDestination,
   showOutputLocation,
@@ -50,7 +52,7 @@ export const ContextFolderChip = memo(function ContextFolderChip({
     if (!isOpen) return;
     let cancelled = false;
     void window.hermesAPI
-      .listRecentSessionContextFolders(20)
+      .listRecentSessionContextFolders(profile, 20)
       .then((list) => {
         if (!cancelled && Array.isArray(list)) setRecentFolders(list);
       })
@@ -60,7 +62,7 @@ export const ContextFolderChip = memo(function ContextFolderChip({
     return () => {
       cancelled = true;
     };
-  }, [isOpen]);
+  }, [isOpen, profile]);
 
   useEffect(() => {
     if (!isOpen) return;

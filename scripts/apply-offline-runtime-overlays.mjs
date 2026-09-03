@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type -- Node ESM helper has runtime-validated return values. */
 import fs from "node:fs";
 import path from "node:path";
+import { patchProfileSessionIsolation } from "./patch-profile-session-isolation.mjs";
 import { fileURLToPath } from "node:url";
 import {
   patchCompanyFallbackSafety,
@@ -600,10 +601,7 @@ ${toolLines}        ],
     patched = `${patched.slice(0, index)}${userDriveToolset}${patched.slice(index)}`;
   }
 
-  for (const toolsetName of [
-    "hermes-acp",
-    "hermes-api-server",
-  ]) {
+  for (const toolsetName of ["hermes-acp", "hermes-api-server"]) {
     patched = addToNamedToolset(patched, toolsetName);
   }
   return patched;
@@ -895,6 +893,7 @@ export function applyOfflineRuntimeOverlays({
   }
 
   fs.cpSync(overlayRoot, agentRoot, { recursive: true, force: true });
+  patchProfileSessionIsolation(agentRoot);
   fs.writeFileSync(
     toolsetsPath,
     patchFeishuDriveToolsetSource(fs.readFileSync(toolsetsPath, "utf8")),

@@ -347,6 +347,31 @@ CLOSE = "the Hermes desktop GUI (the tabs mirroring terminal(background=true) ru
       readFileSync(profileSoul, "utf8").match(/JINGYU_VISIBLE_LANGUAGE_RULES/g),
     ).toHaveLength(1);
   });
+
+  it("refreshes obsolete development SOUL tooling guidance", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-soul-tooling-"));
+    tempRoots.push(root);
+    const profileSoul = join(root, "SOUL.md");
+    const rulesPath = join(root, "employee-default-soul.md");
+    writeFileSync(
+      profileSoul,
+      "This offline build of JingYu Agent does not come with Git Bash, curl, or wget pre-installed.\n" +
+        "For tasks such as reading web pages, calling HTTP interfaces, and downloading public text content, prioritize using the built-in Python 3 and its standard library urllib.request for implementation. Do not mark a task as unfeasible simply because Git Bash, curl or wget are unavailable.\n" +
+        "Only resort to browser tools or other accessible tools when the target webpage requires JavaScript interaction, user login, or the Python request attempt fails.\n\n" +
+        "<!-- JINGYU_VISIBLE_LANGUAGE_RULES -->\n",
+      "utf8",
+    );
+    writeFileSync(
+      rulesPath,
+      "<!-- JINGYU_VISIBLE_LANGUAGE_RULES -->\n\n中文用户可见内容使用简体中文。\n",
+      "utf8",
+    );
+
+    expect(ensureDevVisibleLanguageRules(profileSoul, rulesPath)).toBe(true);
+    const migrated = readFileSync(profileSoul, "utf8");
+    expect(migrated).toContain("includes PortableGit");
+    expect(migrated).not.toContain("does not come with Git Bash");
+  });
 });
 
 describe("company Responses request identity overlay", () => {
@@ -727,6 +752,7 @@ describe("market report workflow development overlay", () => {
       "finance-analysis-report-rag",
       "skill-creator",
       "project-manager",
+      "research-development",
     ]) {
       const sourceSkill = join(starters, name);
       mkdirSync(sourceSkill, { recursive: true });
@@ -746,6 +772,7 @@ describe("market report workflow development overlay", () => {
       "finance-analysis-report-rag",
       "skill-creator",
       "project-manager",
+      "research-development",
     ]) {
       expect(
         readFileSync(join(profileSkills, "custom", name, "SKILL.md"), "utf8"),

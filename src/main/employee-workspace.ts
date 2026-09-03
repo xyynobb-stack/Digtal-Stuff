@@ -24,7 +24,7 @@ const PENDING_BINDING_FILE = "employee-binding.pending.json";
 const FAILED_BINDING_FILE = "employee-binding.failed.json";
 const LEGACY_MIGRATION_FILE = "employee-default-migration.json";
 const SOUL_TEMPLATE_VERSION = 1;
-const ROLE_CATALOG_VERSION = 1;
+const ROLE_CATALOG_VERSION = 2;
 const MANAGED_SOUL_START = "<!-- JINGYU_EMPLOYEE_IDENTITY_START -->";
 const MANAGED_SOUL_END = "<!-- JINGYU_EMPLOYEE_IDENTITY_END -->";
 
@@ -65,6 +65,12 @@ interface RoleDefinition {
 }
 
 const ROLE_CATALOG: RoleDefinition[] = [
+  {
+    id: "research-development",
+    name: "研发",
+    aliases: ["研发", "研发工程师", "软件研发", "软件工程师", "开发工程师"],
+    mandatorySkills: ["research-development"],
+  },
   {
     id: "project-manager",
     name: "项目经理",
@@ -109,9 +115,8 @@ export function parseEmployeeIdentity(
 }
 
 /**
- * Compatibility seam for the future personnel response. Current responses do
- * not contain a position; accepting common field names here keeps the rest of
- * profile provisioning unchanged when the API is extended.
+ * Resolve role behavior from the personnel position. Department is retained
+ * as identity metadata only and must never select a role by itself.
  */
 export function resolveEmployeeRole(
   payload: EmployeeLookupPayload,

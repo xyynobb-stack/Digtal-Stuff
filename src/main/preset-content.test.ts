@@ -10,6 +10,7 @@ import { dirname, join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   installManagedUserSkills,
+  installManagedUserSkillsFromDirectory,
   installPackagedPresetContent,
   quarantineLegacyMarketReportSkill,
 } from "./preset-content";
@@ -168,6 +169,7 @@ describe("packaged preset user content", () => {
       "finance-analysis-report-rag",
       "skill-creator",
       "project-manager",
+      "research-development",
     ];
     for (const name of managedNames) {
       writeFixture(
@@ -182,7 +184,7 @@ describe("packaged preset user content", () => {
 
     await expect(
       installManagedUserSkills(presetRoot, hermesHome),
-    ).resolves.toBe(5);
+    ).resolves.toBe(6);
 
     for (const name of managedNames) {
       expect(
@@ -203,5 +205,34 @@ describe("packaged preset user content", () => {
       installManagedUserSkills(presetRoot, hermesHome),
     ).resolves.toBe(0);
     expect(readdirSync(join(hermesHome, "skill-backups"))).toEqual(backups);
+  });
+
+  it("repairs a pre-existing employee Profile from the development Skill source", async () => {
+    // @lat: [[provider-setup#Provider setup#Employee phone provisioning#Employee workspace initialization tests#Existing Profile Skill repair]]
+    const sourceRoot = join(testRoot, "starter-skills");
+    writeFixture(
+      join(sourceRoot, "research-development", "SKILL.md"),
+      "---\nname: research-development\ndescription: R&D role\n---\n",
+    );
+    writeFixture(join(hermesHome, "SOUL.md"), "existing employee Profile");
+
+    await expect(
+      installManagedUserSkillsFromDirectory(sourceRoot, hermesHome),
+    ).resolves.toBe(1);
+    expect(
+      readFileSync(
+        join(
+          hermesHome,
+          "skills",
+          "custom",
+          "research-development",
+          "SKILL.md",
+        ),
+        "utf8",
+      ),
+    ).toContain("name: research-development");
+    expect(readFileSync(join(hermesHome, "SOUL.md"), "utf8")).toBe(
+      "existing employee Profile",
+    );
   });
 });

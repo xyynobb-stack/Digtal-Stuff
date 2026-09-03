@@ -33,7 +33,7 @@ describe("employee workspace", () => {
   beforeEach(() => rmSync(testRoot, { recursive: true, force: true }));
   afterEach(() => rmSync(testRoot, { recursive: true, force: true }));
 
-  it("accepts the current lookup response without inventing a position", () => {
+  it("accepts a lookup response without inventing a missing position", () => {
     // @lat: [[provider-setup#Provider setup#Employee phone provisioning#Employee workspace initialization tests#Positionless current response]]
     const payload = {
       user_id: "11111111-2222-4333-8444-555555555555",
@@ -53,6 +53,47 @@ describe("employee workspace", () => {
     expect(resolveEmployeeRole(payload)).toEqual({
       status: "awaiting_position",
       department: "",
+      position: "",
+      roleId: null,
+      roleName: null,
+      mandatorySkills: [],
+    });
+  });
+
+  it("maps the current position field to the research and development Profile", () => {
+    // @lat: [[provider-setup#Provider setup#Employee phone provisioning#Employee workspace initialization tests#Current R&D mapping]]
+    const payload = {
+      user_id: "952776f5-d469-4cf5-8c21-4a8f4368000c",
+      username: "employee-rd",
+      real_name: "研发测试员工",
+      phone: "13900000000",
+      email: "rd@example.com",
+      department: "研发部",
+      position: "研发",
+    };
+
+    const identity = parseEmployeeIdentity(payload, "13900000000");
+    const role = resolveEmployeeRole(payload);
+    const binding = createEmployeeProfileBinding(identity, role);
+    const soul = mergeEmployeeSoul("保留的全局规则。\n", binding);
+
+    expect(role).toEqual({
+      status: "configured",
+      department: "研发部",
+      position: "研发",
+      roleId: "research-development",
+      roleName: "研发",
+      mandatorySkills: ["research-development"],
+    });
+    expect(binding.roleCatalogVersion).toBe(2);
+    expect(soul).toContain("当前岗位为“研发”（接口原值：研发）");
+    expect(soul).toContain("research-development");
+  });
+
+  it("does not infer a role from department when position is missing", () => {
+    expect(resolveEmployeeRole({ department: "研发部" })).toEqual({
+      status: "awaiting_position",
+      department: "研发部",
       position: "",
       roleId: null,
       roleName: null,

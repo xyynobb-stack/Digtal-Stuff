@@ -18,7 +18,11 @@ Employee identity is committed locally while job behavior remains data-driven an
 
 [[src/main/employee-workspace.ts#mergeEmployeeSoul]] owns one marked block inside the Profile's `SOUL.md`, preserving global rules and manual content outside that block. The block identifies the employee workspace, forbids impersonation and unsupported real-world authority, and explicitly forbids guessing a missing job from name, department, history, or task content.
 
-[[src/main/employee-workspace.ts#resolveEmployeeRole]] is the compatibility seam for future `position`, `job_title`, `jobTitle`, `role`, `department`, or `department_name` fields. A missing position yields `awaiting_position`; an unknown value yields `unmapped`; only a catalog match yields `configured` and mandatory Skills. `project-manager` is the first product-maintained role Skill. [[src/renderer/src/screens/Chat/Chat.tsx#Chat]] loads mandatory Skills before enabling Send, merges them with optional session Skills, and prevents the picker from removing them.
+[[src/main/employee-workspace.ts#resolveEmployeeRole]] resolves behavior from `position`, with `job_title`, `jobTitle`, and `role` retained only as compatibility aliases. `department` and `department_name` are display metadata and never select a role. A missing position yields `awaiting_position`; an unknown value yields `unmapped`; only a catalog match yields `configured` and mandatory Skills. The catalog maps `研发` to `research-development` and retains `项目经理` to `project-manager`. [[src/renderer/src/screens/Chat/Chat.tsx#Chat]] loads mandatory Skills before enabling Send, merges them with optional session Skills, and prevents the picker from removing them.
+
+The maintained `project-manager` role Skill distills field practice into a reusable operating profile: daily prioritization, project intake and delegation, milestone and quality checks, early risk signals, written change control, cross-team ownership, upward reporting, customer communication, incident recovery, and retrospective closure. Personal biographical details are not promoted into role behavior.
+
+[[src/main/installer.ts#installBundledProfileContent]] refreshes maintained Skills inside the target Profile before role validation. Packaged builds use the offline preset, while development builds use `resources/starter-skills`; this also repairs Profiles left behind by an earlier failed configuration.
 
 ### Transaction and race boundary
 
@@ -42,11 +46,19 @@ The legacy default workspace can be claimed by one stable employee `user_id`; re
 
 ### Employee workspace initialization tests
 
-Offline tests cover the current position-less response, future project-manager mapping, phone mismatch rejection, stable Profile ids, managed-SOUL preservation, and pending-versus-ready binding visibility.
+Offline tests cover position mapping, department-only non-inference, missing-position fallback, identity validation, stable Profile ids, managed-SOUL preservation, and binding publication.
 
 #### Positionless current response
 
-The current API payload creates a stable employee identity while leaving role state at `awaiting_position`, without inferring a job.
+A payload without `position` creates a stable employee identity while leaving role state at `awaiting_position`, without inferring a job from `department`.
+
+#### Current R&D mapping
+
+The current API shape with `department: 研发部` and `position: 研发` configures the R&D role, writes that position into the managed employee SOUL, and binds the `research-development` Skill.
+
+#### Existing Profile Skill repair
+
+Repeating phone configuration refreshes maintained role Skills in an existing employee Profile before validation, while preserving unrelated Profile content.
 
 #### Future project-manager mapping
 

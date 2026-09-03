@@ -219,6 +219,8 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   const sessionsRef = useRef<RecentSession[]>([]);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
+  const activeProfileRef = useRef(activeProfile);
+  activeProfileRef.current = activeProfile;
   // A cache read can start before a live title event and finish after it. Track
   // a monotonic renderer-local revision so only that stale response preserves
   // the newer title; later refreshes are free to accept the DB again.
@@ -344,13 +346,14 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       lastRefreshRef.current = now;
       const requestTitleRevision = titleRevisionRef.current;
       try {
-        const synced = await window.hermesAPI.syncSessionCache();
+        const synced = await window.hermesAPI.syncSessionCache(activeProfile);
+        if (activeProfileRef.current !== activeProfile) return;
         applyLoadedWindow(synced, requestTitleRevision);
       } catch {
         // keep whatever we had — the list is best-effort UI sugar
       }
     },
-    [applyLoadedWindow],
+    [activeProfile, applyLoadedWindow],
   );
 
   const loadNextPage = useCallback(async (): Promise<void> => {
@@ -360,9 +363,11 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
     const requestTitleRevision = titleRevisionRef.current;
     try {
       const nextPage = await window.hermesAPI.listCachedSessions(
+        activeProfile,
         RECENT_SESSIONS_PAGE_SIZE + 1,
         sessionsRef.current.length,
       );
+      if (activeProfileRef.current !== activeProfile) return;
       appendPage(nextPage, requestTitleRevision);
     } catch {
       // keep the current list; scrolling can retry on the next event
@@ -370,7 +375,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [appendPage, open]);
+  }, [activeProfile, appendPage, open]);
 
   const maybeLoadNextPage = useCallback((): void => {
     const root = scrollRootRef.current;
@@ -391,19 +396,24 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       const cachedTitleRevision = titleRevisionRef.current;
       try {
         const cached = await window.hermesAPI.listCachedSessions(
+          activeProfile,
           // One over the page size so the cache read alone can decide whether
           // another page exists without a separate count query.
           RECENT_SESSIONS_PAGE_SIZE + 1,
         );
-        if (!cancelled) applyFirstPage(cached, cachedTitleRevision);
+        if (!cancelled && activeProfileRef.current === activeProfile) {
+          applyFirstPage(cached, cachedTitleRevision);
+        }
       } catch {
         /* ignore cache read errors */
       }
       lastRefreshRef.current = Date.now();
       const syncedTitleRevision = titleRevisionRef.current;
       try {
-        const synced = await window.hermesAPI.syncSessionCache();
-        if (!cancelled) applyFirstPage(synced, syncedTitleRevision);
+        const synced = await window.hermesAPI.syncSessionCache(activeProfile);
+        if (!cancelled && activeProfileRef.current === activeProfile) {
+          applyFirstPage(synced, syncedTitleRevision);
+        }
       } catch {
         // cache read above already painted something
       }
@@ -591,7 +601,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       );
       if (editingIdRef.current === id) cancelRename();
       try {
-        await window.hermesAPI.updateSessionTitle(id, trimmed);
+        await window.hermesAPI.updateSessionTitle(activeProfile, id, trimmed);
       } catch (err) {
         console.error("Failed to rename session", id, err);
         const rollbackRevision = titleRevisionRef.current + 1;
@@ -605,7 +615,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         );
       }
     },
-    [cancelRename],
+    [activeProfile, cancelRename],
   );
 
   const handleMoveToProject = useCallback(
@@ -661,7 +671,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         return next;
       });
       try {
-        await window.hermesAPI.deleteSession(id);
+        await window.hermesAPI.deleteSession(activeProfile, id);
         onSessionDeleted?.(id);
       } catch (err) {
         console.error("Failed to delete session", id, err);
@@ -671,7 +681,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         void refresh(true);
       }
     },
-    [onSessionDeleted, refresh],
+    [activeProfile, onSessionDeleted, refresh],
   );
 
   const openMenuForSession = useCallback(

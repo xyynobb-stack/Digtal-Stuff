@@ -24,6 +24,7 @@ const MANAGED_USER_SKILLS = [
   "finance-analysis-report-rag",
   "skill-creator",
   "project-manager",
+  "research-development",
 ] as const;
 // Keep the existing marker filename so report Skills installed by earlier
 // releases retain their revision history when Skill Creator joins this set.
@@ -167,7 +168,17 @@ export async function installManagedUserSkills(
   presetRoot: string,
   hermesHome: string,
 ): Promise<number> {
-  const sourceRoot = join(presetRoot, "skills", "custom");
+  return installManagedUserSkillsFromDirectory(
+    join(presetRoot, "skills", "custom"),
+    hermesHome,
+  );
+}
+
+/** Install maintained Skills from a directory that directly contains them. */
+export async function installManagedUserSkillsFromDirectory(
+  sourceRoot: string,
+  hermesHome: string,
+): Promise<number> {
   const targetRoot = join(hermesHome, "skills", "custom");
   const backupRoot = join(hermesHome, "skill-backups");
   let installed = 0;

@@ -257,6 +257,22 @@ describe("stock SOUL identity migration", () => {
     expect(migrateStockSoulIdentity(migrated)).toBe(migrated);
   });
 
+  it("replaces obsolete Git Bash guidance while preserving custom SOUL text", async () => {
+    const { migrateStockSoulIdentity } = await import("../src/main/installer");
+    const legacy =
+      "This offline build of JingYu Agent does not come with Git Bash, curl, or wget pre-installed.\n" +
+      "For tasks such as reading web pages, calling HTTP interfaces, and downloading public text content, prioritize using the built-in Python 3 and its standard library urllib.request for implementation. Do not mark a task as unfeasible simply because Git Bash, curl or wget are unavailable.\n" +
+      "Only resort to browser tools or other accessible tools when the target webpage requires JavaScript interaction, user login, or the Python request attempt fails.\n\n" +
+      "Keep this custom instruction.";
+
+    const migrated = migrateStockSoulIdentity(legacy);
+    expect(migrated).toContain("includes PortableGit");
+    expect(migrated).toContain("Git Bash runtime");
+    expect(migrated).not.toContain("does not come with Git Bash");
+    expect(migrated).toContain("Keep this custom instruction.");
+    expect(migrateStockSoulIdentity(migrated)).toBe(migrated);
+  });
+
   it("adds visible-language guidance once without replacing custom SOUL text", async () => {
     const { mergeBundledSoulRules } = await import("../src/main/installer");
     const custom = "Keep my custom personality and tone exactly as written.";

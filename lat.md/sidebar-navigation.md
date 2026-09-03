@@ -32,6 +32,8 @@ The inline list lazily loads cached sessions in pages as the user scrolls, so th
 
 [[src/renderer/src/screens/Layout/SidebarRecentSessions.tsx]] fetches `RECENT_SESSIONS_PAGE_SIZE + 1` rows from the `sessions.json` cache to detect whether another page exists. [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] passes the chat scroll container ref down, and the sidebar loads the next page when that container nears the bottom. The initial sync still refreshes `state.db`, then paints the first page.
 
+Every cache refresh captures the currently selected Profile, including focus, timer, session-created, and context-folder events. Switching from `default` to an employee Profile therefore cannot leave an old callback refreshing the default cache while the visible employee list remains empty; late responses for the previous Profile are still discarded.
+
 Session titles in the inline list are constrained to the sidebar width and truncate with ellipses, while the chat section only scrolls vertically. This keeps long generated titles from creating a horizontal scrollbar.
 
 The native sidebar scrollbar is hidden to avoid layout shifts. [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] measures the chat scroll container and renders an absolutely positioned overlay thumb only while the user is scrolling, so showing or hiding the scrollbar never changes row width.

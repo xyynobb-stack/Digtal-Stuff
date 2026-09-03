@@ -31,7 +31,13 @@ vi.mock("../src/main/utils", () => ({
     const path = require("path");
     return path.join(TEST_HOME, "state.db");
   },
-  profileHome: () => TEST_HOME,
+  profileHome: (profile?: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require("path");
+    return !profile || profile === "default"
+      ? TEST_HOME
+      : path.join(TEST_HOME, "profiles", profile);
+  },
   getActiveProfileNameSync: () => "default",
   safeWriteFile: (path: string, data: string) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -252,8 +258,9 @@ function seedDb(
     title?: string | null;
     firstUserMessage?: string;
   }>,
+  dbPath = DB_PATH,
 ): void {
-  const db = new Database(DB_PATH);
+  const db = new Database(dbPath);
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -307,8 +314,20 @@ afterEach(() => {
 });
 
 describe("syncSessionCache", () => {
+  it("keeps simultaneous profile caches and databases isolated", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const alphaDb = join(TEST_HOME, "profiles", "alpha", "state.db");
+    const betaDb = join(TEST_HOME, "profiles", "beta", "state.db");
+    seedDb([{ id: "same-id", started_at: now, title: "Alpha title" }], alphaDb);
+    seedDb([{ id: "same-id", started_at: now, title: "Beta title" }], betaDb);
+
+    expect(syncSessionCache("alpha")[0]?.title).toBe("Alpha title");
+    expect(syncSessionCache("beta")[0]?.title).toBe("Beta title");
+    expect(syncSessionCache("alpha")[0]?.title).toBe("Alpha title");
+  });
+
   it("returns an empty list when no DB exists yet", () => {
-    expect(syncSessionCache()).toEqual([]);
+    expect(syncSessionCache("default")).toEqual([]);
   });
 
   it("on first sync, ingests all sessions and generates titles", () => {
@@ -328,7 +347,7 @@ describe("syncSessionCache", () => {
       },
     ]);
 
-    const result = syncSessionCache();
+    const result = syncSessionCache("default");
     expect(result).toHaveLength(2);
     // Sorted by startedAt DESC
     expect(result[0].id).toBe("s2");
@@ -359,7 +378,7 @@ describe("syncSessionCache", () => {
       "utf-8",
     );
 
-    const result = syncSessionCache();
+    const result = syncSessionCache("default");
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
@@ -381,7 +400,7 @@ describe("syncSessionCache", () => {
         firstUserMessage: "hi",
       },
     ]);
-    syncSessionCache();
+    syncSessionCache("default");
 
     // Bump message_count on the same session.
     seedDb([
@@ -392,7 +411,7 @@ describe("syncSessionCache", () => {
         firstUserMessage: "hi",
       },
     ]);
-    const result = syncSessionCache();
+    const result = syncSessionCache("default");
 
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("s1");
@@ -409,7 +428,7 @@ describe("syncSessionCache", () => {
         firstUserMessage: "a",
       },
     ]);
-    syncSessionCache();
+    syncSessionCache("default");
 
     seedDb([
       {
@@ -425,7 +444,7 @@ describe("syncSessionCache", () => {
         firstUserMessage: "b",
       },
     ]);
-    const result = syncSessionCache();
+    const result = syncSessionCache("default");
 
     expect(result.map((r) => r.id)).toEqual(["s2", "s1"]);
   });
@@ -446,7 +465,7 @@ describe("syncSessionCache", () => {
       },
     ]);
     // First sync acquires the session at messageCount: 1.
-    const first = syncSessionCache();
+    const first = syncSessionCache("default");
     expect(first).toHaveLength(1);
     expect(first[0].messageCount).toBe(1);
 
@@ -461,7 +480,7 @@ describe("syncSessionCache", () => {
         firstUserMessage: "first",
       },
     ]);
-    const second = syncSessionCache();
+    const second = syncSessionCache("default");
 
     expect(second).toHaveLength(1);
     expect(second[0].id).toBe("old-session");
@@ -481,7 +500,7 @@ describe("syncSessionCache", () => {
           "[Active session skills: report]\n\n[User message]\n生成市场报告",
       },
     ]);
-    const first = syncSessionCache();
+    const first = syncSessionCache("default");
     expect(first[0].title).toContain("Active session skills");
 
     seedDb([
@@ -494,7 +513,7 @@ describe("syncSessionCache", () => {
           "[Active session skills: report]\n\n[User message]\n生成市场报告",
       },
     ]);
-    const second = syncSessionCache();
+    const second = syncSessionCache("default");
 
     expect(second[0]).toMatchObject({
       id: "long-report",
@@ -541,7 +560,7 @@ describe("syncSessionCache", () => {
       "utf-8",
     );
 
-    const result = syncSessionCache();
+    const result = syncSessionCache("default");
 
     expect(result.map((s) => s.id)).toEqual(["still-present"]);
     expect(result[0].messageCount).toBe(3);
@@ -576,7 +595,7 @@ describe("syncSessionCache", () => {
         firstUserMessage: "c",
       },
     ]);
-    syncSessionCache();
+    syncSessionCache("default");
 
     seedDb([
       {
@@ -598,7 +617,7 @@ describe("syncSessionCache", () => {
         firstUserMessage: "c",
       },
     ]);
-    const result = syncSessionCache();
+    const result = syncSessionCache("default");
 
     const byId = new Map(result.map((r) => [r.id, r] as const));
     expect(byId.get("old-a")?.messageCount).toBe(50);
@@ -618,7 +637,7 @@ describe("syncSessionCache", () => {
         firstUserMessage: "hi",
       },
     ]);
-    const first = syncSessionCache();
+    const first = syncSessionCache("default");
     expect(first[0].title).toBe("Old title");
     expect(first[0].model).toBe("gpt-4o");
 
@@ -632,7 +651,7 @@ describe("syncSessionCache", () => {
         firstUserMessage: "hi",
       },
     ]);
-    const second = syncSessionCache();
+    const second = syncSessionCache("default");
 
     expect(second).toHaveLength(1);
     expect(second[0].title).toBe("Updated title");
@@ -654,12 +673,12 @@ describe("syncSessionCache", () => {
       firstUserMessage: `message ${i}`,
     }));
     seedDb(sessions);
-    syncSessionCache(); // first sync — populates cache
+    syncSessionCache("default"); // first sync — populates cache
 
     // Bump every message_count and re-sync.
     seedDb(sessions.map((s) => ({ ...s, message_count: s.message_count + 1 })));
     const start = Date.now();
-    const result = syncSessionCache();
+    const result = syncSessionCache("default");
     const elapsed = Date.now() - start;
 
     expect(result).toHaveLength(N);

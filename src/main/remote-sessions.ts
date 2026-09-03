@@ -285,9 +285,10 @@ async function remoteSessionListPage(
   limit: number,
   offset: number,
 ): Promise<unknown> {
+  const requestedProfile = config.profile?.trim() || "all";
   const profileEndpoint =
     `/api/profiles/sessions?limit=${limit}&offset=${offset}` +
-    "&min_messages=0&archived=exclude&order=recent&profile=all";
+    `&min_messages=0&archived=exclude&order=recent&profile=${encodeURIComponent(requestedProfile)}`;
 
   try {
     return await remoteRequestJson(config, profileEndpoint);
@@ -576,7 +577,10 @@ export async function remoteUpdateSessionTitle(
     `/api/sessions/${encodeURIComponent(sessionId)}`,
     {
       method: "PATCH",
-      body: { title },
+      body: {
+        title,
+        ...(config.profile?.trim() ? { profile: config.profile.trim() } : {}),
+      },
     },
   );
 }

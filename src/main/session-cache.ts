@@ -1,15 +1,9 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import {
-  activeStateDbPath,
-  profileHome,
-  getActiveProfileNameSync,
-  safeWriteFile,
-} from "./utils";
-import Database from "better-sqlite3";
+import { profileHome, safeWriteFile } from "./utils";
 import { t } from "../shared/i18n";
 import { getAppLocale } from "./locale";
-import { getDbConnection } from "./db";
+import { getProfileDbConnection } from "./db";
 import { getSessionContextFolders } from "./session-context-folder-store";
 
 /**
@@ -18,12 +12,8 @@ import { getSessionContextFolders } from "./session-context-folder-store";
  * ~/.hermes/desktop/sessions.json; named profiles use
  * ~/.hermes/profiles/<name>/desktop/sessions.json (issue #311).
  */
-function cacheFilePath(): string {
-  return join(
-    profileHome(getActiveProfileNameSync()),
-    "desktop",
-    "sessions.json",
-  );
+function cacheFilePath(profile: string): string {
+  return join(profileHome(profile), "desktop", "sessions.json");
 }
 
 export interface CachedSession {
@@ -72,8 +62,8 @@ function generateTitle(message: string): string {
   return title || text.slice(0, 45) + "...";
 }
 
-function readCache(): CacheData {
-  const file = cacheFilePath();
+function readCache(profile: string): CacheData {
+  const file = cacheFilePath(profile);
   try {
     if (!existsSync(file)) return { sessions: [], lastSync: 0 };
     const parsed = JSON.parse(readFileSync(file, "utf-8")) as CacheData;
@@ -92,24 +82,30 @@ function readCache(): CacheData {
   }
 }
 
-function writeCache(data: CacheData): void {
+function writeCache(profile: string, data: CacheData): void {
   try {
-    safeWriteFile(cacheFilePath(), JSON.stringify(data));
+    safeWriteFile(cacheFilePath(profile), JSON.stringify(data));
   } catch {
     // non-fatal
   }
 }
 
-function getDb(): Database.Database | null {
-  return getDbConnection(true);
+function getDb(profile: string): ReturnType<typeof getProfileDbConnection> {
+  return getProfileDbConnection(profile, true);
 }
 
 // Attach each session's linked folder in a single batched store read, so a
 // full sync stays a couple of queries rather than two per row. The result is
 // written into the JSON cache by `syncSessionCache`, which lets the renderer's
 // fast read path (`listCachedSessions`) stay DB-free.
-function attachContextFolders(sessions: CachedSession[]): CachedSession[] {
-  const folders = getSessionContextFolders(sessions.map((s) => s.id));
+function attachContextFolders(
+  profile: string,
+  sessions: CachedSession[],
+): CachedSession[] {
+  const folders = getSessionContextFolders(
+    sessions.map((s) => s.id),
+    profile,
+  );
   return sessions.map((session) => ({
     ...session,
     contextFolder: folders.get(session.id) ?? null,
@@ -117,9 +113,9 @@ function attachContextFolders(sessions: CachedSession[]): CachedSession[] {
 }
 
 // Sync from hermes DB to local cache — only fetches new/updated sessions
-export function syncSessionCache(): CachedSession[] {
-  const cache = readCache();
-  const db = getDb();
+export function syncSessionCache(profile: string): CachedSession[] {
+  const cache = readCache(profile);
+  const db = getDb(profile);
   if (!db) return cache.sessions;
 
   try {
@@ -249,14 +245,17 @@ export function syncSessionCache(): CachedSession[] {
     const merged = new Map<string, CachedSession>();
     for (const s of cache.sessions) merged.set(s.id, s);
     for (const s of newSessions) merged.set(s.id, s);
-    const allSessions = attachContextFolders(Array.from(merged.values()));
+    const allSessions = attachContextFolders(
+      profile,
+      Array.from(merged.values()),
+    );
     allSessions.sort((a, b) => b.startedAt - a.startedAt);
 
     const updated: CacheData = {
       sessions: allSessions,
       lastSync: Math.floor(Date.now() / 1000),
     };
-    writeCache(updated);
+    writeCache(profile, updated);
     return updated.sessions;
   } catch {
     return cache.sessions;
@@ -267,32 +266,35 @@ export function syncSessionCache(): CachedSession[] {
 // the cache by `syncSessionCache`, and folder changes trigger a re-sync (the
 // renderer fires `hermes-session-context-folder-changed`), so the cached value
 // stays current without this path touching the DB.
-export function listCachedSessions(limit = 50, offset = 0): CachedSession[] {
-  const cache = readCache();
+export function listCachedSessions(
+  profile: string,
+  limit = 50,
+  offset = 0,
+): CachedSession[] {
+  const cache = readCache(profile);
   return cache.sessions.slice(offset, offset + limit);
 }
 
 // Update title for a specific session
-export function updateSessionTitle(sessionId: string, title: string): void {
-  const cache = readCache();
+export function updateSessionTitle(
+  profile: string,
+  sessionId: string,
+  title: string,
+): void {
+  const cache = readCache(profile);
   const idx = cache.sessions.findIndex((s) => s.id === sessionId);
   if (idx >= 0) {
     cache.sessions[idx].title = title;
-    writeCache(cache);
+    writeCache(profile, cache);
   }
   // Also persist in state.db so the rename survives cache rebuilds
   try {
-    const dbPath = activeStateDbPath();
-    if (existsSync(dbPath)) {
-      const db = new Database(dbPath);
-      try {
-        db.prepare("UPDATE sessions SET title = ? WHERE id = ?").run(
-          title,
-          sessionId,
-        );
-      } finally {
-        db.close();
-      }
+    const db = getProfileDbConnection(profile, false);
+    if (db) {
+      db.prepare("UPDATE sessions SET title = ? WHERE id = ?").run(
+        title,
+        sessionId,
+      );
     }
   } catch {
     // ignore DB errors — cache update above is the fast path
@@ -302,11 +304,14 @@ export function updateSessionTitle(sessionId: string, title: string): void {
 // Remove a session entry from the local cache. Called after the underlying
 // row in state.db is deleted so the renderer's fast-path cache doesn't keep
 // surfacing a session that no longer exists.
-export function removeSessionFromCache(sessionId: string): void {
-  const cache = readCache();
+export function removeSessionFromCache(
+  profile: string,
+  sessionId: string,
+): void {
+  const cache = readCache(profile);
   const next = cache.sessions.filter((s) => s.id !== sessionId);
   if (next.length !== cache.sessions.length) {
     cache.sessions = next;
-    writeCache(cache);
+    writeCache(profile, cache);
   }
 }

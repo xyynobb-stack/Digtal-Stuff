@@ -777,7 +777,7 @@ function Chat({
     }
     const idToDelete = hermesSessionId;
     if (idToDelete) {
-      void window.hermesAPI.deleteSession(idToDelete);
+      void window.hermesAPI.deleteSession(profile || "default", idToDelete);
       void window.hermesAPI.clearStagedAttachments(idToDelete);
     }
     setMessages([]);
@@ -1445,7 +1445,7 @@ function Chat({
                 onChange={setReasoningEffort}
               />
               <SessionSkillPicker
-                profile={profile}
+                profile={profile || "default"}
                 activeSkills={effectiveActiveSkills}
                 lockedSkills={mandatorySkills}
                 onChange={(skills) =>
@@ -1456,6 +1456,7 @@ function Chat({
               />
 
               <ContextFolderChip
+                profile={profile || "default"}
                 contextFolder={contextFolder}
                 outputDestination={outputDestination}
                 showOutputLocation={connectionMode === "local"}

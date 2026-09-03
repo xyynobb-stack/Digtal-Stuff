@@ -3,7 +3,7 @@ import type { Attachment } from "../shared/attachments";
 import { isImageMime } from "../shared/attachments";
 import { clearStagedAttachments } from "./attachment-staging";
 import { removeSessionFromCache } from "./session-cache";
-import { getDbConnection } from "./db";
+import { getDbConnection, getProfileDbConnection } from "./db";
 import {
   attachmentFromLocalVisionImagePath,
   deletePromptImageAttachmentsForSession,
@@ -261,6 +261,13 @@ function getDb(readonly = true): Database.Database | null {
   return getDbConnection(readonly);
 }
 
+function getProfileDb(
+  profile: string,
+  readonly = true,
+): Database.Database | null {
+  return getProfileDbConnection(profile, readonly);
+}
+
 export function listSessions(limit = 30, offset = 0): SessionSummary[] {
   const db = getDb();
   if (!db) return [];
@@ -302,8 +309,12 @@ export function listSessions(limit = 30, offset = 0): SessionSummary[] {
   }));
 }
 
-export function searchSessions(query: string, limit = 20): SearchResult[] {
-  const db = getDb();
+export function searchSessions(
+  profile: string,
+  query: string,
+  limit = 20,
+): SearchResult[] {
+  const db = getProfileDb(profile);
   if (!db) return [];
 
   try {
@@ -769,16 +780,16 @@ function deleteSessionRows(db: Database.Database, sessionId: string): number {
   return result.changes;
 }
 
-function cleanupDeletedSession(sessionId: string): void {
+function cleanupDeletedSession(profile: string, sessionId: string): void {
   clearStagedAttachments(sessionId);
-  removeSessionFromCache(sessionId);
+  removeSessionFromCache(profile, sessionId);
 }
 
-export function deleteSession(sessionId: string): void {
+export function deleteSession(profile: string, sessionId: string): void {
   const id = normalizeSessionIds([sessionId])[0];
   if (!id) return;
 
-  const db = getDb(false);
+  const db = getProfileDb(profile, false);
 
   if (db) {
     const tx = db.transaction((sessionIdToDelete: string) => {
@@ -787,14 +798,17 @@ export function deleteSession(sessionId: string): void {
     tx(id);
   }
 
-  cleanupDeletedSession(id);
+  cleanupDeletedSession(profile, id);
 }
 
-export function deleteSessions(sessionIds: string[]): DeleteSessionsResult {
+export function deleteSessions(
+  profile: string,
+  sessionIds: string[],
+): DeleteSessionsResult {
   const ids = normalizeSessionIds(sessionIds);
   let deleted = 0;
 
-  const db = getDb(false);
+  const db = getProfileDb(profile, false);
 
   if (db) {
     const tx = db.transaction((idsToDelete: string[]) => {
@@ -806,7 +820,7 @@ export function deleteSessions(sessionIds: string[]): DeleteSessionsResult {
   }
 
   for (const id of ids) {
-    cleanupDeletedSession(id);
+    cleanupDeletedSession(profile, id);
   }
 
   return { requested: ids.length, deleted };

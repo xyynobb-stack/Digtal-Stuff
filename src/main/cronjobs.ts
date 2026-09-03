@@ -5,7 +5,7 @@ import { execFile } from "child_process";
 import {
   getEnhancedPath,
   HERMES_HOME,
-  HERMES_PYTHON,
+  getHermesPython,
   HERMES_REPO,
   hermesCliArgs,
 } from "./installer";
@@ -354,7 +354,7 @@ function runCronCommand(
 
   return new Promise((resolve) => {
     execFile(
-      HERMES_PYTHON,
+      getHermesPython(),
       cliArgs,
       {
         // In offline packages the managed repository lives under Electron's

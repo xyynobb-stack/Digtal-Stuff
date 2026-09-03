@@ -8,6 +8,7 @@ vi.mock("./installer", () => ({
   HERMES_HOME: "/tmp/hermes-test-home",
   HERMES_REPO: "/tmp/hermes-test-repo",
   HERMES_PYTHON: "python3",
+  getHermesPython: () => "python3",
   hermesCliArgs: vi.fn(() => []),
   getEnhancedPath: vi.fn(() => ""),
 }));

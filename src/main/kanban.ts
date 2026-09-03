@@ -2,7 +2,7 @@ import { execFile, ExecFileOptions } from "child_process";
 import { existsSync } from "fs";
 import {
   HERMES_HOME,
-  HERMES_PYTHON,
+  getHermesPython,
   HERMES_REPO,
   hermesCliArgs,
   getEnhancedPath,
@@ -127,10 +127,11 @@ async function runKanban(
   }
   cliArgs.push("kanban", ...args);
 
-  if (!existsSync(HERMES_PYTHON)) {
+  const python = getHermesPython();
+  if (!existsSync(python)) {
     return {
       success: false,
-      error: `JingYuAI Agent 内置 Python 不存在：${HERMES_PYTHON}。请重新安装完整离线安装包。`,
+      error: `JingYuAI Agent 内置 Python 不存在：${python}。请重新安装完整离线安装包。`,
     };
   }
 
@@ -147,7 +148,7 @@ async function runKanban(
   };
 
   return new Promise((resolve) => {
-    execFile(HERMES_PYTHON, cliArgs, execOpts, (err, stdout, stderr) => {
+    execFile(python, cliArgs, execOpts, (err, stdout, stderr) => {
       const out = (stdout || "").toString();
       if (err) {
         const stderrText = (stderr || "").toString().trim();

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./installer", () => ({
   HERMES_HOME: mocks.home,
   HERMES_PYTHON: "python",
+  getHermesPython: () => "python",
   HERMES_REPO: `${mocks.home}\\hermes-agent`,
   hermesCliArgs: (args: string[]) => args,
   getEnhancedPath: () => "",

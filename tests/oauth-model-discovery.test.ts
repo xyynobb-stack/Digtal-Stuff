@@ -38,6 +38,7 @@ vi.mock("child_process", () => ({
 vi.mock("../src/main/installer", () => ({
   expectedEnvKeyForModel: () => "",
   HERMES_PYTHON: "/usr/bin/python3",
+  getHermesPython: () => "/usr/bin/python3",
   HERMES_REPO: "/tmp/hermes-repo",
   HERMES_HOME: "/tmp/hermes-home",
   getEnhancedPath: () => process.env.PATH || "",

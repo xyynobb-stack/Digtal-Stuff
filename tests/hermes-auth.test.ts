@@ -36,6 +36,7 @@ const { spawnSpy, fakeProcs } = vi.hoisted(() => {
 
 vi.mock("../src/main/installer", () => ({
   HERMES_PYTHON: "/usr/bin/python3",
+  getHermesPython: () => "/usr/bin/python3",
   HERMES_REPO: "/tmp/hermes-repo",
   HERMES_HOME: "/tmp/hermes-home",
   hermesCliArgs: (args: string[]) => args,

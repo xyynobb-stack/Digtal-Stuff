@@ -36,6 +36,8 @@ vi.mock("../src/main/hermes", () => ({
 vi.mock("../src/main/installer", () => ({
   HERMES_HOME: "C:/hermes",
   HERMES_PYTHON: "C:/hermes/hermes-agent/venv/Scripts/pythonw.exe",
+  getHermesPython: () =>
+    "C:/hermes/hermes-agent/venv/Scripts/pythonw.exe",
   hermesCliArgs: (args: string[] = []) => ["-m", "hermes_cli.main", ...args],
 }));
 

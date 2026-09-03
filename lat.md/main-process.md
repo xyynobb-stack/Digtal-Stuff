@@ -64,6 +64,12 @@ The desktop starts its local Agent backend with `hermes serve` from a dedicated 
 
 `scripts/prepare-offline-runtime.mjs` stages the tested Python installation and Hermes Agent (including its virtual environment) in `build/offline-runtime`; the release pipeline converts it to the archive described below. The staging marker and Electron version form a stable digest used as `userData/hermes-runtime/versions/<version-digest>`, so every compatibility unit is immutable and a new package never overwrites Python files used by an older process.
 
+### Dynamic Python launcher
+
+Windows subprocesses resolve their virtual-environment interpreter when each process starts, so first-run extraction cannot permanently cache `pythonw.exe` as missing and expose a console window.
+
+Managed employee provisioning awaits the shared Runtime preparation before starting Profile services. Once ready, background launches prefer `pythonw.exe`; development and incomplete non-managed environments retain the console-Python fallback for compatibility.
+
 ### Profile isolation release overlay
 
 Profile-scoped Agent fixes have one durable build-time source and do not depend on a developer manually recreating the offline Runtime.

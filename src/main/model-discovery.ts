@@ -21,7 +21,7 @@ import { readEnv, getModelContextLengthOverride } from "./config";
 import { profileHome } from "./utils";
 import {
   expectedEnvKeyForModel,
-  HERMES_PYTHON,
+  getHermesPython,
   HERMES_REPO,
   HERMES_HOME,
   getEnhancedPath,
@@ -103,7 +103,7 @@ const PROVIDER_MODELS_SNIPPET =
 function runProviderModelIdsPython(provider: string): Promise<string[] | null> {
   return new Promise((resolve) => {
     execFile(
-      HERMES_PYTHON,
+      getHermesPython(),
       ["-c", PROVIDER_MODELS_SNIPPET, provider],
       {
         cwd: HERMES_REPO,

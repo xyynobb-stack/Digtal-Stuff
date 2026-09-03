@@ -79,7 +79,7 @@ describe("Electron main process hardening", () => {
 
   it("runs hermes doctor without a shell-built command string", () => {
     expect(installerSrc).toContain(
-      'execFileSync(HERMES_PYTHON, hermesCliArgs(["doctor"])',
+      'execFileSync(getHermesPython(), hermesCliArgs(["doctor"])',
     );
     expect(installerSrc).not.toContain("execSync(`");
   });

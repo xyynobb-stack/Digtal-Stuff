@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import { homedir } from "os";
 import {
-  HERMES_PYTHON,
+  getHermesPython,
   HERMES_REPO,
   HERMES_HOME,
   hermesCliArgs,
@@ -113,7 +113,7 @@ export function runHermesAuthLogin(
 
     let proc: ChildProcess;
     try {
-      proc = spawn(HERMES_PYTHON, hermesCliArgs(subArgs), {
+      proc = spawn(getHermesPython(), hermesCliArgs(subArgs), {
         cwd: HERMES_REPO,
         env: {
           ...process.env,

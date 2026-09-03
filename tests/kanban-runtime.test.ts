@@ -12,6 +12,7 @@ vi.mock("../src/main/installer", () => ({
   HERMES_HOME: "C:/hermes-data",
   HERMES_REPO: "C:/desktop-runtime/hermes-agent",
   HERMES_PYTHON: process.execPath,
+  getHermesPython: () => process.execPath,
   getEnhancedPath: () => "C:/enhanced-path",
   hermesCliArgs: (args: string[] = []) => ["-m", "hermes_cli.main", ...args],
 }));

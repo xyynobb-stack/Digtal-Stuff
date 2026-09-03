@@ -20,7 +20,7 @@ import {
   getEnhancedPath,
   hermesCliArgs,
   HERMES_HOME,
-  HERMES_PYTHON,
+  getHermesPython,
   HERMES_REPO,
 } from "./installer";
 import {
@@ -192,8 +192,9 @@ function unsupportedReasonForLocalSpawn(): string | undefined {
   if (!existsSync(HERMES_REPO)) {
     return `JingYuAI Agent repo not found at ${HERMES_REPO}.`;
   }
-  if (!existsSync(HERMES_PYTHON)) {
-    return `JingYuAI Agent Python environment not found at ${HERMES_PYTHON}.`;
+  const python = getHermesPython();
+  if (!existsSync(python)) {
+    return `JingYuAI Agent Python environment not found at ${python}.`;
   }
   return undefined;
 }
@@ -720,7 +721,7 @@ export async function startDashboard(
 
   let proc: ChildProcess;
   try {
-    proc = spawn(HERMES_PYTHON, hermesCliArgs(cliArgs), {
+    proc = spawn(getHermesPython(), hermesCliArgs(cliArgs), {
       cwd: dashboardBackendCwd(resolvedProfile),
       env: withPythonSourceRoot(
         {

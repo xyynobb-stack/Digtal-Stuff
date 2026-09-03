@@ -5,7 +5,7 @@ import { promises as fs } from "fs";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import {
   HERMES_HOME,
-  HERMES_PYTHON,
+  getHermesPython,
   hermesCliArgs,
   getEnhancedPath,
 } from "./installer";
@@ -292,7 +292,7 @@ export function createProfile(
     : ["profile", "create", id];
 
   try {
-    execFileSync(HERMES_PYTHON, hermesCliArgs(args), {
+    execFileSync(getHermesPython(), hermesCliArgs(args), {
       cwd: join(HERMES_HOME, "hermes-agent"),
       env: {
         ...process.env,
@@ -347,7 +347,7 @@ export function deleteProfile(name: string): {
 
   try {
     execFileSync(
-      HERMES_PYTHON,
+      getHermesPython(),
       hermesCliArgs(["profile", "delete", name, "--yes"]),
       {
         cwd: join(HERMES_HOME, "hermes-agent"),
@@ -374,7 +374,7 @@ export function setActiveProfile(name: string): void {
   }
 
   try {
-    execFileSync(HERMES_PYTHON, hermesCliArgs(["profile", "use", name]), {
+    execFileSync(getHermesPython(), hermesCliArgs(["profile", "use", name]), {
       cwd: join(HERMES_HOME, "hermes-agent"),
       env: {
         ...process.env,

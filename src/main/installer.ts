@@ -1026,11 +1026,30 @@ export const HERMES_VENV = join(HERMES_REPO, "venv");
 // otherwise — same modules, same stdout/stderr behaviour over piped stdio
 // (which is what every call site here uses).
 const WINDOWS_PYTHONW = join(HERMES_VENV, "Scripts", "pythonw.exe");
-const WINDOWS_PYTHON = join(HERMES_VENV, "Scripts", "python.exe");
+export function resolveHermesPythonExecutable(
+  venv = HERMES_VENV,
+  platform = process.platform,
+  pathExists: (path: string) => boolean = existsSync,
+): string {
+  if (platform === "win32") {
+    const pythonw = join(venv, "Scripts", "pythonw.exe");
+    return pathExists(pythonw)
+      ? pythonw
+      : join(venv, "Scripts", "python.exe");
+  }
+  return join(venv, "bin", "python");
+}
+
+/** Resolve at process-launch time so first-run Runtime extraction cannot
+ * permanently cache the temporary absence of pythonw.exe. */
+// @lat: [[main-process#Offline Windows runtime#Dynamic Python launcher]]
+export function getHermesPython(): string {
+  return resolveHermesPythonExecutable();
+}
+
+/** @deprecated Use getHermesPython() for subprocess launches. */
 export const HERMES_PYTHON = IS_WINDOWS
-  ? existsSync(WINDOWS_PYTHONW)
-    ? WINDOWS_PYTHONW
-    : WINDOWS_PYTHON
+  ? WINDOWS_PYTHONW
   : join(HERMES_VENV, "bin", "python");
 export const HERMES_SCRIPT = IS_WINDOWS
   ? join(HERMES_VENV, "Scripts", "hermes.exe")
@@ -1060,7 +1079,7 @@ export function hermesCliArgs(args: string[] = []): string[] {
 }
 
 function canInvokeHermesCli(): boolean {
-  if (!existsSync(HERMES_PYTHON)) return false;
+  if (!existsSync(getHermesPython())) return false;
   if (IS_WINDOWS) {
     return existsSync(join(HERMES_REPO, "hermes_cli", "main.py"));
   }
@@ -1375,7 +1394,7 @@ export function checkInstallStatus(): InstallStatus {
   // `python --version` check used to run here adds 1–10s of cold-start
   // latency, so it now lives in `verifyInstall()` and is invoked lazily
   // by the renderer after the main UI is mounted.
-  const installed = existsSync(HERMES_PYTHON) && existsSync(HERMES_SCRIPT);
+  const installed = existsSync(getHermesPython()) && existsSync(HERMES_SCRIPT);
   const envFile = activeEnvFile(activeProfile);
   const authFile = activeAuthFile(activeProfile);
   const configured = existsSync(envFile) || existsSync(authFile);
@@ -1432,7 +1451,7 @@ export async function verifyInstall(): Promise<boolean> {
   }
   return new Promise((resolve) => {
     execFile(
-      HERMES_PYTHON,
+      getHermesPython(),
       hermesCliArgs(["--version"]),
       {
         cwd: HERMES_REPO,
@@ -1484,7 +1503,7 @@ export async function getHermesVersion(): Promise<string | null> {
   _versionFetching = true;
   return new Promise((resolve) => {
     execFile(
-      HERMES_PYTHON,
+      getHermesPython(),
       hermesCliArgs(["--version"]),
       {
         cwd: HERMES_REPO,
@@ -1519,7 +1538,7 @@ export function runHermesDoctor(): string {
     return "JingYuAI is not installed.";
   }
   try {
-    const output = execFileSync(HERMES_PYTHON, hermesCliArgs(["doctor"]), {
+    const output = execFileSync(getHermesPython(), hermesCliArgs(["doctor"]), {
       cwd: HERMES_REPO,
       env: {
         ...process.env,
@@ -1578,7 +1597,7 @@ export function checkOpenClawExists(home: string = homedir()): {
 export async function runClawMigrate(
   onProgress: (progress: InstallProgress) => void,
 ): Promise<void> {
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
+  if (!existsSync(getHermesPython()) || !existsSync(HERMES_SCRIPT)) {
     throw new Error("JingYuAI is not installed.");
   }
 
@@ -1604,7 +1623,7 @@ export async function runClawMigrate(
   return new Promise((resolve, reject) => {
     const args = hermesCliArgs(["claw", "migrate", "--preset", "full"]);
 
-    const proc = spawn(HERMES_PYTHON, args, {
+    const proc = spawn(getHermesPython(), args, {
       cwd: HERMES_REPO,
       env: {
         ...process.env,
@@ -1643,7 +1662,7 @@ export async function runClawMigrate(
 export async function runHermesUpdate(
   onProgress: (progress: InstallProgress) => void,
 ): Promise<void> {
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
+  if (!existsSync(getHermesPython()) || !existsSync(HERMES_SCRIPT)) {
     throw new Error("JingYuAI is not installed. Please install it first.");
   }
 
@@ -1662,7 +1681,7 @@ export async function runHermesUpdate(
   emit("Running hermes update...\n");
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(HERMES_PYTHON, hermesCliArgs(["update"]), {
+    const proc = spawn(getHermesPython(), hermesCliArgs(["update"]), {
       cwd: HERMES_REPO,
       env: {
         ...process.env,
@@ -1874,7 +1893,7 @@ export async function runInstall(
           // The install script can exit non-zero due to benign issues
           // (e.g. git stash pop failure on already-clean repo).
           // If Hermes is actually installed and working, treat as success.
-          if (existsSync(HERMES_PYTHON) && existsSync(HERMES_SCRIPT)) {
+          if (existsSync(getHermesPython()) && existsSync(HERMES_SCRIPT)) {
             emit(
               "\nInstall script exited with warnings, but JingYuAI is installed successfully.\n",
             );
@@ -2036,7 +2055,7 @@ async function runInstallWindows(emit: (t: string) => void): Promise<void> {
         return;
       }
       // Same tolerance as the bash path: if the binary tree exists, count it.
-      if (existsSync(HERMES_PYTHON) && existsSync(HERMES_SCRIPT)) {
+      if (existsSync(getHermesPython()) && existsSync(HERMES_SCRIPT)) {
         emit(
           "\nInstall script exited with warnings, but JingYuAI is installed successfully.\n",
         );
@@ -2073,7 +2092,7 @@ async function runInstallWindows(emit: (t: string) => void): Promise<void> {
 export async function runHermesBackup(
   profile?: string,
 ): Promise<{ success: boolean; path?: string; error?: string }> {
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
+  if (!existsSync(getHermesPython()) || !existsSync(HERMES_SCRIPT)) {
     return { success: false, error: "JingYuAI is not installed." };
   }
   const args = hermesCliArgs();
@@ -2082,7 +2101,7 @@ export async function runHermesBackup(
 
   return new Promise((resolve) => {
     execFile(
-      HERMES_PYTHON,
+      getHermesPython(),
       args,
       {
         cwd: HERMES_REPO,
@@ -2127,7 +2146,7 @@ export async function runHermesImport(
     return { success: false, error: archive.error };
   }
 
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
+  if (!existsSync(getHermesPython()) || !existsSync(HERMES_SCRIPT)) {
     return { success: false, error: "JingYuAI is not installed." };
   }
   const args = hermesCliArgs();
@@ -2136,7 +2155,7 @@ export async function runHermesImport(
 
   return new Promise((resolve) => {
     execFile(
-      HERMES_PYTHON,
+      getHermesPython(),
       args,
       {
         cwd: HERMES_REPO,
@@ -2192,12 +2211,12 @@ export function validateImportArchivePath(
 // ────────────────────────────────────────────────────
 
 export function runHermesDump(): Promise<string> {
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
+  if (!existsSync(getHermesPython()) || !existsSync(HERMES_SCRIPT)) {
     return Promise.resolve("JingYuAI is not installed.");
   }
   return new Promise((resolve) => {
     execFile(
-      HERMES_PYTHON,
+      getHermesPython(),
       hermesCliArgs(["dump"]),
       {
         cwd: HERMES_REPO,

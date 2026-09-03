@@ -22,7 +22,7 @@ import WebSocket from "ws";
 import {
   HERMES_HOME,
   HERMES_REPO,
-  HERMES_PYTHON,
+  getHermesPython,
   hermesCliArgs,
   getEnhancedPath,
 } from "./installer";
@@ -310,7 +310,8 @@ function transcribeAudioViaLocalPython(
   mimeType: string,
   profile?: string,
 ): Promise<string> {
-  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_REPO)) {
+  const python = getHermesPython();
+  if (!existsSync(python) || !existsSync(HERMES_REPO)) {
     throw new Error(
       "Voice input needs a local JingYuAI Agent install with speech-to-text support.",
     );
@@ -328,7 +329,7 @@ function transcribeAudioViaLocalPython(
   ].join("\n");
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(HERMES_PYTHON, ["-c", script, audioPath], {
+    const proc = spawn(python, ["-c", script, audioPath], {
       cwd: HERMES_REPO,
       env: tuiGatewayEnv(profile),
       stdio: ["ignore", "pipe", "pipe"],
@@ -644,8 +645,9 @@ class TuiGatewayClient {
   }
 
   private async startDashboardBackend(): Promise<void> {
-    if (!existsSync(HERMES_PYTHON)) {
-      throw new Error(`Python interpreter not found at ${HERMES_PYTHON}`);
+    const python = getHermesPython();
+    if (!existsSync(python)) {
+      throw new Error(`Python interpreter not found at ${python}`);
     }
     if (!existsSync(HERMES_REPO)) {
       throw new Error(`hermes-agent repo not found at ${HERMES_REPO}`);
@@ -672,7 +674,7 @@ class TuiGatewayClient {
       "--port",
       String(this.port),
     ]);
-    const proc = spawn(HERMES_PYTHON, args, {
+    const proc = spawn(python, args, {
       cwd: HERMES_REPO,
       env: dashboardEnv,
       stdio: ["ignore", "pipe", "pipe"],
@@ -2685,7 +2687,7 @@ function sendMessageViaCli(
     delete env.OPENROUTER_BASE_URL;
   }
 
-  const proc = spawn(HERMES_PYTHON, args, {
+  const proc = spawn(getHermesPython(), args, {
     cwd: HERMES_REPO,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -3195,9 +3197,10 @@ function invalidateApiCacheFor(profile?: string): void {
 }
 
 function getGatewaySpawnError(): string | null {
-  if (!existsSync(HERMES_PYTHON)) {
+  const python = getHermesPython();
+  if (!existsSync(python)) {
     return (
-      `Cannot start the gateway because the JingYuAI Agent Python interpreter was not found at ${HERMES_PYTHON}. ` +
+      `Cannot start the gateway because the JingYuAI Agent Python interpreter was not found at ${python}. ` +
       "Install or repair JingYuAI Agent, then try again."
     );
   }
@@ -3316,7 +3319,7 @@ export function startGatewayDetailed(profile?: string): GatewayStartResult {
   // Defensive: the local gateway is never the right thing to spawn in
   // remote/SSH mode — the user is pointing at an off-machine server.
   // Callers should already gate, but several IPC handlers historically
-  // forgot to (issue #266), and reaching `spawn(HERMES_PYTHON, …)` when
+  // forgot to (issue #266), and reaching the local Python spawn when
   // there's no local hermes-agent install produces an uncaught ENOENT
   // that pops a generic error dialog.  Refuse cleanly here.
   if (isRemoteMode()) {
@@ -3375,7 +3378,7 @@ export function startGatewayDetailed(profile?: string): GatewayStartResult {
   const cliArgs = gatewayCliCommandArgs(profile, ["gateway"]);
   let proc: ChildProcess;
   try {
-    proc = spawn(HERMES_PYTHON, hermesCliArgs(cliArgs), {
+    proc = spawn(getHermesPython(), hermesCliArgs(cliArgs), {
       cwd: HERMES_REPO,
       env: gatewayEnv,
       stdio: ["ignore", "ignore", stderrFd >= 0 ? stderrFd : "ignore"],
@@ -3895,7 +3898,7 @@ async function restartGatewayViaCliOnce(
       try {
         stderrFd = openSync(logPath, "a");
         proc = spawn(
-          HERMES_PYTHON,
+          getHermesPython(),
           hermesCliArgs(gatewayCliCommandArgs(profile, ["gateway", "restart"])),
           {
             cwd: HERMES_REPO,

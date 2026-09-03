@@ -25,6 +25,7 @@ const { TEST_HOME } = vi.hoisted(() => {
 vi.mock("../src/main/installer", () => ({
   HERMES_HOME: TEST_HOME,
   HERMES_PYTHON: "/usr/bin/python3",
+  getHermesPython: () => "/usr/bin/python3",
   HERMES_REPO: "/dev/null",
   hermesCliArgs: (args: string[] = []) => ["/dev/null", ...args],
   getEnhancedPath: () => process.env.PATH || "",

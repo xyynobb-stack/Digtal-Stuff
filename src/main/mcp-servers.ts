@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "fs";
 import { profilePaths, safeWriteFile } from "./utils";
 import { getApiUrl, getRemoteAuthHeader, isRemoteMode } from "./hermes";
 import { getApiServerKey } from "./config";
-import { getEnhancedPath, HERMES_PYTHON, hermesCliArgs } from "./installer";
+import { getEnhancedPath, getHermesPython, hermesCliArgs } from "./installer";
 
 export type McpTransport = "http" | "stdio" | "unknown";
 
@@ -86,7 +86,7 @@ function runHermesMcpCli(
 ): Promise<HermesCliResult> {
   return new Promise((resolve, reject) => {
     const child = execFile(
-      HERMES_PYTHON,
+      getHermesPython(),
       hermesCliArgs(["mcp", ...args]),
       {
         cwd: profilePaths(profile).home,

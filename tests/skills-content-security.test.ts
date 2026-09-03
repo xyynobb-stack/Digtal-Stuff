@@ -18,6 +18,7 @@ vi.mock("../src/main/installer", () => ({
   HERMES_HOME: TEST_HOME,
   HERMES_REPO: TEST_REPO,
   HERMES_PYTHON: "python",
+  getHermesPython: () => "python",
   hermesCliArgs: (args: string[] = []) => args,
   getEnhancedPath: () => "",
 }));

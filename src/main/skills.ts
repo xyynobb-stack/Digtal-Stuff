@@ -14,7 +14,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "path";
 import { homedir } from "os";
 import {
   HERMES_HOME,
-  HERMES_PYTHON,
+  getHermesPython,
   HERMES_REPO,
   hermesCliArgs,
   getEnhancedPath,
@@ -307,7 +307,7 @@ export function getSkillContent(skillPath: string): string {
 export function searchSkills(query: string): SkillSearchResult[] {
   try {
     const output = execFileSync(
-      HERMES_PYTHON,
+      getHermesPython(),
       hermesCliArgs(["skills", "browse", "--query", query, "--json"]),
       {
         cwd: HERMES_REPO,
@@ -534,7 +534,7 @@ export function installSkill(
       args.splice(process.platform === "win32" ? 2 : 1, 0, "-p", profile);
     }
 
-    const stdout = execFileSync(HERMES_PYTHON, args, {
+    const stdout = execFileSync(getHermesPython(), args, {
       cwd: HERMES_REPO,
       env: {
         ...process.env,
@@ -577,7 +577,7 @@ export function uninstallSkill(name: string, profile?: string): SkillCliResult {
       args.splice(process.platform === "win32" ? 2 : 1, 0, "-p", profile);
     }
 
-    const stdout = execFileSync(HERMES_PYTHON, args, {
+    const stdout = execFileSync(getHermesPython(), args, {
       cwd: HERMES_REPO,
       env: {
         ...process.env,

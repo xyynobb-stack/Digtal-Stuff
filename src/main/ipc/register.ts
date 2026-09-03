@@ -1184,6 +1184,10 @@ export function registerIpcHandlers(context: IpcContext): void {
       if (conn.mode !== "local") {
         throw new Error("员工数字工作区目前只支持本地模式初始化。");
       }
+      // Share the existing first-run preparation instead of allowing employee
+      // provisioning to observe the versioned venv between extraction and
+      // activation. A completed Runtime resolves immediately on later calls.
+      await initializeBundledRuntime();
       const adminToken = (
         readEnv("default").EMPLOYEE_LOOKUP_ADMIN_TOKEN || ""
       ).trim();

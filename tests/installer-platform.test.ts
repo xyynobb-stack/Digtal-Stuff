@@ -21,6 +21,7 @@ import {
   repairBundledPythonImportPath,
   repairRelocatedRuntime,
   resolveBundledRuntimeRepo,
+  resolveHermesPythonExecutable,
   validateRuntimeTree,
   HERMES_PYTHON,
   HERMES_SCRIPT,
@@ -281,5 +282,26 @@ describe("installer platform wiring", () => {
 
     expect(args).toEqual([HERMES_SCRIPT, "--version"]);
     expect(HERMES_PYTHON).toMatch(/venv[\\/]bin[\\/]python$/);
+  });
+
+  // @lat: [[main-process#Offline Windows runtime#Dynamic Python launcher]]
+  it("resolves pythonw at launch time after first-run extraction", () => {
+    const venv = "C:\\runtime\\hermes-agent\\venv";
+    const pythonw = join(venv, "Scripts", "pythonw.exe");
+    let extracted = false;
+    const pathExists = (path: string): boolean =>
+      extracted && path === pythonw;
+
+    expect(
+      resolveHermesPythonExecutable(venv, "win32", pathExists),
+    ).toBe(join(venv, "Scripts", "python.exe"));
+
+    extracted = true;
+    expect(
+      resolveHermesPythonExecutable(venv, "win32", pathExists),
+    ).toBe(pythonw);
+    expect(resolveHermesPythonExecutable(venv, "linux", pathExists)).toBe(
+      join(venv, "bin", "python"),
+    );
   });
 });

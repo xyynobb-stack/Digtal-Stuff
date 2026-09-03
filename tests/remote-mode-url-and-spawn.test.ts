@@ -34,6 +34,7 @@ const { TEST_HOME, connModeRef, sshTunnelUrlRef, sshLocalPortRef, spawnSpy } =
 vi.mock("../src/main/installer", () => ({
   HERMES_HOME: TEST_HOME,
   HERMES_PYTHON: "/usr/bin/python3",
+  getHermesPython: () => "/usr/bin/python3",
   HERMES_REPO: "/dev/null",
   hermesCliArgs: () => ["gateway"],
   getEnhancedPath: () => process.env.PATH || "",

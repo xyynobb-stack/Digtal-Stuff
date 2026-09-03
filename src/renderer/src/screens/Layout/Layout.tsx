@@ -45,6 +45,7 @@ import {
 } from "../../assets/icons";
 import type { LucideIcon } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
+import type { EmployeeProvisionResult } from "../../../../shared/employee-workspace";
 
 type View =
   | "chat"
@@ -73,12 +74,14 @@ const SIDEBAR_COLLAPSED_KEY = "hermes.sidebar.collapsed";
 const SIDEBAR_SCROLLBAR_HIDE_MS = 700;
 
 interface LayoutProps {
+  initialEmployeeProvision?: EmployeeProvisionResult | null;
   verifyWarning?: boolean;
   onRetryVerification?: () => void;
   onDismissVerifyWarning?: () => void;
 }
 
 function Layout({
+  initialEmployeeProvision,
   verifyWarning,
   onRetryVerification,
   onDismissVerifyWarning,
@@ -90,9 +93,21 @@ function Layout({
   // a ChatRun; all are mounted, only the active one is shown. Profile switches
   // preserve existing conversations and activate a scratch run for the selected
   // agent so `activeProfile` stays aligned with the visible chat transport.
-  const [activeProfile, setActiveProfile] = useState("default");
-  const [runs, setRuns] = useState<ChatRun[]>(() => [mintRun("default")]);
+  const initialProfile = initialEmployeeProvision?.profileId ?? "default";
+  const [activeProfile, setActiveProfile] = useState(initialProfile);
+  const [runs, setRuns] = useState<ChatRun[]>(() => [mintRun(initialProfile)]);
   const [activeRunId, setActiveRunId] = useState<string>(() => runs[0].runId);
+  const [provisionedMandatorySkills, setProvisionedMandatorySkills] = useState<
+    Record<string, string[]>
+  >(() =>
+    initialEmployeeProvision
+      ? {
+          [initialEmployeeProvision.profileId]: [
+            ...initialEmployeeProvision.role.mandatorySkills,
+          ],
+        }
+      : {},
+  );
   // While a resume's history is loading, show its spinner immediately.
   const [resumingSessionId, setResumingSessionId] = useState<string | null>(
     null,
@@ -485,6 +500,22 @@ function Layout({
     [runs, activeRunId],
   );
 
+  const handleEmployeeProvisioned = useCallback(
+    (result: EmployeeProvisionResult) => {
+      const profile = result.profileId;
+      setProvisionedMandatorySkills((current) => ({
+        ...current,
+        [profile]: [...result.role.mandatorySkills],
+      }));
+      setActiveProfile(profile);
+      const next = selectProfileRunTransition(runs, activeRunId, profile);
+      setRuns(next.runs);
+      setActiveRunId(next.activeRunId);
+      goTo("chat");
+    },
+    [runs, activeRunId, goTo],
+  );
+
   // The "Chat" affordance: start (or reuse a blank) conversation with an agent
   // and show it. This is the only path from the profile list that opens a chat.
   const handleChatWithProfile = useCallback(
@@ -864,11 +895,15 @@ function Layout({
                 }}
               >
                 <Chat
+                  key={`${run.runId}:${run.profile}`}
                   runId={run.runId}
                   initialMessages={run.seed}
                   initialSessionId={run.sessionId}
                   active={run.runId === activeRunId}
                   profile={run.profile}
+                  provisionedMandatorySkills={
+                    provisionedMandatorySkills[run.profile]
+                  }
                   onNewChat={handleNewChat}
                   onOpenDiagnose={(section?: string) =>
                     openSettings(section, { profile: run.profile })
@@ -942,7 +977,7 @@ function Layout({
               {remoteMode ? (
                 <RemoteNotice feature="Providers" />
               ) : (
-                <Providers />
+                <Providers onEmployeeProvisioned={handleEmployeeProvisioned} />
               )}
             </div>
           )}

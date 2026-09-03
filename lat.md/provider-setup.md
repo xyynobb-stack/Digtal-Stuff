@@ -30,6 +30,8 @@ Employee provisioning publishes one ready binding only after profile files and t
 
 [[src/main/ipc/register.ts#registerIpcHandlers]] merges duplicate phone requests, serializes work for the same `user_id`, writes credentials and configuration only to the resolved Profile, installs managed content, writes SOUL, restarts or starts that Profile's gateway, and waits for health before [[src/main/employee-workspace.ts#commitEmployeeProvision]] atomically publishes `employee-binding.json`. A pending binding is not readable by Chat.
 
+After a successful provision, [[src/renderer/src/screens/Providers/Providers.tsx#Providers]] passes the authoritative result to the desktop shell instead of reloading the page; first-run Setup carries the same result into the initial Layout mount. The shell switches the selected Profile and visible scratch chat together, injects the returned mandatory Skills immediately, and remounts a re-homed chat at the new Profile boundary so optional session Skills from the former Profile cannot leak across. Relaunch still restores mandatory Skills from the committed binding.
+
 Before mutation, the main process snapshots the Profile-owned environment, model configuration, SOUL, model grant, display metadata, and ready binding. Failure restores that snapshot, keeps the former ready binding authoritative, and writes a secret-free failed marker so an interrupted new Profile can be retried. Different-employee requests may finish independently, but only the latest initiated request may switch the active Profile; an older slow response cannot overwrite the user's newer selection.
 
 ### Legacy default continuity
@@ -67,6 +69,10 @@ A future project-manager title resolves to the maintained `project-manager` Skil
 #### Ready publication
 
 Pending initialization remains invisible to Chat, while an atomic ready binding becomes readable only after commit.
+
+#### Immediate Profile activation
+
+A successful phone configuration activates its returned Profile and mandatory role Skills in the current renderer without requiring a page reload or application restart.
 
 #### Dashboard handle release
 

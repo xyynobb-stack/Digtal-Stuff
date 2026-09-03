@@ -1,10 +1,54 @@
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import Providers from "./Providers";
 
 describe("employee-only provider screen", () => {
   beforeEach(() => {
     window.localStorage.clear();
+  });
+
+  it("hands the activated Profile and mandatory skills to the desktop shell", async () => {
+    // @lat: [[provider-setup#Provider setup#Employee phone provisioning#Employee workspace initialization tests#Immediate Profile activation]]
+    const provisionEmployee = vi.fn(async () => ({
+      ok: true as const,
+      profileId: "employee-project-manager",
+      userId: "employee-1",
+      realName: "张三",
+      models: ["Kimi-2.6"],
+      fallbackConfigured: false,
+      activated: true,
+      role: {
+        status: "configured" as const,
+        department: "研发部",
+        position: "项目经理",
+        roleId: "project-manager",
+        roleName: "项目经理",
+        mandatorySkills: ["project-manager"],
+      },
+    }));
+    Object.defineProperty(window, "hermesAPI", {
+      configurable: true,
+      value: { provisionEmployee },
+    });
+    const onEmployeeProvisioned = vi.fn();
+    render(<Providers onEmployeeProvisioned={onEmployeeProvisioned} />);
+
+    fireEvent.change(screen.getByPlaceholderText("11 位手机号"), {
+      target: { value: "13987654321" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "自动配置" }));
+
+    await waitFor(() => {
+      expect(onEmployeeProvisioned).toHaveBeenCalledWith(
+        expect.objectContaining({
+          profileId: "employee-project-manager",
+          role: expect.objectContaining({
+            mandatorySkills: ["project-manager"],
+          }),
+        }),
+      );
+    });
+    expect(provisionEmployee).toHaveBeenCalledWith("13987654321");
   });
 
   it("shows employee phone provisioning without advanced provider controls", () => {

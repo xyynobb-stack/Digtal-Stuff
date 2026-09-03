@@ -12,6 +12,7 @@ import Layout from "./screens/Layout/Layout";
 import SplashScreen from "./screens/SplashScreen/SplashScreen";
 import RuntimeFailure from "./screens/RuntimeFailure/RuntimeFailure";
 import { captureScreenView } from "./utils/analytics";
+import type { EmployeeProvisionResult } from "../../shared/employee-workspace";
 
 type Screen =
   | "splash"
@@ -31,6 +32,8 @@ function App(): React.JSX.Element {
   const [connectionMode, setConnectionMode] = useState<
     "local" | "remote" | "ssh"
   >("local");
+  const [initialEmployeeProvision, setInitialEmployeeProvision] =
+    useState<EmployeeProvisionResult | null>(null);
   // Soft warning: install files exist but the deep `verifyInstall` probe
   // failed (e.g. slow Python startup, restricted network). We surface this
   // as a dismissible banner instead of bouncing the user back to Welcome,
@@ -220,6 +223,11 @@ function App(): React.JSX.Element {
     setVerifyWarning(false);
   }
 
+  function handleSetupComplete(result?: EmployeeProvisionResult): void {
+    setInitialEmployeeProvision(result ?? null);
+    setScreen("main");
+  }
+
   function renderScreen(): React.JSX.Element {
     switch (screen) {
       case "splash":
@@ -260,7 +268,7 @@ function App(): React.JSX.Element {
       case "setup":
         return (
           <Setup
-            onComplete={() => setScreen("main")}
+            onComplete={handleSetupComplete}
             verifyWarning={verifyWarning}
             onRetryVerification={handleVerifyRetry}
             onDismissVerifyWarning={handleDismissVerifyWarning}
@@ -269,6 +277,7 @@ function App(): React.JSX.Element {
       case "main":
         return (
           <Layout
+            initialEmployeeProvision={initialEmployeeProvision}
             verifyWarning={verifyWarning}
             onRetryVerification={handleVerifyRetry}
             onDismissVerifyWarning={handleDismissVerifyWarning}

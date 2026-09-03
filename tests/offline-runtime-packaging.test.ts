@@ -472,7 +472,7 @@ describe("desktop DDGS web search", () => {
     );
     expect(requirements).toContain("primp==1.3.1");
     expect(requirements).toContain("ddgs==9.16.0");
-    expect(requirements).toContain("lark-oapi==1.6.8");
+    expect(requirements).not.toContain("lark-oapi");
 
     for (const workflow of ["release.yml", "beta-release.yml"]) {
       const source = readFileSync(

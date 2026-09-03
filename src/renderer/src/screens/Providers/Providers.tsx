@@ -4,8 +4,15 @@ import {
   normalizeEmployeePhone,
   rememberConfiguredEmployee,
 } from "../../utils/employeePhones";
+import type { EmployeeProvisionResult } from "../../../../shared/employee-workspace";
 
-function Providers(): React.JSX.Element {
+interface ProvidersProps {
+  onEmployeeProvisioned?: (result: EmployeeProvisionResult) => void;
+}
+
+function Providers({
+  onEmployeeProvisioned,
+}: ProvidersProps): React.JSX.Element {
   const [employeePhone, setEmployeePhone] = useState("");
   const [employeeProvisioning, setEmployeeProvisioning] = useState(false);
   const [employeeError, setEmployeeError] = useState("");
@@ -38,7 +45,7 @@ function Providers(): React.JSX.Element {
         }),
       );
       setEmployeePhone("");
-      window.location.reload();
+      onEmployeeProvisioned?.(result);
     } catch (error) {
       setEmployeeError(
         error instanceof Error ? error.message : "员工配置失败。",

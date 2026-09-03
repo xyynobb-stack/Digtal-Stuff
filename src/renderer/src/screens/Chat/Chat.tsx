@@ -108,6 +108,8 @@ interface ChatProps {
   /** Whether this run is the one currently shown (drives keyboard handlers). */
   active?: boolean;
   profile?: string;
+  /** Mandatory role skills returned by a just-completed employee provision. */
+  provisionedMandatorySkills?: string[];
   onSessionStarted?: () => void;
   onNewChat?: () => void;
   /** Optional callback to open Settings — from the config-health banner's
@@ -134,6 +136,7 @@ function Chat({
   initialSessionId,
   active = true,
   profile,
+  provisionedMandatorySkills,
   onSessionStarted,
   onNewChat,
   onOpenDiagnose,
@@ -186,6 +189,11 @@ function Chat({
   const [mandatorySkills, setMandatorySkills] = useState<string[]>([]);
   const [mandatorySkillsLoaded, setMandatorySkillsLoaded] = useState(false);
   useEffect(() => {
+    if (provisionedMandatorySkills) {
+      setMandatorySkills([...new Set(provisionedMandatorySkills)]);
+      setMandatorySkillsLoaded(true);
+      return;
+    }
     let cancelled = false;
     setMandatorySkillsLoaded(false);
     void window.hermesAPI
@@ -195,17 +203,21 @@ function Chat({
         setMandatorySkills(binding?.role.mandatorySkills ?? []);
         setMandatorySkillsLoaded(true);
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
         // Ordinary non-employee profiles remain usable if this optional
         // metadata read fails. Employee provisioning itself fails closed.
+        console.warn(
+          `[employee-profile:${profile || "default"}] Failed to load mandatory skills`,
+          error,
+        );
         setMandatorySkills([]);
         setMandatorySkillsLoaded(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [profile]);
+  }, [profile, provisionedMandatorySkills]);
   const effectiveActiveSkills = useMemo(
     () => [...new Set([...mandatorySkills, ...activeSkills])],
     [mandatorySkills, activeSkills],

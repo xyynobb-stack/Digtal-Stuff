@@ -154,6 +154,8 @@ Windows desktop builds include a pinned DDGS client so `web_search` is available
 
 Stable and beta workflows install `resources/desktop-agent-requirements.txt` into the bundled Agent virtual environment and fail the build unless `ddgs==9.16.0` imports with the explicitly pinned native dependency `primp==1.3.1`. The pin prevents pip from silently selecting a newer native wheel and supports reproducible Defender testing. `scripts/patch-desktop-ddgs.mjs` keeps development and packaged providers aligned: Chinese-region safe search runs only on tool invocation, uses a 12-second hard deadline, limits worker concurrency to two, caches successful results for five minutes, and hides its disposable Windows worker process. A failed request returns a tool error but does not uninstall the package or remove future `web_search` calls.
 
+The Feishu personal-Drive tool calls the JingYuAI OAuth proxy with Python's standard-library `urllib`, so the desktop requirements intentionally exclude `lark-oapi`. Feishu application credentials and user tokens remain server-side, while removing the unused SDK avoids adding its import tree to every packaged Agent environment.
+
 ## Packaged preset user content
 
 Offline builds distribute repository-selected custom Skills and reviewed writing templates as immediately usable, editable profile content.

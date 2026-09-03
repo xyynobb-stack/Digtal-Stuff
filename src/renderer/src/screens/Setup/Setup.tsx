@@ -10,9 +10,10 @@ import {
   normalizeEmployeePhone,
   rememberConfiguredEmployee,
 } from "../../utils/employeePhones";
+import type { EmployeeProvisionResult } from "../../../../shared/employee-workspace";
 
 interface SetupProps {
-  onComplete: () => void;
+  onComplete: (employeeProvision?: EmployeeProvisionResult) => void;
   verifyWarning?: boolean;
   onRetryVerification?: () => void;
   onDismissVerifyWarning?: () => void;
@@ -34,7 +35,8 @@ function Setup({
   const [employeeConfigured, setEmployeeConfigured] = useState(
     loadConfiguredEmployees,
   );
-  const [employeeProvisioned, setEmployeeProvisioned] = useState(false);
+  const [employeeProvisioned, setEmployeeProvisioned] =
+    useState<EmployeeProvisionResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -117,7 +119,7 @@ function Setup({
         }),
       );
       setEmployeePhone("");
-      setEmployeeProvisioned(true);
+      setEmployeeProvisioned(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("setup.saveFailed"));
     } finally {
@@ -194,7 +196,7 @@ function Setup({
         {employeeProvisioned && (
           <button
             className="btn btn-primary setup-continue"
-            onClick={onComplete}
+            onClick={() => onComplete(employeeProvisioned)}
             style={{ marginBottom: 20 }}
           >
             开始使用 JingYuAI

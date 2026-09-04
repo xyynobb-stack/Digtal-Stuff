@@ -84,7 +84,7 @@ export function authorizationUrl({ appId, redirectUri, state }) {
   url.searchParams.set("client_id", appId);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("scope", "drive:drive offline_access");
+  url.searchParams.set("scope", "drive:drive docx:document offline_access");
   url.searchParams.set("state", state);
   return url.toString();
 }
@@ -520,6 +520,154 @@ export function createFeishuOAuthService({
         );
         if (!drive) {
           return json(res, 401, { error: "invalid_connection_token" });
+        }
+
+        const documentMatch =
+          /^\/api\/integrations\/feishu\/drive\/documents\/([A-Za-z0-9_-]{1,128})\/(content|blocks|append|blocks\/[A-Za-z0-9_-]{1,128})$/.exec(
+            path,
+          );
+        if (documentMatch) {
+          const [, documentId, action] = documentMatch;
+          const base = `https://open.feishu.cn/open-apis/docx/v1/documents/${documentId}`;
+          // Keep upstream diagnostics useful without exposing raw messages/tokens.
+          const requestDocument = async (suffix, options = {}) => {
+            const response = await fetchImpl(`${base}${suffix}`, {
+              ...options,
+              headers: {
+                Authorization: `Bearer ${drive.accessToken}`,
+                "Content-Type": "application/json",
+              },
+              signal: AbortSignal.timeout(30_000),
+            });
+            const payload = await response.json();
+            if (!response.ok || Number(payload.code) !== 0) {
+              const code = Number(payload.code);
+              const failure = new Error("document_api_error");
+              failure.publicError =
+                response.status === 403 || code === 99991672
+                  ? "document_permission_denied_or_scope_missing_reauthorize"
+                  : "document_api_error";
+              failure.upstreamCode = Number.isFinite(code) ? code : null;
+              throw failure;
+            }
+            return payload.data || {};
+          };
+          try {
+            if (req.method === "GET" && action === "content") {
+              const offset = Number(url.searchParams.get("offset") || 0);
+              const limit = Number(url.searchParams.get("limit") || 12000);
+              if (
+                !Number.isSafeInteger(offset) ||
+                offset < 0 ||
+                !Number.isInteger(limit) ||
+                limit < 1 ||
+                limit > 12000
+              ) {
+                return json(res, 400, { error: "invalid_content_pagination" });
+              }
+              const data = await requestDocument("/raw_content");
+              const content = String(data.content || "");
+              const end = Math.min(offset + limit, content.length);
+              return json(res, 200, {
+                document_id: documentId,
+                content: content.slice(offset, end),
+                total_chars: content.length,
+                next_offset: end < content.length ? end : null,
+              });
+            }
+            if (req.method === "GET" && action === "blocks") {
+              const query = new URLSearchParams({ page_size: "50" });
+              const pageToken = url.searchParams.get("page_token");
+              if (pageToken) query.set("page_token", pageToken);
+              return json(res, 200, await requestDocument(`/blocks?${query}`));
+            }
+            if (
+              (req.method === "POST" && action === "append") ||
+              (req.method === "PATCH" && action.startsWith("blocks/"))
+            ) {
+              const body = await readJson(req);
+              if (
+                typeof body.text !== "string" ||
+                !body.text.trim() ||
+                body.text.length > 2000
+              ) {
+                return json(res, 400, {
+                  error: "text_must_be_1_to_2000_characters",
+                });
+              }
+              const elements = [{ text_run: { content: body.text } }];
+              if (action === "append") {
+                return json(
+                  res,
+                  200,
+                  await requestDocument(`/blocks/${documentId}/children`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      children: [{ block_type: 2, text: { elements } }],
+                      index: -1,
+                    }),
+                  }),
+                );
+              }
+              if (typeof body.expected_text !== "string") {
+                return json(res, 400, {
+                  error: "expected_text_required_read_block_first",
+                });
+              }
+              // Pin both the read and write to one revision: never blind-overwrite.
+              const metadata = await requestDocument("");
+              const revision = metadata.document?.revision_id;
+              if (!Number.isSafeInteger(revision) || revision < 0) {
+                return json(res, 502, { error: "document_revision_missing" });
+              }
+              const suffix = `/${action}?document_revision_id=${revision}`;
+              const { block } = await requestDocument(suffix);
+              const textKey =
+                block?.block_type === 2
+                  ? "text"
+                  : block?.block_type >= 3 && block?.block_type <= 11
+                    ? `heading${block.block_type - 2}`
+                    : null;
+              const previous = textKey && block[textKey]?.elements;
+              if (
+                !Array.isArray(previous) ||
+                !previous.every(
+                  (item) =>
+                    item.text_run &&
+                    Object.values(item.text_run.text_element_style || {}).every(
+                      (value) => value === false || value == null,
+                    ),
+                )
+              ) {
+                return json(res, 400, {
+                  error: "only_plain_text_or_heading_blocks_supported",
+                });
+              }
+              if (
+                previous.map((item) => item.text_run.content || "").join("") !==
+                body.expected_text
+              ) {
+                return json(res, 409, {
+                  error: "document_changed_read_again_before_editing",
+                });
+              }
+              return json(
+                res,
+                200,
+                await requestDocument(suffix, {
+                  method: "PATCH",
+                  body: JSON.stringify({ update_text_elements: { elements } }),
+                }),
+              );
+            }
+            return json(res, 405, { error: "method_not_allowed" });
+          } catch (error) {
+            if (!error.publicError) throw error;
+            return json(res, 502, {
+              error: error.publicError,
+              upstream_code: error.upstreamCode,
+            });
+          }
         }
 
         if (

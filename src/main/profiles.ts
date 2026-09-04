@@ -5,6 +5,7 @@ import { promises as fs } from "fs";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import {
   HERMES_HOME,
+  HERMES_REPO,
   getHermesPython,
   hermesCliArgs,
   getEnhancedPath,
@@ -293,7 +294,7 @@ export function createProfile(
 
   try {
     execFileSync(getHermesPython(), hermesCliArgs(args), {
-      cwd: join(HERMES_HOME, "hermes-agent"),
+      cwd: HERMES_REPO,
       env: {
         ...process.env,
         PATH: getEnhancedPath(),
@@ -350,7 +351,7 @@ export function deleteProfile(name: string): {
       getHermesPython(),
       hermesCliArgs(["profile", "delete", name, "--yes"]),
       {
-        cwd: join(HERMES_HOME, "hermes-agent"),
+        cwd: HERMES_REPO,
         env: {
           ...process.env,
           PATH: getEnhancedPath(),

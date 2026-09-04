@@ -32,13 +32,23 @@ Single-file deletion requires the exact confirmation string `DELETE:<file_token>
 
 ## Runtime delivery
 
-Development and packaged Agents receive the same canonical OAuth-proxy implementation and expose the same five file tools to desktop chat, scheduled tasks, CLI, and ACP sessions.
+Development and packaged Agents receive the same canonical OAuth-proxy implementation and expose five file tools plus four document tools to desktop chat, scheduled tasks, CLI, and ACP sessions.
 
 `scripts/apply-offline-runtime-overlays.mjs#patchFeishuDriveToolsetSource` removes the obsolete initialization tool, assigns the five OAuth actions to the dedicated `feishu_user_drive` toolset, adds them to the API-server and ACP composites, and adds them to the shared core inherited by CLI and cron. Keeping this toolset separate from legacy app-credential comment actions lets platform resolution expose it in direct desktop conversations. `scripts/prepare-dev-agent.mjs#syncDevFeishuDriveTools` copies the canonical overlay into an installed development Agent.
 
 ### Built-in discovery
 
-The five file actions use top-level `registry.register(...)` calls so Hermes' AST-based built-in scanner recognizes and imports the module automatically from the system `tools/` directory; the model never needs Tool Search to discover them.
+All nine actions use top-level `registry.register(...)` calls so Hermes' AST-based built-in scanner recognizes and imports the module automatically from the system `tools/` directory; the model never needs Tool Search to discover them.
+
+## 新版在线文档读写
+
+四个内置工具沿用当前会话的员工授权，读取正文和段落块、追加纯文本、修改指定普通段落或标题；不支持普通附件、知识库链接、多维表格或整篇覆盖。
+
+`feishu_docx_read` 接受文档 ID 或可信飞书 `/docx/` 链接，正文每次最多返回 12000 字符并给出 `next_offset`。`feishu_docx_list_blocks` 每页读取 50 个块并返回飞书分页游标。文档内容属于外部数据，不是模型指令。
+
+`feishu_docx_append_text` 每次在文档末尾追加一个最多 2000 字符的纯文本段落，不解释 Markdown。超时后需读取确认，不自动重试写操作。`feishu_docx_update_block` 要求完整旧文本 `expected_text`；服务器读取文档版本与对应块，拒绝旧文本不一致、富文本、非文本块，并将相同版本传给更新请求，避免并发覆盖。
+
+开发同步与 Release overlay 都从 `resources/hermes-agent-overlays/tools/feishu_drive_files_tool.py` 复制工具；注册补丁对原有五工具快照做幂等升级，将新增四工具纳入同一授权工具集及各平台内置集合。无需安装 SDK 或依赖 SKILL 文件。
 
 ## Verification
 

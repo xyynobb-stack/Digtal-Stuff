@@ -74,13 +74,19 @@ Windows subprocesses resolve their virtual-environment interpreter when each pro
 
 Managed employee provisioning awaits the shared Runtime preparation before starting Profile services. Once ready, background launches prefer `pythonw.exe`; development and incomplete non-managed environments retain the console-Python fallback for compatibility.
 
+### Profile CLI working directory
+
+Profile creation and deletion launch from the resolved `HERMES_REPO`, not a presumed Agent directory under the user data home, so clean packaged installations need no legacy folder.
+
+[[src/main/profiles.ts#createProfile]] and [[src/main/profiles.ts#deleteProfile]] retain `HERMES_HOME` for data isolation while using the versioned Runtime as their working directory in packaged builds. Development uses its resolved Agent repository. Tests cover both operations without the legacy directory.
+
 ### Profile isolation release overlay
 
 Profile-scoped Agent fixes have one durable build-time source and do not depend on a developer manually recreating the offline Runtime.
 
 `scripts/patch-profile-session-isolation.mjs` applies the session/Profile isolation patch to an Agent tree. `scripts/prepare-dev-agent.mjs` runs it automatically before `npm run dev`, while `scripts/apply-offline-runtime-overlays.mjs` runs it in the `release` workflow before the checked-in `build/offline-runtime` snapshot is archived. The operation is idempotent and rejects an incompatible upstream tree instead of silently producing a partially patched package.
 
-Every Dashboard turn rebuilds its secret scope from the effective Profile home. Cross-Profile sessions use their explicit home; sessions owned by the Dashboard's launch Profile fall back to that process's `_hermes_home`, so OAuth updates written to `.env` become visible on the next turn without restarting Dashboard.
+Every Dashboard turn rebuilds its secret scope from the effective Profile home. Cross-Profile sessions use their explicit home; sessions owned by the Dashboard's launch Profile fall back to that process's `_hermes_home`, so updated secret values become visible on the next turn. Because tool availability is snapshotted when an Agent is built, adding a previously absent credential still requires that Agent to be rebuilt; the Feishu authorization flow restarts the target local Dashboard for this purpose while the renderer preserves and resumes its durable sessions.
 
 The relocated-runtime activation probe starts the packaged virtual-environment launcher and imports only `sys`, proving that the interpreter and repaired executable path work without putting cold `numpy` or `pymilvus` DLL loading on the blocking first-launch path. Release workflows import both heavy dependencies before packaging, so a missing RAG dependency fails CI rather than an employee upgrade.
 

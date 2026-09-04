@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import ast
 import importlib
 import json
 import sys
@@ -16,10 +17,49 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AGENT_ROOT = PROJECT_ROOT / "build" / "offline-runtime" / "hermes-agent"
 sys.path.insert(0, str(AGENT_ROOT))
 
-drive = importlib.import_module("tools.feishu_drive_files_tool")
+# Test canonical source rather than the generated runtime snapshot.
+spec = importlib.util.spec_from_file_location("tools.feishu_drive_files_tool", PROJECT_ROOT / "resources/hermes-agent-overlays/tools/feishu_drive_files_tool.py")
+drive = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(drive)
 
 
 class UserAuthorizedFeishuDriveTests(unittest.TestCase):
+    def test_document_tools_have_literal_top_level_registrations(self) -> None:
+        tree = ast.parse(Path(drive.__file__).read_text(encoding="utf-8"))
+        names = []
+        for statement in tree.body:
+            if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+                continue
+            call = statement.value
+            if isinstance(call.func, ast.Attribute) and call.func.attr == "register":
+                names.extend(keyword.value.value for keyword in call.keywords if keyword.arg == "name" and isinstance(keyword.value, ast.Constant))
+        for name in ("feishu_docx_read", "feishu_docx_list_blocks", "feishu_docx_append_text", "feishu_docx_update_block"):
+            self.assertEqual(names.count(name), 1)
+
+    def test_document_read_accepts_url_and_passes_pagination(self) -> None:
+        with patch.object(drive, "_proxy_request", return_value={"content": "正文", "next_offset": 10}) as request:
+            result = json.loads(drive._handle_document({"document_id": "https://example.feishu.cn/docx/doc1?from=home", "offset": 2}, "content"))
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["next_offset"], 10)
+        request.assert_called_once_with("GET", "/api/integrations/feishu/drive/documents/doc1/content", query={"offset": 2, "limit": 12000})
+
+    def test_document_targets_and_edits_are_validated_before_network(self) -> None:
+        with patch.object(drive, "_proxy_request") as request:
+            for document_id in ("https://evil.test/docx/a", "https://a.feishu.cn/wiki/a", "../a", "https://a.feishu.cn/file/a"):
+                self.assertIn("error", json.loads(drive._handle_document({"document_id": document_id}, "content")))
+            self.assertIn("error", json.loads(drive._handle_document({"document_id": "doc1", "text": "新", "block_id": "b1"}, "update")))
+            self.assertIn("error", json.loads(drive._handle_document({"document_id": "doc1", "text": "x" * 2001}, "append")))
+            request.assert_not_called()
+
+    def test_document_edits_send_expected_text_and_append_separately(self) -> None:
+        with patch.object(drive, "_proxy_request", return_value={}) as request:
+            result = json.loads(drive._handle_document({"document_id": "doc1", "block_id": "b1", "expected_text": "旧", "text": "新"}, "update"))
+            self.assertTrue(result["success"])
+            request.assert_called_once_with("PATCH", "/api/integrations/feishu/drive/documents/doc1/blocks/b1", body={"text": "新", "expected_text": "旧"}, timeout=100)
+            request.reset_mock()
+            drive._handle_document({"document_id": "doc1", "text": "追加"}, "append")
+            request.assert_called_once_with("POST", "/api/integrations/feishu/drive/documents/doc1/append", body={"text": "追加"})
+
     # @lat: [[feishu-drive#Runtime delivery#Built-in discovery]]
     def test_module_is_discovered_and_tools_are_eager(self) -> None:
         from tools.registry import _module_registers_tools

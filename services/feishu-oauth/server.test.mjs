@@ -23,6 +23,199 @@ const config = {
   databasePath: ":memory:",
 };
 
+test("document routes isolate users, paginate, append and guard edits", async () => {
+  const database = openDatabase(":memory:");
+  for (const employee of ["alice", "bob"]) {
+    database
+      .prepare(
+        `INSERT INTO feishu_connections (employee_user_id, access_token_encrypted, access_expires_at, scopes, connection_token_hash, status, created_at, updated_at) VALUES (?, ?, ?, 'drive:drive docx:document', ?, 'connected', 1, 1)`,
+      )
+      .run(
+        employee,
+        encryptToken(`${employee}-access`, encryptionKey),
+        10_000_000,
+        stateHash(`${employee}-connection`),
+      );
+  }
+  const calls = [];
+  let richText = false;
+  let failure = false;
+  const fetchImpl = async (input, options) => {
+    const url = new URL(input);
+    calls.push({ url, options });
+    if (failure)
+      return Response.json({
+        code: 99991672,
+        msg: "sensitive upstream message",
+      });
+    assert.ok(
+      ["Bearer alice-access", "Bearer bob-access"].includes(
+        options.headers.Authorization,
+      ),
+    );
+    if (url.pathname.endsWith("/raw_content"))
+      return Response.json({ code: 0, data: { content: "测试文档正文" } });
+    if (url.pathname.endsWith("/children")) {
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), {
+        index: -1,
+        children: [
+          {
+            block_type: 2,
+            text: { elements: [{ text_run: { content: "追加" } }] },
+          },
+        ],
+      });
+      return Response.json({
+        code: 0,
+        data: { children: [{ block_id: "newblock" }] },
+      });
+    }
+    if (url.pathname.endsWith("/blocks/b1")) {
+      assert.equal(url.searchParams.get("document_revision_id"), "7");
+      if (options.method === "PATCH") {
+        assert.deepEqual(JSON.parse(options.body), {
+          update_text_elements: {
+            elements: [{ text_run: { content: "新内容" } }],
+          },
+        });
+        return Response.json({ code: 0, data: { document_revision_id: 8 } });
+      }
+      return Response.json({
+        code: 0,
+        data: {
+          block: {
+            block_type: 2,
+            text: {
+              elements: richText
+                ? [{ mention_user: { user_id: "other" } }]
+                : [{ text_run: { content: "旧内容" } }],
+            },
+          },
+        },
+      });
+    }
+    if (url.pathname.endsWith("/blocks")) {
+      assert.equal(url.searchParams.get("page_size"), "50");
+      assert.equal(url.searchParams.get("page_token"), "next");
+      return Response.json({
+        code: 0,
+        data: {
+          items: [{ block_id: "b1" }],
+          has_more: true,
+          page_token: "page2",
+        },
+      });
+    }
+    assert.equal(url.pathname, "/open-apis/docx/v1/documents/doc1");
+    return Response.json({ code: 0, data: { document: { revision_id: 7 } } });
+  };
+  const service = createFeishuOAuthService({
+    config,
+    database,
+    fetchImpl,
+    now: () => 1000,
+  });
+  const server = createServer(service.handler);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}/api/integrations/feishu/drive/documents/doc1`;
+  const request = (suffix, method = "GET", body, employee = "alice") =>
+    fetch(base + suffix, {
+      method,
+      headers: {
+        Authorization: `Bearer ${employee}-connection`,
+        "Content-Type": "application/json",
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  try {
+    assert.equal((await fetch(base + "/content")).status, 401);
+    assert.equal(calls.length, 0);
+    for (const employee of ["alice", "bob"]) {
+      const response = await request(
+        "/content?offset=1&limit=2",
+        "GET",
+        undefined,
+        employee,
+      );
+      assert.deepEqual(await response.json(), {
+        document_id: "doc1",
+        content: "试文",
+        total_chars: 6,
+        next_offset: 3,
+      });
+      assert.equal(
+        calls.at(-1).options.headers.Authorization,
+        `Bearer ${employee}-access`,
+      );
+    }
+    assert.equal((await request("/content?offset=-1")).status, 400);
+    assert.equal(
+      (await (await request("/blocks?page_token=next")).json()).page_token,
+      "page2",
+    );
+    assert.equal(
+      (await request("/append", "POST", { text: "追加" })).status,
+      200,
+    );
+    assert.equal(
+      (await request("/append", "POST", { text: "x".repeat(2001) })).status,
+      400,
+    );
+    assert.equal(
+      (await request("/blocks/b1", "PATCH", { text: "新内容" })).status,
+      400,
+    );
+    assert.equal(
+      (
+        await request("/blocks/b1", "PATCH", {
+          text: "新内容",
+          expected_text: "不匹配",
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      calls.filter((call) => call.options.method === "PATCH").length,
+      0,
+    );
+    richText = true;
+    assert.equal(
+      (
+        await request("/blocks/b1", "PATCH", {
+          text: "新内容",
+          expected_text: "旧内容",
+        })
+      ).status,
+      400,
+    );
+    richText = false;
+    assert.equal(
+      (
+        await request("/blocks/b1", "PATCH", {
+          text: "新内容",
+          expected_text: "旧内容",
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      calls.filter((call) => call.options.method === "PATCH").length,
+      1,
+    );
+    failure = true;
+    const denied = await request("/content");
+    assert.equal(denied.status, 502);
+    assert.deepEqual(await denied.json(), {
+      error: "document_permission_denied_or_scope_missing_reauthorize",
+      upstream_code: 99991672,
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    database.close();
+  }
+});
+
 test("tokens round-trip through AES-GCM encryption", () => {
   const encrypted = encryptToken("token-value", encryptionKey);
   assert.notEqual(encrypted, "token-value");
@@ -39,7 +232,10 @@ test("authorization URL requests user Drive and refresh scopes", () => {
   );
   assert.equal(url.searchParams.get("client_id"), config.appId);
   assert.equal(url.searchParams.get("redirect_uri"), config.redirectUri);
-  assert.equal(url.searchParams.get("scope"), "drive:drive offline_access");
+  assert.equal(
+    url.searchParams.get("scope"),
+    "drive:drive docx:document offline_access",
+  );
   assert.equal(url.searchParams.get("state"), "random-state");
 });
 

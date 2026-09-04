@@ -719,6 +719,18 @@ describe("market report workflow development overlay", () => {
     expect(toolsets).toContain('"feishu_drive_upload_file"');
     expect(toolsets).not.toContain('"feishu_drive_initialize"');
     expect(toolsets.match(/"feishu_drive_list_files"/g)).toHaveLength(4);
+    for (const name of [
+      "feishu_docx_read",
+      "feishu_docx_list_blocks",
+      "feishu_docx_append_text",
+      "feishu_docx_update_block",
+    ]) {
+      expect(toolsets.split(`"${name}"`)).toHaveLength(5);
+    }
+    const oldToolsets = toolsets.replace(/^.*"feishu_docx_.*\r?\n/gm, "");
+    const upgraded = patchFeishuDriveToolsetSource(oldToolsets);
+    expect(upgraded.split('"feishu_docx_read"')).toHaveLength(5);
+    expect(patchFeishuDriveToolsetSource(upgraded)).toBe(upgraded);
     expect(toolsets).toContain('"feishu_user_drive": {');
     expect(toolsets).toContain(
       '"description": "Connected-user Feishu/Lark personal Drive file operations"',

@@ -173,6 +173,7 @@ import {
   getFeishuUserOAuthStatus,
   startFeishuUserOAuth,
 } from "../feishu-user-oauth";
+import { refreshDashboardAfterFeishuAuthorization } from "../feishu-dashboard-refresh";
 import {
   startSshTunnel,
   ensureSshTunnel,
@@ -1610,6 +1611,22 @@ export function registerIpcHandlers(context: IpcContext): void {
               );
             }
           }
+        }
+        recordInstallCheck("feishu.dashboard_refresh_started", {
+          profile: targetProfile,
+        });
+        const dashboardRefresh =
+          await refreshDashboardAfterFeishuAuthorization(targetProfile);
+        recordInstallCheck("feishu.dashboard_refresh_finished", {
+          profile: targetProfile,
+          attempted: dashboardRefresh.attempted,
+          ok: dashboardRefresh.ok,
+          ...(dashboardRefresh.error ? { error: dashboardRefresh.error } : {}),
+        });
+        if (!dashboardRefresh.ok) {
+          throw new Error(
+            "飞书连接已保存，但聊天服务未能刷新；请重启数字员工后使用。",
+          );
         }
       }
       return {

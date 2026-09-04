@@ -21,6 +21,7 @@ const { TEST_HOME } = vi.hoisted(() => {
 // profiles.ts evaluates the `PROFILES_DIR` constant from it.
 vi.mock("../src/main/installer", () => ({
   HERMES_HOME: TEST_HOME,
+  HERMES_REPO: `${TEST_HOME}/runtime/versions/test-version/hermes-agent`,
   HERMES_PYTHON: "/usr/bin/python3",
   getHermesPython: () => "/usr/bin/python3",
   HERMES_SCRIPT: "/dev/null",
@@ -43,6 +44,31 @@ import {
 import { setProfileName } from "../src/main/profile-meta";
 
 const PROFILES_DIR = join(TEST_HOME, "profiles");
+
+describe("Profile CLI runtime directory", () => {
+  // @lat: [[main-process#Offline Windows runtime#Profile CLI working directory]]
+  it.each(["create", "delete"] as const)(
+    "runs %s in the resolved Runtime without requiring the legacy directory",
+    (operation) => {
+      const runtime = `${TEST_HOME}/runtime/versions/test-version/hermes-agent`;
+      mkdirSync(runtime, { recursive: true });
+      expect(existsSync(join(TEST_HOME, "hermes-agent"))).toBe(false);
+      execFileSyncMock.mockImplementation((_executable, _args, options) => {
+        expect(options.cwd).toBe(runtime);
+        expect(existsSync(options.cwd)).toBe(true);
+        expect(options.env.HERMES_HOME).toBe(TEST_HOME);
+        return Buffer.from("");
+      });
+
+      const result =
+        operation === "create"
+          ? createProfile("runtime-worker", "default")
+          : deleteProfile("runtime-worker");
+      expect(result.success).toBe(true);
+      expect(execFileSyncMock).toHaveBeenCalledTimes(1);
+    },
+  );
+});
 
 beforeEach(() => {
   execFileSyncMock.mockReset();

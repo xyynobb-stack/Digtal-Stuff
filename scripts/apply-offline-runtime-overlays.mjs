@@ -605,6 +605,39 @@ ${toolLines}        ],
   for (const toolsetName of ["hermes-acp", "hermes-api-server"]) {
     patched = addToNamedToolset(patched, toolsetName);
   }
+  // Upgrade existing five-tool snapshots as well as fresh Agents idempotently.
+  const documentTools = [
+    "feishu_docx_read",
+    "feishu_docx_list_blocks",
+    "feishu_docx_append_text",
+    "feishu_docx_update_block",
+  ];
+  for (const name of [
+    "_HERMES_CORE_TOOLS",
+    "feishu_user_drive",
+    "hermes-acp",
+    "hermes-api-server",
+  ]) {
+    const start =
+      name === "_HERMES_CORE_TOOLS"
+        ? patched.indexOf("_HERMES_CORE_TOOLS = [")
+        : patched.indexOf(`    "${name}": {`);
+    const end = patched.indexOf(
+      name === "_HERMES_CORE_TOOLS" ? "\n]" : "        ],",
+      start,
+    );
+    if (start < 0 || end < 0)
+      throw new Error(`Missing Feishu document toolset: ${name}`);
+    const block = patched.slice(start, end);
+    const missing = documentTools.filter(
+      (tool) => !block.includes(`"${tool}"`),
+    );
+    if (missing.length) {
+      const indent = name === "_HERMES_CORE_TOOLS" ? "    " : "            ";
+      const lines = missing.map((tool) => `${indent}"${tool}",`).join("\n");
+      patched = `${patched.slice(0, end)}\n${lines}\n${patched.slice(end)}`;
+    }
+  }
   return patched;
 }
 

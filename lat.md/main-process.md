@@ -6,6 +6,8 @@ The Electron main process keeps the entrypoint small and separates app lifecycle
 
 自 0.7.53 起撤回临时网关启动诊断，不再生成启动关联日志或运行周期调用栈采样。开发准备与 release overlays 会移除 0.7.52 留在运行时中的精确诊断插桩；已有日志保留，正常网关日志、重启策略和健康检查预算不变。
 
+0.7.54 的 `install-check.log` 仅记录后台版本检查的开始、缓存命中、耗时、退出码、终止信号及脱敏错误输出，同时记录飞书连接与网关重启时间点。日志位于 Electron userData，不记录 stdout、凭据或授权 URL；写入失败不影响业务，不改变原有 15 秒超时和 5 分钟缓存策略，也不启用周期采样。
+
 `src/main/index.ts` performs only pre-ready setup and delegates startup.
 
 [[src/main/index.ts]] applies GPU crash preferences, enables the optional CDP testing port, and calls [[src/main/app/start.ts#startMainProcess]]. This keeps one-off process boot concerns separate from windows, menus, updater wiring, and IPC.

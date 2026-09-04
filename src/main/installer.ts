@@ -40,6 +40,7 @@ import {
   desktopRuntimeVersionName,
 } from "./runtime-build";
 import { recordColdStartTiming } from "./cold-start-timing";
+import { recordInstallCheck } from "./install-check-log";
 
 const IS_WINDOWS = process.platform === "win32";
 const RUNTIME_ARCHIVE_NAME = "runtime.tar";
@@ -1445,13 +1446,36 @@ let _verifyCache: { ok: boolean; ts: number } | null = null;
 const VERIFY_TTL_MS = 5 * 60 * 1000;
 
 export async function verifyInstall(): Promise<boolean> {
-  if (!canInvokeHermesCli()) return false;
+  const checkId = randomBytes(8).toString("hex");
+  const python = getHermesPython();
+  if (!canInvokeHermesCli()) {
+    recordInstallCheck("verify.unavailable", {
+      checkId,
+      python,
+      cwd: HERMES_REPO,
+      pythonExists: existsSync(python),
+      cliExists: existsSync(join(HERMES_REPO, "hermes_cli", "main.py")),
+    });
+    return false;
+  }
   if (_verifyCache && Date.now() - _verifyCache.ts < VERIFY_TTL_MS) {
+    recordInstallCheck("verify.cache_hit", {
+      checkId,
+      ok: _verifyCache.ok,
+      ageMs: Date.now() - _verifyCache.ts,
+    });
     return _verifyCache.ok;
   }
+  const startedAt = Date.now();
+  recordInstallCheck("verify.started", {
+    checkId,
+    python,
+    cwd: HERMES_REPO,
+    timeoutMs: 15000,
+  });
   return new Promise((resolve) => {
     execFile(
-      getHermesPython(),
+      python,
       hermesCliArgs(["--version"]),
       {
         cwd: HERMES_REPO,
@@ -1464,8 +1488,18 @@ export async function verifyInstall(): Promise<boolean> {
         timeout: 15000,
         ...HIDDEN_SUBPROCESS_OPTIONS,
       },
-      (error) => {
+      (error, _stdout, stderr) => {
         const ok = !error;
+        recordInstallCheck("verify.finished", {
+          checkId,
+          ok,
+          elapsedMs: Date.now() - startedAt,
+          code: error?.code ?? null,
+          signal: error?.signal ?? null,
+          killed: error?.killed ?? false,
+          error: error?.message,
+          stderr: String(stderr ?? ""),
+        });
         _verifyCache = { ok, ts: Date.now() };
         resolve(ok);
       },

@@ -1,3 +1,4 @@
+import { recordInstallCheck } from "../install-check-log";
 import {
   app,
   shell,
@@ -856,6 +857,7 @@ export function registerIpcHandlers(context: IpcContext): void {
   });
 
   ipcMain.handle("verify-install", async () => {
+    recordInstallCheck("verify.ipc_received");
     await initializeBundledRuntime();
     return verifyInstall();
   });
@@ -1541,12 +1543,14 @@ export function registerIpcHandlers(context: IpcContext): void {
   });
 
   ipcMain.handle("feishu-oauth-start", async (_event, profile?: string) => {
+    recordInstallCheck("feishu.connect_requested", { profile });
     const targetProfile = profile || getActiveProfileNameSync();
     const binding = readEmployeeProfileBinding(targetProfile);
     if (!binding) {
       throw new Error("请先通过手机号完成数字员工配置。");
     }
     const result = await startFeishuUserOAuth(binding.employee.userId);
+    recordInstallCheck("feishu.browser_opened", { profile: targetProfile });
     feishuOAuthRequests.set(result.requestId, {
       profile: targetProfile,
       employeeUserId: binding.employee.userId,
@@ -1575,6 +1579,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         feishuOAuthRequests.delete(requestId);
       }
       if (result.status === "connected") {
+        recordInstallCheck("feishu.authorized", { profile: targetProfile });
         if (!result.connectionToken) {
           throw new Error("飞书授权已完成，但连接凭据已过期，请重新连接。");
         }
@@ -1590,13 +1595,20 @@ export function registerIpcHandlers(context: IpcContext): void {
             targetProfile,
           );
           setEnvValue("FEISHU_OAUTH_BASE_URL", serviceUrl, targetProfile);
-          if (
-            isGatewayRunning(targetProfile) &&
-            !(await restartGateway(targetProfile))
-          ) {
-            throw new Error(
-              "飞书连接已保存，但本地网关重启失败；请重启数字员工后使用。",
-            );
+          if (isGatewayRunning(targetProfile)) {
+            recordInstallCheck("feishu.gateway_restart_started", {
+              profile: targetProfile,
+            });
+            const restarted = await restartGateway(targetProfile);
+            recordInstallCheck("feishu.gateway_restart_finished", {
+              profile: targetProfile,
+              ok: restarted,
+            });
+            if (!restarted) {
+              throw new Error(
+                "飞书连接已保存，但本地网关重启失败；请重启数字员工后使用。",
+              );
+            }
           }
         }
       }

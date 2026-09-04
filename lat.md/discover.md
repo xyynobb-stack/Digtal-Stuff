@@ -24,6 +24,8 @@ Each packaged profile receives editable custom Skills for common employee roles,
 
 `scripts/prepare-offline-runtime.mjs` stages the repository-owned `resources/starter-skills` inventory into `preset-content/skills/custom`. [[src/main/installer.ts#installBundledProfileContent]] installs it during default-profile startup and named-profile creation; opening the picker performs no filesystem copy. Existing same-name directories always win.
 
+The `project-manager` starter distills the project-manager questionnaire into semantic scenario routing and fifteen executable playbooks. Each playbook defines recognition conditions, ordered actions, required answer fields, prohibited shortcuts, and questionnaire provenance so focused questions receive the matching role workflow instead of a generic lifecycle summary.
+
 The Skill Creator starter guides a dialogue from trigger examples and scope through file creation and validation, defaulting new skills to the active profile's user-owned custom directory.
 
 ## Market report user Skill

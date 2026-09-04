@@ -1442,8 +1442,9 @@ export function checkInstallStatus(): InstallStatus {
 
 // Lazy background verification: actually invoke Python to confirm the
 // install runs. Called from the renderer after the UI is already up.
-let _verifyCache: { ok: boolean; ts: number } | null = null;
+let _verifySuccessCache: { ts: number } | null = null;
 const VERIFY_TTL_MS = 5 * 60 * 1000;
+const VERIFY_TIMEOUT_MS = 45_000;
 
 export async function verifyInstall(): Promise<boolean> {
   const checkId = randomBytes(8).toString("hex");
@@ -1458,20 +1459,23 @@ export async function verifyInstall(): Promise<boolean> {
     });
     return false;
   }
-  if (_verifyCache && Date.now() - _verifyCache.ts < VERIFY_TTL_MS) {
+  if (
+    _verifySuccessCache &&
+    Date.now() - _verifySuccessCache.ts < VERIFY_TTL_MS
+  ) {
     recordInstallCheck("verify.cache_hit", {
       checkId,
-      ok: _verifyCache.ok,
-      ageMs: Date.now() - _verifyCache.ts,
+      ok: true,
+      ageMs: Date.now() - _verifySuccessCache.ts,
     });
-    return _verifyCache.ok;
+    return true;
   }
   const startedAt = Date.now();
   recordInstallCheck("verify.started", {
     checkId,
     python,
     cwd: HERMES_REPO,
-    timeoutMs: 15000,
+    timeoutMs: VERIFY_TIMEOUT_MS,
   });
   return new Promise((resolve) => {
     execFile(
@@ -1485,7 +1489,7 @@ export async function verifyInstall(): Promise<boolean> {
           HOME: homedir(),
           HERMES_HOME,
         },
-        timeout: 15000,
+        timeout: VERIFY_TIMEOUT_MS,
         ...HIDDEN_SUBPROCESS_OPTIONS,
       },
       (error, _stdout, stderr) => {
@@ -1500,7 +1504,10 @@ export async function verifyInstall(): Promise<boolean> {
           error: error?.message,
           stderr: String(stderr ?? ""),
         });
-        _verifyCache = { ok, ts: Date.now() };
+        // A failed cold-start probe must remain retryable. Only successful
+        // verification is cached; the retry button therefore runs a fresh
+        // lightweight probe without reinstalling or preparing the Runtime.
+        _verifySuccessCache = ok ? { ts: Date.now() } : null;
         resolve(ok);
       },
     );

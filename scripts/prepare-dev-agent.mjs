@@ -1,4 +1,5 @@
 import os from "node:os";
+import { patchGatewayStartupDiagnostics } from "./patch-gateway-startup-diagnostics.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -374,6 +375,7 @@ export function syncDevMarketReportSkill(
 
 export function prepareDevAgent() {
   const agentRoot = path.join(hermesHome, "hermes-agent");
+  patchGatewayStartupDiagnostics(agentRoot);
   patchProfileSessionIsolation(agentRoot);
   syncDevDesktopModelRouting(agentRoot);
   patchCronOutputDirectories(agentRoot);

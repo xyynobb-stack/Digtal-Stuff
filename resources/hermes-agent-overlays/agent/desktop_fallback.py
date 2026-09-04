@@ -19,7 +19,7 @@ class RequestStillRunning(RuntimeError):
 def is_company(agent):
     try:
         url = urlsplit(str(getattr(agent, "base_url", "") or ""))
-        return url.hostname == "183.230.227.39" and url.port == 18600
+        return url.hostname == "36.212.61.62" and url.port == 18600
     except ValueError:
         return False
 

@@ -520,6 +520,7 @@ function profileBelongsToEmployee(profile: string, userId: string): boolean {
 
 export function readEmployeeProfileBinding(
   profile?: string,
+  strict = false,
 ): EmployeeProfileBinding | null {
   try {
     const parsed = JSON.parse(
@@ -533,10 +534,13 @@ export function readEmployeeProfileBinding(
       !parsed.role ||
       !Array.isArray(parsed.role.mandatorySkills)
     ) {
+      if (strict) throw new Error("员工绑定文件格式不正确，请重新配置。");
       return null;
     }
     return parsed as EmployeeProfileBinding;
-  } catch {
+  } catch (error) {
+    if (strict && (error as NodeJS.ErrnoException).code !== "ENOENT")
+      throw error;
     return null;
   }
 }

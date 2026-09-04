@@ -1193,7 +1193,7 @@ export function registerIpcHandlers(context: IpcContext): void {
       ).trim();
       if (!adminToken) throw new Error("未配置 EMPLOYEE_LOOKUP_ADMIN_TOKEN。");
       const response = await fetch(
-        "http://183.230.227.39:18600/api/admin/users/lookup-by-phone",
+        "http://36.212.61.62:18600/api/admin/users/lookup-by-phone",
         {
           method: "POST",
           headers: {
@@ -1257,7 +1257,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         const gatewayWasRunning = isGatewayRunning(targetProfile);
         beginEmployeeProvision(targetProfile, binding);
         try {
-          const baseUrl = "http://183.230.227.39:18600/v1";
+          const baseUrl = "http://36.212.61.62:18600/v1";
           const envKey = "CUSTOM_PROVIDER_COMPANY_PLATFORM_KEY";
           setEnvValue(envKey, apiKey, targetProfile);
           for (const route of EMPLOYEE_MODEL_ROUTES) {
@@ -1531,6 +1531,14 @@ export function registerIpcHandlers(context: IpcContext): void {
   ipcMain.handle("get-employee-profile-binding", (_event, profile?: string) =>
     readEmployeeProfileBinding(profile || getActiveProfileNameSync()),
   );
+
+  ipcMain.handle("get-employee-profile-details", (_event, profile: string) => {
+    if (!profile?.trim()) throw new Error("必须指定员工 Profile。");
+    const binding = readEmployeeProfileBinding(profile, true);
+    return binding
+      ? { binding, models: readEmployeeModelAccess(profile)?.models ?? [] }
+      : null;
+  });
 
   ipcMain.handle("feishu-oauth-start", async (_event, profile?: string) => {
     const targetProfile = profile || getActiveProfileNameSync();

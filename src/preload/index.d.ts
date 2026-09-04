@@ -336,6 +336,9 @@ interface HermesAPI {
     error?: string;
   }>;
   getEmployeeModelAccess: (profile?: string) => Promise<{ active: boolean }>;
+  getEmployeeProfileDetails: (
+    profile: string,
+  ) => Promise<{ binding: EmployeeProfileBinding; models: string[] } | null>;
   getEmployeeProfileBinding: (
     profile?: string,
   ) => Promise<EmployeeProfileBinding | null>;

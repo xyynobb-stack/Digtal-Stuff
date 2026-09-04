@@ -1,10 +1,46 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Providers from "./Providers";
+import type { EmployeeProfileBinding } from "../../../../shared/employee-workspace";
+
+const binding: EmployeeProfileBinding = {
+  schemaVersion: 1,
+  provisionState: "ready",
+  soulTemplateVersion: 1,
+  roleCatalogVersion: 1,
+  updatedAt: 1,
+  employee: {
+    userId: "a",
+    username: "test",
+    phone: "13987654321",
+    realName: "张三",
+    email: "",
+  },
+  role: {
+    status: "configured",
+    roleName: "项目经理",
+    department: "研发部",
+    position: "项目经理",
+    roleId: "project-manager",
+    mandatorySkills: [],
+  },
+};
 
 describe("employee-only provider screen", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    Object.defineProperty(window, "hermesAPI", {
+      configurable: true,
+      value: {
+        getEmployeeProfileDetails: vi.fn(async () => null),
+      },
+    });
   });
 
   it("hands the activated Profile and mandatory skills to the desktop shell", async () => {
@@ -28,7 +64,10 @@ describe("employee-only provider screen", () => {
     }));
     Object.defineProperty(window, "hermesAPI", {
       configurable: true,
-      value: { provisionEmployee },
+      value: {
+        provisionEmployee,
+        getEmployeeProfileDetails: vi.fn(async () => null),
+      },
     });
     const onEmployeeProvisioned = vi.fn();
     render(<Providers onEmployeeProvisioned={onEmployeeProvisioned} />);
@@ -63,7 +102,7 @@ describe("employee-only provider screen", () => {
     expect(view.container.querySelector(".models-tabs")).toBeNull();
   });
 
-  it("keeps each previously configured phone visible only once", () => {
+  it("ignores cached employees when the current Profile is unbound", async () => {
     window.localStorage.setItem(
       "hermes.configuredEmployeePhones",
       JSON.stringify(["15703020935", "15703020935"]),
@@ -71,11 +110,11 @@ describe("employee-only provider screen", () => {
 
     render(<Providers />);
 
-    expect(screen.getByText("已配置员工")).toBeTruthy();
-    expect(screen.getAllByText("15703020935")).toHaveLength(1);
+    await screen.findByText("当前 Profile 尚未绑定员工，请先自动配置。");
+    expect(screen.queryByText("15703020935")).toBeNull();
   });
 
-  it("shows the configured real name and available models", () => {
+  it("shows persisted binding without relying on browser storage", async () => {
     window.localStorage.setItem(
       "hermes.configuredEmployees",
       JSON.stringify([
@@ -87,12 +126,74 @@ describe("employee-only provider screen", () => {
       ]),
     );
 
-    render(<Providers />);
+    window.localStorage.clear();
+    vi.mocked(window.hermesAPI.getEmployeeProfileDetails).mockResolvedValue({
+      binding,
+      models: ["Seedance-2.0"],
+    } as Awaited<
+      ReturnType<typeof window.hermesAPI.getEmployeeProfileDetails>
+    >);
+    render(<Providers profile="employee-a" />);
 
-    expect(screen.getByText("已配置员工")).toBeTruthy();
+    await screen.findByText("已配置员工");
+    expect(window.hermesAPI.getEmployeeProfileDetails).toHaveBeenCalledWith(
+      "employee-a",
+    );
     expect(screen.getByText("13987654321")).toBeTruthy();
     expect(screen.getByText("姓名")).toBeTruthy();
     expect(screen.getByText("张三")).toBeTruthy();
     expect(screen.getByText("Seedance-2.0")).toBeTruthy();
+  });
+
+  it("discards a previous Profile response and exposes read errors", async () => {
+    let resolveOld!: (value: null) => void;
+    vi.mocked(window.hermesAPI.getEmployeeProfileDetails)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOld = resolve;
+          }),
+      )
+      .mockRejectedValueOnce(new Error("read failed"));
+    const view = render(<Providers profile="employee-a" />);
+    view.rerender(<Providers profile="employee-b" />);
+    await screen.findByText("员工信息读取失败，请重试。");
+    await act(async () => {
+      resolveOld(null);
+    });
+    expect(
+      screen.queryByText("当前 Profile 尚未绑定员工，请先自动配置。"),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "重试" })).toBeTruthy();
+  });
+
+  it("connects Feishu only for the displayed Profile and ignores late authorization results", async () => {
+    let finishStart!: (value: { requestId: string; expiresIn: number }) => void;
+    vi.mocked(window.hermesAPI.getEmployeeProfileDetails).mockResolvedValue({
+      binding,
+      models: [],
+    } as Awaited<
+      ReturnType<typeof window.hermesAPI.getEmployeeProfileDetails>
+    >);
+    window.hermesAPI.startFeishuOAuth = vi.fn(
+      () =>
+        new Promise<{ requestId: string; expiresIn: number }>((resolve) => {
+          finishStart = resolve;
+        }),
+    );
+    window.hermesAPI.getFeishuOAuthStatus = vi.fn();
+    const view = render(<Providers profile="employee-a" />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接飞书" }));
+    expect(window.hermesAPI.startFeishuOAuth).toHaveBeenCalledWith(
+      "employee-a",
+    );
+    view.rerender(<Providers profile="employee-b" />);
+    await act(async () => {
+      finishStart({ requestId: "old", expiresIn: 60 });
+    });
+    expect(window.hermesAPI.getFeishuOAuthStatus).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText("正在打开飞书授权页面，请在浏览器中完成授权…"),
+    ).toBeNull();
   });
 });

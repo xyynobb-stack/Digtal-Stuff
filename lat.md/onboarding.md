@@ -32,9 +32,9 @@ The progress view (`wide`) shows a step + percent header with a progress bar, th
 
 ## Employee phone provisioning
 
-The setup and Providers screens record successfully provisioned employees locally and show each employee's phone, API real name, and available Chat Completions or Responses models.
+The Providers screen displays the current Profile's persisted employee binding and granted models, independently of browser storage; Setup retains its onboarding history.
 
-[[src/renderer/src/screens/Setup/Setup.tsx#Setup]] and [[src/renderer/src/screens/Providers/Providers.tsx#Providers]] share [[src/renderer/src/utils/employeePhones.ts#rememberConfiguredEmployee]]. It normalizes and deduplicates by phone, persists real-name/model metadata in renderer storage, and migrates legacy username and phone-only records without hiding old entries. Provisioning also sets the current profile's display name from the API `real_name` value.
+[[src/renderer/src/screens/Setup/Setup.tsx#Setup]] and [[src/renderer/src/screens/Providers/Providers.tsx#Providers]] still record successful configuration through [[src/renderer/src/utils/employeePhones.ts#rememberConfiguredEmployee]], but this history is not an authority for the Providers card or Feishu identity. Providers loads explicit Profile details over IPC and rejects stale responses after switching. Provisioning also sets the Profile display name from the API `real_name` value.
 
 ## Startup splash
 

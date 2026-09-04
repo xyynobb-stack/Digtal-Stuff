@@ -6,6 +6,8 @@ The first-run screen where the user picks an AI provider and enters credentials 
 
 The setup and Providers screens provision an isolated employee Profile by phone, import supported Chat Completions and Responses models, and activate Kimi-2.6 when available without exposing administrator or employee credentials to the renderer.
 
+员工查询使用 `http://36.212.61.62:18600/api/admin/users/lookup-by-phone`，自动配置将模型地址写为 `http://36.212.61.62:18600/v1`。公司接口备用模型策略同步识别该主机与端口。既有 Profile 不在升级时自动重写，需要重新自动配置才能更新其持久化模型地址；飞书 OAuth 与软件更新服务器不受此次迁移影响。
+
 The employee-facing Providers screen is intentionally limited to the phone input, automatic provisioning action, error feedback, and a deduplicated list of configured employees. Each successful record shows the phone, API `real_name`, resolved-or-pending position, and supported conversational model names. Account login, active-model management, provider keys, credential pools, OAuth, auxiliary tasks, and registry controls are not rendered there.
 
 `user_id`, not phone or display name, is the stable employee identity. [[src/main/employee-workspace.ts#employeeProfileIdForUserId]] derives a CLI-safe Profile id and reuses `employee-binding.json` on later lookups; `real_name` becomes display metadata while the stable id and directory stay unchanged. The renderer stores non-secret display metadata locally, migrates legacy `username` metadata only as a display fallback, and keeps former phone-only entries visible with a reconfiguration prompt.
@@ -25,6 +27,8 @@ The maintained `project-manager` role Skill distills field practice into a reusa
 [[src/main/installer.ts#installBundledProfileContent]] refreshes maintained Skills inside the target Profile before role validation. Packaged builds use the offline preset, while development builds use `resources/starter-skills`; this also repairs Profiles left behind by an earlier failed configuration.
 
 ### Transaction and race boundary
+
+设置页按 Layout 当前 Profile 显式读取员工绑定和模型授权列表，不再把 localStorage 中最后一次配置历史当作当前身份。切换 Profile 会重建页面并使旧读取及飞书轮询失效；无绑定、加载中与读取错误分别呈现。飞书授权始终携带卡片所属 Profile。绑定格式损坏在专用详情接口中报错，不伪装成未配置；既有聊天读取接口保持原有兼容行为。
 
 Employee provisioning publishes one ready binding only after profile files and the profile-specific gateway are healthy, so Chat cannot observe a half-configured identity.
 

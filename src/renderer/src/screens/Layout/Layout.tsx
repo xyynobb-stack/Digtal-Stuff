@@ -990,7 +990,11 @@ function Layout({
               {remoteMode ? (
                 <RemoteNotice feature="Providers" />
               ) : (
-                <Providers onEmployeeProvisioned={handleEmployeeProvisioned} />
+                <Providers
+                  key={activeProfile}
+                  profile={activeProfile}
+                  onEmployeeProvisioned={handleEmployeeProvisioned}
+                />
               )}
             </div>
           )}

@@ -89,11 +89,11 @@ describe("setModelConfig — known-host custom provider auto-api-key (issue #260
       `${SEED_YAML}providers:
   stale-gateway:
     name: "Stale Gateway"
-    base_url: "http://183.230.227.39:18600"
+    base_url: "http://36.212.61.62:18600"
     key_env: "CUSTOM_PROVIDER_STALE_GATEWAY_KEY"
   internal-gateway:
     name: "Internal Gateway"
-    base_url: "http://183.230.227.39:18600"
+    base_url: "http://36.212.61.62:18600"
     key_env: "CUSTOM_PROVIDER_INTERNAL_GATEWAY_KEY"
 `,
     );
@@ -102,7 +102,7 @@ describe("setModelConfig — known-host custom provider auto-api-key (issue #260
     setModelConfig(
       "custom",
       "Kimi-2.6",
-      "http://183.230.227.39:18600/v1",
+      "http://36.212.61.62:18600/v1",
     );
 
     const out = readFileSync(join(testHome, "config.yaml"), "utf-8");

@@ -318,6 +318,10 @@ const hermesAPI = {
     profile?: string,
   ): Promise<EmployeeProfileBinding | null> =>
     ipcRenderer.invoke("get-employee-profile-binding", profile),
+  getEmployeeProfileDetails: (
+    profile: string,
+  ): Promise<{ binding: EmployeeProfileBinding; models: string[] } | null> =>
+    ipcRenderer.invoke("get-employee-profile-details", profile),
 
   validateChatReadiness: (
     profile?: string,

@@ -33,6 +33,15 @@ describe("employee workspace", () => {
   beforeEach(() => rmSync(testRoot, { recursive: true, force: true }));
   afterEach(() => rmSync(testRoot, { recursive: true, force: true }));
 
+  it("distinguishes missing binding from corrupt binding for the settings reader", () => {
+    expect(readEmployeeProfileBinding("employee-test", true)).toBeNull();
+    const directory = join(testRoot, "profiles", "employee-test");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "employee-binding.json"), "invalid json");
+    expect(() => readEmployeeProfileBinding("employee-test", true)).toThrow();
+    expect(readEmployeeProfileBinding("employee-test")).toBeNull();
+  });
+
   it("accepts a lookup response without inventing a missing position", () => {
     // @lat: [[provider-setup#Provider setup#Employee phone provisioning#Employee workspace initialization tests#Positionless current response]]
     const payload = {

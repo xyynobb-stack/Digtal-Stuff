@@ -25,7 +25,7 @@ ENTRY = {"provider": "custom:aihub-responses", "model": "gpt-5.6-terra",
 
 
 def agent():
-    return SimpleNamespace(base_url="http://183.230.227.39:18600/v1",
+    return SimpleNamespace(base_url="http://36.212.61.62:18600/v1",
                            provider="company-platform-responses", api_mode="codex_responses",
                            _fallback_chain=[dict(ENTRY)], _fallback_index=0,
                            _current_streamed_assistant_text="", _interrupt_requested=False,
@@ -60,7 +60,7 @@ class CompanyFallbackTests(unittest.TestCase):
         self.assertEqual(self.agent._desktop_first_response_deadline, 430)
 
     def test_other_providers_and_backup_do_not_get_primary_watchdog(self):
-        for url in ["https://aihub.dog/v1", "http://other.example/v1", "http://183.230.227.39:18601/v1"]:
+        for url in ["https://aihub.dog/v1", "http://other.example/v1", "http://36.212.61.62:18601/v1"]:
             self.agent.base_url = url
             policy.begin_request(self.agent, 0)
             self.assertIsNone(self.agent._desktop_first_response_deadline)

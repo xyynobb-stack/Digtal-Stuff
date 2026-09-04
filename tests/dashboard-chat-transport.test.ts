@@ -743,15 +743,15 @@ describe("resolveDashboardProviderForModel", () => {
       resolveDashboardProviderForModel(
         "custom",
         "Kimi-2.6",
-        "http://183.230.227.39:18600/v1",
+        "http://36.212.61.62:18600/v1",
         {
           provider: "custom",
           model: "Kimi-2.6",
           providers: [
             {
-              slug: "183-230-227-39-18600",
+              slug: "36-212-61-62-18600",
               models: ["Kimi-2.6"],
-              api_url: "http://183.230.227.39:18600/v1",
+              api_url: "http://36.212.61.62:18600/v1",
             },
           ],
         },

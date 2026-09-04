@@ -19,7 +19,7 @@ import type { SavedModel } from "./models";
 
 const access: EmployeeModelAccess = {
   provider: "custom",
-  baseUrl: "http://183.230.227.39:18600/v1/",
+  baseUrl: "http://36.212.61.62:18600/v1/",
   models: ["glm-5.1", "Kimi-2.6"],
   updatedAt: 1,
 };
@@ -43,7 +43,7 @@ const models: SavedModel[] = [
     name: "GLM-5.1",
     provider: "custom",
     model: "glm-5.1",
-    baseUrl: "http://183.230.227.39:18600/v1",
+    baseUrl: "http://36.212.61.62:18600/v1",
     createdAt: 1,
   },
   {
@@ -59,7 +59,7 @@ const models: SavedModel[] = [
     name: "Unlisted model",
     provider: "custom",
     model: "unlisted",
-    baseUrl: "http://183.230.227.39:18600/v1",
+    baseUrl: "http://36.212.61.62:18600/v1",
     createdAt: 3,
   },
 ];

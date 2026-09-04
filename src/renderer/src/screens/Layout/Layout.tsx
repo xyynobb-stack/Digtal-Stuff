@@ -11,6 +11,7 @@ import {
   isScratchRun,
   openSessionRunTransition,
   selectProfileRunTransition,
+  provisionEmployeeRunTransition,
   findRunBySession,
   cycleRunId,
   runIdAtOrdinal,
@@ -96,6 +97,11 @@ function Layout({
   const initialProfile = initialEmployeeProvision?.profileId ?? "default";
   const [activeProfile, setActiveProfile] = useState(initialProfile);
   const [runs, setRuns] = useState<ChatRun[]>(() => [mintRun(initialProfile)]);
+  // Provisioning completes asynchronously. Read the latest run list when its
+  // callback returns so tabs opened or started during provisioning are also
+  // retired instead of surviving through a stale render closure.
+  const runsRef = useRef(runs);
+  runsRef.current = runs;
   const [activeRunId, setActiveRunId] = useState<string>(() => runs[0].runId);
   const [provisionedMandatorySkills, setProvisionedMandatorySkills] = useState<
     Record<string, string[]>
@@ -508,12 +514,19 @@ function Layout({
         [profile]: [...result.role.mandatorySkills],
       }));
       setActiveProfile(profile);
-      const next = selectProfileRunTransition(runs, activeRunId, profile);
+      // Phone provisioning changes the employee identity for this window. Do
+      // not preserve tabs from the previous identity: besides exposing their
+      // transcript, selecting one would switch the whole shell back to that
+      // run's Profile. Abort background work before dropping every old run.
+      const next = provisionEmployeeRunTransition(runsRef.current, profile);
+      for (const runId of next.retiredRunIds) {
+        window.hermesAPI.abortChat(runId);
+      }
       setRuns(next.runs);
       setActiveRunId(next.activeRunId);
       goTo("chat");
     },
-    [runs, activeRunId, goTo],
+    [goTo],
   );
 
   // The "Chat" affordance: start (or reuse a blank) conversation with an agent

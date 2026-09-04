@@ -62,6 +62,8 @@ function hasProfileSessionIsolation(agentRoot) {
         "def _bound_session_db(",
         "_title_db_session = {",
         "session_db_factory=lambda _s=_title_db_session",
+        'profile_home = str(session.get("profile_home") or _hermes_home).strip()',
+        '_profile_home_str = str(session.get("profile_home") or _hermes_home).strip()',
       ],
     ],
   ]);
@@ -69,6 +71,24 @@ function hasProfileSessionIsolation(agentRoot) {
     const source = readFileSync(path.join(agentRoot, relativePath), "utf8");
     return markers.every((marker) => source.includes(marker));
   });
+}
+
+function completeLaunchProfileSecretScopeRefresh(agentRoot) {
+  const serverPath = path.join(agentRoot, "tui_gateway/server.py");
+  let source = readFileSync(serverPath, "utf8");
+  const original = source;
+
+  source = source.replace(
+    /([ ]{4}key = str\(session_key or session\.get\("session_key"\) or ""\)\r?\n)[ ]{4}profile_home = str\(session\.get\("profile_home"\) or ""\)\.strip\(\)/,
+    '$1    profile_home = str(session.get("profile_home") or _hermes_home).strip()',
+  );
+  source = source.replace(
+    '            _profile_home_str = session.get("profile_home")',
+    '            _profile_home_str = str(session.get("profile_home") or _hermes_home).strip()',
+  );
+
+  if (source !== original) writeFileSync(serverPath, source, "utf8");
+  return source !== original;
 }
 
 function completeCompatibleAutoTitlePatch(agentRoot) {
@@ -125,6 +145,7 @@ function patchCompatibleModifiedTree(agentRoot, patch) {
     }
     runGitApply(tempRoot, ["--reject", "--whitespace=nowarn"], patch);
     completeCompatibleAutoTitlePatch(tempRoot);
+    completeLaunchProfileSecretScopeRefresh(tempRoot);
     for (const relativePath of PATCHED_FILES) {
       const rejectPath = path.join(tempRoot, `${relativePath}.rej`);
       try {
@@ -177,6 +198,7 @@ export function patchProfileSessionIsolation(agentRoot) {
         `Could not apply Profile session isolation patch: ${applied.stderr || applied.stdout}`,
       );
     }
+    completeLaunchProfileSecretScopeRefresh(agentRoot);
     if (!hasProfileSessionIsolation(agentRoot)) {
       throw new Error(
         "Profile session isolation patch applied but validation failed",
@@ -186,7 +208,15 @@ export function patchProfileSessionIsolation(agentRoot) {
   }
 
   const reverseCheck = runGitApply(agentRoot, ["--reverse", "--check"], patch);
-  if (reverseCheck.status === 0) return false;
+  if (reverseCheck.status === 0) {
+    const changed = completeLaunchProfileSecretScopeRefresh(agentRoot);
+    if (!hasProfileSessionIsolation(agentRoot)) {
+      throw new Error(
+        "Profile session isolation patch is missing launch-Profile secret refresh",
+      );
+    }
+    return changed;
+  }
 
   if (patchCompatibleModifiedTree(agentRoot, patch)) return true;
 

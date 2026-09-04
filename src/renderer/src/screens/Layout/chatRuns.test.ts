@@ -4,6 +4,7 @@ import {
   isScratchRun,
   mintRun,
   openSessionRunTransition,
+  provisionEmployeeRunTransition,
   runIdAtOrdinal,
   selectProfileRunTransition,
   type ChatRun,
@@ -91,6 +92,40 @@ describe("chat run profile transitions", () => {
       loading: false,
       seed: undefined,
     });
+    randomUUID.mockRestore();
+  });
+
+  it("retires every open run when provisioning a different employee", () => {
+    const randomUUID = vi
+      .spyOn(crypto, "randomUUID")
+      .mockReturnValue("00000000-0000-4000-8000-000000000003");
+    const runs = [
+      run("run-old-active", "employee-one", {
+        sessionId: "session-one",
+        title: "员工一的会话",
+      }),
+      run("run-old-background", "employee-two", {
+        loading: true,
+        title: "员工二的后台任务",
+      }),
+    ];
+
+    const next = provisionEmployeeRunTransition(runs, "employee-three");
+
+    expect(next.activeRunId).toBe("run-00000000-0000-4000-8000-000000000003");
+    expect(next.retiredRunIds).toEqual([
+      "run-old-active",
+      "run-old-background",
+    ]);
+    expect(next.runs).toEqual([
+      {
+        runId: "run-00000000-0000-4000-8000-000000000003",
+        profile: "employee-three",
+        sessionId: null,
+        loading: false,
+        seed: undefined,
+      },
+    ]);
     randomUUID.mockRestore();
   });
 

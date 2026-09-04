@@ -76,6 +76,8 @@ Profile-scoped Agent fixes have one durable build-time source and do not depend 
 
 `scripts/patch-profile-session-isolation.mjs` applies the session/Profile isolation patch to an Agent tree. `scripts/prepare-dev-agent.mjs` runs it automatically before `npm run dev`, while `scripts/apply-offline-runtime-overlays.mjs` runs it in the `release` workflow before the checked-in `build/offline-runtime` snapshot is archived. The operation is idempotent and rejects an incompatible upstream tree instead of silently producing a partially patched package.
 
+Every Dashboard turn rebuilds its secret scope from the effective Profile home. Cross-Profile sessions use their explicit home; sessions owned by the Dashboard's launch Profile fall back to that process's `_hermes_home`, so OAuth updates written to `.env` become visible on the next turn without restarting Dashboard.
+
 The relocated-runtime activation probe starts the packaged virtual-environment launcher and imports only `sys`, proving that the interpreter and repaired executable path work without putting cold `numpy` or `pymilvus` DLL loading on the blocking first-launch path. Release workflows import both heavy dependencies before packaging, so a missing RAG dependency fails CI rather than an employee upgrade.
 
 ### Lightweight activation probe

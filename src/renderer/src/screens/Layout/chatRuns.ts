@@ -82,6 +82,26 @@ export function selectProfileRunTransition(
 }
 
 /**
+ * Replace the window's open conversations after employee provisioning.
+ *
+ * Employee provisioning is an identity boundary rather than an administrative
+ * profile switch. Runs from the previous employee must not remain reachable as
+ * tabs, including background runs, so the new employee always starts from one
+ * clean scratch conversation under their own profile.
+ */
+export function provisionEmployeeRunTransition(
+  runs: ChatRun[],
+  profile: string,
+): { activeRunId: string; runs: ChatRun[]; retiredRunIds: string[] } {
+  const next = mintRun(profile);
+  return {
+    activeRunId: next.runId,
+    runs: [next],
+    retiredRunIds: runs.map((run) => run.runId),
+  };
+}
+
+/**
  * Open a persisted session without leaving behind the active blank placeholder.
  *
  * Profile switching may create a scratch run so the visible chat matches the

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type -- Node ESM helper has runtime-validated return values. */
 import fs from "node:fs";
-import { patchGatewayStartupDiagnostics } from "./patch-gateway-startup-diagnostics.mjs";
+import { removeGatewayStartupDiagnostics } from "./remove-gateway-startup-diagnostics.mjs";
 import path from "node:path";
 import { patchProfileSessionIsolation } from "./patch-profile-session-isolation.mjs";
 import { fileURLToPath } from "node:url";
@@ -1030,7 +1030,7 @@ export function applyOfflineRuntimeOverlays({
     }
   }
 
-  patchGatewayStartupDiagnostics(agentRoot);
+  removeGatewayStartupDiagnostics(agentRoot);
   return {
     agentRoot,
     runAgentPath,

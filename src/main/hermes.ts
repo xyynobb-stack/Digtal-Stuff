@@ -3315,10 +3315,7 @@ function gatewayCliCommandArgs(
   return resolved ? ["--profile", resolved, ...command] : command;
 }
 
-export function startGatewayDetailed(
-  profile?: string,
-  diagnosticSource?: string,
-): GatewayStartResult {
+export function startGatewayDetailed(profile?: string): GatewayStartResult {
   // Defensive: the local gateway is never the right thing to spawn in
   // remote/SSH mode — the user is pointing at an off-machine server.
   // Callers should already gate, but several IPC handlers historically
@@ -3379,32 +3376,6 @@ export function startGatewayDetailed(
   // HERMES_HOME at the profile's dir internally; the shared repo/venv stay
   // put. The default profile takes no flag.
   const cliArgs = gatewayCliCommandArgs(profile, ["gateway"]);
-  const startupId = randomUUID();
-  gatewayEnv.HERMES_GATEWAY_START_ID = startupId;
-  const startupSource =
-    diagnosticSource ?? new Error().stack?.split("\n").slice(2, 7).join("\n");
-  const recordStartup = (
-    stage: string,
-    fields: Record<string, unknown>,
-  ): void => {
-    try {
-      const directory = join(profileHome(resolveProfile(profile)), "logs");
-      mkdirSync(directory, { recursive: true });
-      appendFileSync(
-        join(directory, "gateway-startup-diag.jsonl"),
-        JSON.stringify({
-          stage,
-          startup_id: startupId,
-          at_ms: Date.now(),
-          profile: key,
-          ...fields,
-        }) + "\n",
-      );
-    } catch {
-      /* Diagnostics must not prevent gateway startup. */
-    }
-  };
-  recordStartup("electron.spawn_requested", { source: startupSource });
   let proc: ChildProcess;
   try {
     proc = spawn(getHermesPython(), hermesCliArgs(cliArgs), {
@@ -3438,7 +3409,6 @@ export function startGatewayDetailed(
   }
 
   proc.on("error", (err) => {
-    recordStartup("electron.spawn_error", { error_type: err.name });
     console.error(
       `[gateway:${key}] Failed to spawn gateway process:`,
       err.message,
@@ -3449,7 +3419,6 @@ export function startGatewayDetailed(
   });
 
   proc.on("close", (code, signal) => {
-    recordStartup("electron.process_close", { pid: proc.pid, code, signal });
     if (code !== null && code !== 0) {
       console.error(
         `[gateway:${key}] Process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}. ` +
@@ -3464,7 +3433,6 @@ export function startGatewayDetailed(
   });
 
   proc.unref();
-  recordStartup("electron.spawned", { pid: proc.pid });
   gatewayProcesses.set(key, proc);
   appStartedProfiles.add(key);
   warmTuiGatewayClient(profile);
@@ -3729,7 +3697,6 @@ async function restartGatewayLocallyOnce(
   healthTimeoutMs = 30000,
   healthPollMs = 250,
   stopTimeoutMs = 5000,
-  diagnosticSource?: string,
 ): Promise<boolean> {
   try {
     if (isRemoteMode()) return false;
@@ -3759,7 +3726,7 @@ async function restartGatewayLocallyOnce(
       return false;
     }
 
-    const startResult = startGatewayDetailed(profile, diagnosticSource);
+    const startResult = startGatewayDetailed(profile);
     if (!startResult.success && !startResult.alreadyRunning) {
       setApiCacheFor(profile, false);
       markGatewayRestartFailed(profile);
@@ -3795,10 +3762,6 @@ export function restartGateway(
   if (isRemoteMode()) return Promise.resolve(false);
 
   const key = gatewayRestartProfileKey(profile);
-  const diagnosticSource = new Error().stack
-    ?.split("\n")
-    .slice(1, 8)
-    .join("\n");
   const existing = gatewayRestartByProfile.get(key);
   if (existing) {
     return existing;
@@ -3811,7 +3774,6 @@ export function restartGateway(
         healthTimeoutMs,
         healthPollMs,
         stopTimeoutMs,
-        diagnosticSource,
       ),
     () =>
       restartGatewayLocallyOnce(
@@ -3819,7 +3781,6 @@ export function restartGateway(
         healthTimeoutMs,
         healthPollMs,
         stopTimeoutMs,
-        diagnosticSource,
       ),
   );
 

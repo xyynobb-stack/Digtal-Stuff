@@ -2,15 +2,9 @@
 
 The Electron main process keeps the entrypoint small and separates app lifecycle from IPC registration.
 
-## Gateway startup diagnostics
-
-网关启动诊断将 Electron 启动来源、进程 ID 与 Python 初始化阶段关联，定位偶发健康检查超时，而不改变重启策略或超时预算。
-
-每次 spawn 生成独立 startup_id，日志写入目标 Profile 的 `logs/gateway-startup-diag.jsonl`。阶段涵盖模块导入、指纹读取、实例检查、技能同步、日志初始化、Runner 构建和启动。Python 诊断线程每 10 秒采样一次，最多 12 次，API 开始监听后停止；只记录栈帧文件、函数和行号，不输出源码、局部变量、环境变量或凭据。日志写入失败不影响启动。
-
-开发准备与 release overlays 均应用 `scripts/patch-gateway-startup-diagnostics.mjs`，不依赖手工修改生成目录。补丁测试验证重复应用与上游锚点变更检测，Python 测试验证采样上限、停止和敏感值排除。
-
 ## Entrypoint
+
+自 0.7.53 起撤回临时网关启动诊断，不再生成启动关联日志或运行周期调用栈采样。开发准备与 release overlays 会移除 0.7.52 留在运行时中的精确诊断插桩；已有日志保留，正常网关日志、重启策略和健康检查预算不变。
 
 `src/main/index.ts` performs only pre-ready setup and delegates startup.
 

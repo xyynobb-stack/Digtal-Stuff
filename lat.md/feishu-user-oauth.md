@@ -30,9 +30,11 @@ The checked-in examples under `services/feishu-oauth/` define the Node runtime, 
 
 ## Drive proxy
 
-Authenticated Drive routes expose root lookup, folder listing, folder creation, complete file upload, file deletion, and native document reading and text-block editing.
+Authenticated Drive routes expose root lookup, shared document search, folder operations, file upload and deletion, ordinary attachment download, native document editing, and spreadsheet range operations.
 
-新增文档接口位于 `/api/integrations/feishu/drive/documents/:document_id/` 下，包含 `content`、`blocks`、`append` 和 `blocks/:block_id`。仍按连接凭据选择员工的用户令牌，不使用应用身份。OAuth scope 增加 `docx:document`；发布飞书权限并更新服务端后，已有员工需重新连接授权。上游文档接口错误保留数值错误码，不返回原始消息或凭据，也不统一误报为授权过期。
+新增文档接口位于 `/api/integrations/feishu/drive/documents/:document_id/` 下，包含 `content`、`blocks`、`append` 和 `blocks/:block_id`。普通附件下载限制为 20 MiB。共享搜索会根据连接记录中的 `feishu_open_id` 标注当前用户所有权。表格接口位于 `/spreadsheets/:spreadsheet_token/`；嵌入式多维表格通过 `/bitables/:app_token/tables/:table_id/fields`、`records` 和 `records/:record_id` 读取字段与记录并更新单条记录。所有接口使用员工用户令牌；OAuth scope 包含 Drive、Docx、Sheets、Bitable 与离线访问权限，已有员工在新增权限后需重新连接授权。
+
+上游 401、403 及飞书缺少权限码会分别返回稳定的重新授权或权限不足错误，并保留数值 `upstream_code`；其他飞书 API 失败返回 `feishu_api_error`。原始上游消息与令牌不会返回客户端，因此权限问题不再被统一折叠为 `internal_error`。
 
 Every route resolves the connection token to one employee connection and calls Feishu with that employee's refreshed `user_access_token`. The desktop-facing behavior is documented in [[feishu-drive]]; the obsolete application-owned shared-area flow is not registered.
 

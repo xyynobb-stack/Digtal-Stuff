@@ -19,15 +19,20 @@ const USER_INFO_URL = "https://open.feishu.cn/open-apis/authen/v1/user_info";
 const DRIVE_ROOT_URL =
   "https://open.feishu.cn/open-apis/drive/explorer/v2/root_folder/meta";
 const DRIVE_FILES_URL = "https://open.feishu.cn/open-apis/drive/v1/files";
+const DRIVE_SEARCH_URL =
+  "https://open.feishu.cn/open-apis/suite/docs-api/search/object";
 const DRIVE_CREATE_FOLDER_URL =
   "https://open.feishu.cn/open-apis/drive/v1/files/create_folder";
 const DRIVE_UPLOAD_URL =
   "https://open.feishu.cn/open-apis/drive/v1/files/upload_all";
+const SHEETS_BASE_URL = "https://open.feishu.cn/open-apis/sheets";
+const BITABLE_BASE_URL = "https://open.feishu.cn/open-apis/bitable/v1";
 const OAUTH_TTL_MS = 10 * 60 * 1000;
 const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_UPLOAD_BODY_BYTES = 28 * 1024 * 1024;
+const MAX_SHEET_BODY_BYTES = 512 * 1024;
 
 export function stateHash(value) {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -84,7 +89,10 @@ export function authorizationUrl({ appId, redirectUri, state }) {
   url.searchParams.set("client_id", appId);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("scope", "drive:drive docx:document offline_access");
+  url.searchParams.set(
+    "scope",
+    "drive:drive drive:file:download drive:file:upload docx:document sheets:spreadsheet bitable:app offline_access",
+  );
   url.searchParams.set("state", state);
   return url.toString();
 }
@@ -375,7 +383,7 @@ function connectionForRequest(req, database) {
   if (!token) return null;
   return database
     .prepare(
-      `SELECT employee_user_id FROM feishu_connections
+      `SELECT employee_user_id, feishu_open_id FROM feishu_connections
        WHERE connection_token_hash = ? AND status = 'connected'`,
     )
     .get(stateHash(token));
@@ -392,13 +400,61 @@ async function feishuApiJson(fetchImpl, url, accessToken, options = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || Number(payload?.code || 0) !== 0) {
+    const upstreamCode = Number(payload?.code);
+    const permissionFailure =
+      response.status === 403 ||
+      upstreamCode === 99991672 ||
+      upstreamCode === 99991679;
     const error = new Error(
       String(payload?.msg || "feishu_drive_request_failed"),
     );
-    error.statusCode = response.status === 401 ? 401 : 502;
+    error.publicError =
+      response.status === 401
+        ? "feishu_reauthorization_required"
+        : permissionFailure
+          ? "feishu_permission_denied_or_scope_missing"
+          : "feishu_api_error";
+    error.upstreamCode = Number.isFinite(upstreamCode) ? upstreamCode : null;
+    error.statusCode =
+      response.status === 401 ? 401 : permissionFailure ? 403 : 502;
     throw error;
   }
   return payload?.data && typeof payload.data === "object" ? payload.data : {};
+}
+
+async function feishuApiBytes(fetchImpl, url, accessToken) {
+  const response = await fetchImpl(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) {
+    const error = new Error("feishu_file_download_failed");
+    error.publicError =
+      response.status === 401
+        ? "feishu_reauthorization_required"
+        : response.status === 403
+          ? "feishu_permission_denied_or_scope_missing"
+          : "feishu_api_error";
+    error.statusCode =
+      response.status === 401 ? 401 : response.status === 403 ? 403 : 502;
+    throw error;
+  }
+  const declaredSize = Number(response.headers.get("content-length") || 0);
+  if (Number.isFinite(declaredSize) && declaredSize > MAX_UPLOAD_BYTES) {
+    const error = new Error("feishu_file_too_large");
+    error.statusCode = 413;
+    throw error;
+  }
+  const content = Buffer.from(await response.arrayBuffer());
+  if (content.length > MAX_UPLOAD_BYTES) {
+    const error = new Error("feishu_file_too_large");
+    error.statusCode = 413;
+    throw error;
+  }
+  return {
+    content,
+    contentType: String(response.headers.get("content-type") || ""),
+  };
 }
 
 function safeName(value) {
@@ -419,7 +475,10 @@ async function driveRequestContext(req, database, config, fetchImpl, now) {
     fetchImpl,
     now,
   });
-  return { accessToken };
+  return {
+    accessToken,
+    currentUserOpenId: String(connection.feishu_open_id || ""),
+  };
 }
 
 export function createFeishuOAuthService({
@@ -671,6 +730,269 @@ export function createFeishuOAuthService({
         }
 
         if (
+          req.method === "POST" &&
+          path === "/api/integrations/feishu/drive/search"
+        ) {
+          const body = await readJson(req);
+          const searchKey = String(body.query || "").trim();
+          const count = Number(body.count || 50);
+          const offset = Number(body.offset || 0);
+          if (
+            !searchKey ||
+            searchKey.length > 200 ||
+            !Number.isInteger(count) ||
+            count < 1 ||
+            count > 50 ||
+            !Number.isInteger(offset) ||
+            offset < 0
+          ) {
+            return json(res, 400, { error: "invalid_drive_search" });
+          }
+          const docsTypes = Array.isArray(body.docs_types)
+            ? body.docs_types
+                .map((value) => String(value || "").trim())
+                .filter((value) =>
+                  /^(doc|docx|sheet|bitable|file|folder)$/.test(value),
+                )
+                .slice(0, 10)
+            : [];
+          const data = await feishuApiJson(
+            fetchImpl,
+            DRIVE_SEARCH_URL,
+            drive.accessToken,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                search_key: searchKey,
+                count,
+                offset,
+                ...(docsTypes.length ? { docs_types: docsTypes } : {}),
+              }),
+            },
+          );
+          return json(res, 200, {
+            ...data,
+            docs_entities: Array.isArray(data.docs_entities)
+              ? data.docs_entities.map((item) => ({
+                  ...item,
+                  owned_by_current_user:
+                    Boolean(drive.currentUserOpenId) &&
+                    String(item?.owner_id || "") === drive.currentUserOpenId,
+                }))
+              : [],
+          });
+        }
+
+        const spreadsheetMatch =
+          /^\/api\/integrations\/feishu\/drive\/spreadsheets\/([A-Za-z0-9_-]{1,128})\/(meta|values|append|clear)$/.exec(
+            path,
+          );
+        if (spreadsheetMatch) {
+          const [, spreadsheetToken, action] = spreadsheetMatch;
+          const base = `${SHEETS_BASE_URL}/v2/spreadsheets/${spreadsheetToken}`;
+          if (req.method === "GET" && action === "meta") {
+            return json(
+              res,
+              200,
+              await feishuApiJson(
+                fetchImpl,
+                `${base}/metainfo`,
+                drive.accessToken,
+              ),
+            );
+          }
+          if (req.method === "GET" && action === "values") {
+            const range = String(url.searchParams.get("range") || "").trim();
+            if (!range || range.length > 256 || /[\r\n\0]/.test(range)) {
+              return json(res, 400, { error: "invalid_sheet_range" });
+            }
+            return json(
+              res,
+              200,
+              await feishuApiJson(
+                fetchImpl,
+                `${base}/values/${encodeURIComponent(range)}`,
+                drive.accessToken,
+              ),
+            );
+          }
+          if (
+            req.method === "POST" &&
+            (action === "values" || action === "append" || action === "clear")
+          ) {
+            const body = await readJson(req, MAX_SHEET_BODY_BYTES);
+            const range = String(body.range || "").trim();
+            if (!range || range.length > 256 || /[\r\n\0]/.test(range)) {
+              return json(res, 400, { error: "invalid_sheet_range" });
+            }
+            if (action === "clear") {
+              return json(
+                res,
+                200,
+                await feishuApiJson(
+                  fetchImpl,
+                  `${base}/values_clear`,
+                  drive.accessToken,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ranges: [range] }),
+                  },
+                ),
+              );
+            }
+            const values = body.values;
+            let cellCount = 0;
+            const validValues =
+              Array.isArray(values) &&
+              values.length > 0 &&
+              values.length <= 1000 &&
+              values.every(
+                (row) =>
+                  Array.isArray(row) &&
+                  row.length <= 100 &&
+                  row.every((value) => {
+                    cellCount += 1;
+                    return (
+                      value == null ||
+                      typeof value === "boolean" ||
+                      (typeof value === "number" && Number.isFinite(value)) ||
+                      (typeof value === "string" && value.length <= 10_000)
+                    );
+                  }),
+              ) &&
+              cellCount <= 5000;
+            if (!validValues) {
+              return json(res, 400, { error: "invalid_sheet_values" });
+            }
+            const suffix = action === "append" ? "values_append" : "values";
+            return json(
+              res,
+              200,
+              await feishuApiJson(
+                fetchImpl,
+                `${base}/${suffix}`,
+                drive.accessToken,
+                {
+                  method: action === "append" ? "POST" : "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ valueRange: { range, values } }),
+                },
+              ),
+            );
+          }
+          return json(res, 405, { error: "method_not_allowed" });
+        }
+
+        const bitableRecordsMatch =
+          /^\/api\/integrations\/feishu\/drive\/bitables\/([A-Za-z0-9_-]{1,128})\/tables\/([A-Za-z0-9_-]{1,128})\/records$/.exec(
+            path,
+          );
+        if (req.method === "GET" && bitableRecordsMatch) {
+          const [, appToken, tableId] = bitableRecordsMatch;
+          const pageSize = Number(url.searchParams.get("page_size") || 100);
+          const pageToken = String(url.searchParams.get("page_token") || "");
+          if (
+            !Number.isSafeInteger(pageSize) ||
+            pageSize < 1 ||
+            pageSize > 500 ||
+            pageToken.length > 256 ||
+            /[\r\n\0]/.test(pageToken)
+          ) {
+            return json(res, 400, { error: "invalid_bitable_pagination" });
+          }
+          const upstream = new URL(
+            `${BITABLE_BASE_URL}/apps/${appToken}/tables/${tableId}/records`,
+          );
+          upstream.searchParams.set("page_size", String(pageSize));
+          upstream.searchParams.set("user_id_type", "open_id");
+          if (pageToken) upstream.searchParams.set("page_token", pageToken);
+          return json(
+            res,
+            200,
+            await feishuApiJson(
+              fetchImpl,
+              upstream.toString(),
+              drive.accessToken,
+            ),
+          );
+        }
+
+        const bitableFieldsMatch =
+          /^\/api\/integrations\/feishu\/drive\/bitables\/([A-Za-z0-9_-]{1,128})\/tables\/([A-Za-z0-9_-]{1,128})\/fields$/.exec(
+            path,
+          );
+        if (req.method === "GET" && bitableFieldsMatch) {
+          const [, appToken, tableId] = bitableFieldsMatch;
+          const pageSize = Number(url.searchParams.get("page_size") || 100);
+          const pageToken = String(url.searchParams.get("page_token") || "");
+          if (
+            !Number.isSafeInteger(pageSize) ||
+            pageSize < 1 ||
+            pageSize > 100 ||
+            pageToken.length > 256 ||
+            /[\r\n\0]/.test(pageToken)
+          ) {
+            return json(res, 400, { error: "invalid_bitable_pagination" });
+          }
+          const upstream = new URL(
+            `${BITABLE_BASE_URL}/apps/${appToken}/tables/${tableId}/fields`,
+          );
+          upstream.searchParams.set("page_size", String(pageSize));
+          if (pageToken) upstream.searchParams.set("page_token", pageToken);
+          return json(
+            res,
+            200,
+            await feishuApiJson(
+              fetchImpl,
+              upstream.toString(),
+              drive.accessToken,
+            ),
+          );
+        }
+
+        const bitableRecordMatch =
+          /^\/api\/integrations\/feishu\/drive\/bitables\/([A-Za-z0-9_-]{1,128})\/tables\/([A-Za-z0-9_-]{1,128})\/records\/([A-Za-z0-9_-]{1,128})$/.exec(
+            path,
+          );
+        if (req.method === "PUT" && bitableRecordMatch) {
+          const [, appToken, tableId, recordId] = bitableRecordMatch;
+          const body = await readJson(req, MAX_SHEET_BODY_BYTES);
+          const fields = body.fields;
+          if (
+            !fields ||
+            typeof fields !== "object" ||
+            Array.isArray(fields) ||
+            Object.keys(fields).length < 1 ||
+            Object.keys(fields).length > 100 ||
+            Object.keys(fields).some(
+              (key) => !key.trim() || key.length > 100 || /[\r\n\0]/.test(key),
+            )
+          ) {
+            return json(res, 400, { error: "invalid_bitable_fields" });
+          }
+          const upstream = new URL(
+            `${BITABLE_BASE_URL}/apps/${appToken}/tables/${tableId}/records/${recordId}`,
+          );
+          upstream.searchParams.set("user_id_type", "open_id");
+          return json(
+            res,
+            200,
+            await feishuApiJson(
+              fetchImpl,
+              upstream.toString(),
+              drive.accessToken,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fields }),
+              },
+            ),
+          );
+        }
+
+        if (
           req.method === "GET" &&
           path === "/api/integrations/feishu/drive/root"
         ) {
@@ -697,6 +1019,27 @@ export function createFeishuOAuthService({
             drive.accessToken,
           );
           return json(res, 200, data);
+        }
+
+        const downloadMatch =
+          req.method === "GET"
+            ? /^\/api\/integrations\/feishu\/drive\/files\/([A-Za-z0-9_-]{1,128})\/content$/.exec(
+                path,
+              )
+            : null;
+        if (downloadMatch) {
+          const fileToken = downloadMatch[1];
+          const downloaded = await feishuApiBytes(
+            fetchImpl,
+            `${DRIVE_FILES_URL}/${fileToken}/download`,
+            drive.accessToken,
+          );
+          return json(res, 200, {
+            file_token: fileToken,
+            content_type: downloaded.contentType,
+            size: downloaded.content.length,
+            content_base64: downloaded.content.toString("base64"),
+          });
         }
 
         if (
@@ -855,8 +1198,10 @@ export function createFeishuOAuthService({
       return json(res, 404, { error: "not_found" });
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : "";
+      const publicError = String(error?.publicError || "");
       const message =
-        error instanceof SyntaxError
+        publicError ||
+        (error instanceof SyntaxError
           ? "invalid_json"
           : rawMessage === "request_body_too_large" ||
               rawMessage === "invalid_file_name"
@@ -864,7 +1209,7 @@ export function createFeishuOAuthService({
             : rawMessage === "feishu_not_connected" ||
                 rawMessage === "feishu_reauthorization_required"
               ? "feishu_reauthorization_required"
-              : "internal_error";
+              : "internal_error");
       const status =
         Number(error?.statusCode) ||
         (message === "invalid_json" ||
@@ -875,7 +1220,12 @@ export function createFeishuOAuthService({
             ? 401
             : 500);
       console.error("[feishu-oauth] request failed", rawMessage || error);
-      return json(res, status, { error: message });
+      return json(res, status, {
+        error: message,
+        ...(error?.upstreamCode != null
+          ? { upstream_code: error.upstreamCode }
+          : {}),
+      });
     }
   }
 

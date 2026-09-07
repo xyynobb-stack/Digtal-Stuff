@@ -472,6 +472,7 @@ describe("desktop DDGS web search", () => {
     );
     expect(requirements).toContain("primp==1.3.1");
     expect(requirements).toContain("ddgs==9.16.0");
+    expect(requirements).toContain("pymupdf==1.28.0");
     expect(requirements).not.toContain("lark-oapi");
 
     for (const workflow of ["release.yml", "beta-release.yml"]) {
@@ -480,8 +481,11 @@ describe("desktop DDGS web search", () => {
         "utf8",
       );
       expect(source).toContain("resources/desktop-agent-requirements.txt");
-      expect(source).toContain("numpy, pymilvus, ddgs, importlib.metadata");
+      expect(source).toContain(
+        "numpy, pymilvus, ddgs, pymupdf, importlib.metadata",
+      );
       expect(source).toContain("metadata.version('primp') == '1.3.1'");
+      expect(source).toContain("metadata.version('PyMuPDF') == '1.28.0'");
     }
   });
 });
@@ -724,6 +728,17 @@ describe("market report workflow development overlay", () => {
       "feishu_docx_list_blocks",
       "feishu_docx_append_text",
       "feishu_docx_update_block",
+      "feishu_sheet_get_metadata",
+      "feishu_sheet_read_range",
+      "feishu_sheet_write_range",
+      "feishu_sheet_append_rows",
+      "feishu_sheet_clear_range",
+      "feishu_bitable_list_fields",
+      "feishu_bitable_list_records",
+      "feishu_bitable_update_record",
+      "feishu_markdown_read",
+      "feishu_pdf_read",
+      "feishu_drive_list_locations",
     ]) {
       expect(toolsets.split(`"${name}"`)).toHaveLength(5);
     }
@@ -733,7 +748,7 @@ describe("market report workflow development overlay", () => {
     expect(patchFeishuDriveToolsetSource(upgraded)).toBe(upgraded);
     expect(toolsets).toContain('"feishu_user_drive": {');
     expect(toolsets).toContain(
-      '"description": "Connected-user Feishu/Lark personal Drive file operations"',
+      '"description": "Connected-user Feishu/Lark Drive, shared document, spreadsheet, Bitable, Markdown, and PDF operations"',
     );
     expect(toolsets).toContain('"hermes-api-server"');
     expect(toolsets).toContain("_HERMES_CORE_TOOLS = [");

@@ -500,6 +500,10 @@ export function patchFeishuDriveToolsetSource(source) {
       '"description": "Feishu/Lark document comment operations (list, reply, add)",',
     )
     .replace(
+      '"description": "Connected-user Feishu/Lark Drive, shared document, spreadsheet, Markdown, and PDF operations",',
+      '"description": "Connected-user Feishu/Lark Drive, shared document, spreadsheet, Bitable, Markdown, and PDF operations",',
+    )
+    .replace(
       "# Service-gated: hidden unless the Feishu SDK and profile credentials exist.",
       "# Service-gated: hidden until this profile connects a Feishu account.",
     );
@@ -594,7 +598,7 @@ export function patchFeishuDriveToolsetSource(source) {
       throw new Error("Feishu Drive toolset insertion marker was not found");
     }
     const userDriveToolset = `    "feishu_user_drive": {
-        "description": "Connected-user Feishu/Lark personal Drive file operations",
+        "description": "Connected-user Feishu/Lark Drive, shared document, spreadsheet, Bitable, Markdown, and PDF operations",
         "tools": [
 ${toolLines}        ],
     },
@@ -605,13 +609,27 @@ ${toolLines}        ],
   for (const toolsetName of ["hermes-acp", "hermes-api-server"]) {
     patched = addToNamedToolset(patched, toolsetName);
   }
-  // Upgrade existing five-tool snapshots as well as fresh Agents idempotently.
+  // Upgrade existing snapshots as well as fresh Agents idempotently.
   const documentTools = [
     "feishu_docx_read",
     "feishu_docx_list_blocks",
     "feishu_docx_append_text",
     "feishu_docx_update_block",
   ];
+  const spreadsheetTools = [
+    "feishu_sheet_get_metadata",
+    "feishu_sheet_read_range",
+    "feishu_sheet_write_range",
+    "feishu_sheet_append_rows",
+    "feishu_sheet_clear_range",
+  ];
+  const bitableTools = [
+    "feishu_bitable_list_fields",
+    "feishu_bitable_list_records",
+    "feishu_bitable_update_record",
+  ];
+  const plainFileReadTools = ["feishu_markdown_read", "feishu_pdf_read"];
+  const additionalDriveTools = ["feishu_drive_list_locations"];
   for (const name of [
     "_HERMES_CORE_TOOLS",
     "feishu_user_drive",
@@ -629,9 +647,13 @@ ${toolLines}        ],
     if (start < 0 || end < 0)
       throw new Error(`Missing Feishu document toolset: ${name}`);
     const block = patched.slice(start, end);
-    const missing = documentTools.filter(
-      (tool) => !block.includes(`"${tool}"`),
-    );
+    const missing = [
+      ...documentTools,
+      ...spreadsheetTools,
+      ...bitableTools,
+      ...plainFileReadTools,
+      ...additionalDriveTools,
+    ].filter((tool) => !block.includes(`"${tool}"`));
     if (missing.length) {
       const indent = name === "_HERMES_CORE_TOOLS" ? "    " : "            ";
       const lines = missing.map((tool) => `${indent}"${tool}",`).join("\n");

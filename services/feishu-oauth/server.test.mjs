@@ -234,7 +234,7 @@ test("authorization URL requests user Drive and refresh scopes", () => {
   assert.equal(url.searchParams.get("redirect_uri"), config.redirectUri);
   assert.equal(
     url.searchParams.get("scope"),
-    "drive:drive docx:document offline_access",
+    "drive:drive drive:file:download drive:file:upload docx:document sheets:spreadsheet bitable:app offline_access",
   );
   assert.equal(url.searchParams.get("state"), "random-state");
 });
@@ -395,6 +395,14 @@ test("personal Drive proxy requires a connection token and uses the user token",
       assert.equal(options.body.get("file_name"), "hello.txt");
       return Response.json({ code: 0, data: { file_token: "uploaded" } });
     }
+    if (String(url).endsWith("/drive/v1/files/file-token/download")) {
+      return new Response(Buffer.from("# 飞书 Markdown", "utf8"), {
+        headers: {
+          "content-type": "text/markdown; charset=utf-8",
+          "content-length": String(Buffer.byteLength("# 飞书 Markdown")),
+        },
+      });
+    }
     if (options.method === "DELETE") {
       assert.match(String(url), /\/files\/file-token\?type=file$/);
       return Response.json({ code: 0, data: {} });
@@ -462,12 +470,238 @@ test("personal Drive proxy requires a connection token and uses the user token",
     );
     assert.equal((await upload.json()).file_token, "uploaded");
 
+    const downloaded = await fetch(
+      `${origin}/api/integrations/feishu/drive/files/file-token/content`,
+      { headers },
+    );
+    const downloadedBody = await downloaded.json();
+    assert.equal(downloaded.status, 200);
+    assert.equal(downloadedBody.content_type, "text/markdown; charset=utf-8");
+    assert.equal(
+      Buffer.from(downloadedBody.content_base64, "base64").toString("utf8"),
+      "# 飞书 Markdown",
+    );
+
     const deleted = await fetch(
       `${origin}/api/integrations/feishu/drive/files/file-token?type=file`,
       { method: "DELETE", headers },
     );
     assert.equal(deleted.status, 200);
-    assert.equal(calls.length, 5);
+    assert.equal(calls.length, 6);
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    database.close();
+  }
+});
+
+test("shared document search and spreadsheet value routes use the connected user token", async () => {
+  const database = openDatabase(":memory:");
+  const connectionToken = "sheet-connection-token";
+  database
+    .prepare(
+      `INSERT INTO feishu_connections (
+        employee_user_id, feishu_open_id, access_token_encrypted, access_expires_at, scopes,
+        connection_token_hash, status, created_at, updated_at
+      ) VALUES (?, 'ou-current', ?, ?, 'drive:drive sheets:spreadsheet', ?, 'connected', ?, ?)`,
+    )
+    .run(
+      "employee-sheet",
+      encryptToken("sheet-user-access-token", encryptionKey),
+      10_000_000,
+      stateHash(connectionToken),
+      1_000_000,
+      1_000_000,
+    );
+  const calls = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = new URL(input);
+    calls.push({ url, options });
+    assert.equal(
+      options.headers.Authorization,
+      "Bearer sheet-user-access-token",
+    );
+    if (url.pathname.endsWith("/suite/docs-api/search/object")) {
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), {
+        search_key: "共享报告",
+        count: 20,
+        offset: 0,
+        docs_types: ["sheet", "docx"],
+      });
+      return Response.json({
+        code: 0,
+        data: {
+          docs_entities: [
+            {
+              docs_token: "shared-sheet",
+              docs_type: "sheet",
+              owner_id: "ou-current",
+            },
+          ],
+        },
+      });
+    }
+    if (url.pathname.includes("/spreadsheets/denied/metainfo")) {
+      return Response.json(
+        { code: 99991679, msg: "missing bitable scope" },
+        { status: 403 },
+      );
+    }
+    if (url.pathname.endsWith("/metainfo")) {
+      return Response.json({
+        code: 0,
+        data: { properties: { title: "共享表" } },
+      });
+    }
+    if (
+      url.pathname.endsWith(
+        "/bitable/v1/apps/base-token/tables/tblCalendar/records",
+      )
+    ) {
+      assert.equal(url.searchParams.get("page_size"), "50");
+      assert.equal(url.searchParams.get("page_token"), "next-page");
+      assert.equal(url.searchParams.get("user_id_type"), "open_id");
+      return Response.json({
+        code: 0,
+        data: { items: [{ record_id: "rec-1", fields: { 标题: "例会" } }] },
+      });
+    }
+    if (
+      url.pathname.endsWith(
+        "/bitable/v1/apps/base-token/tables/tblCalendar/fields",
+      )
+    ) {
+      assert.equal(url.searchParams.get("page_size"), "100");
+      return Response.json({
+        code: 0,
+        data: { items: [{ field_id: "fld-1", field_name: "标题" }] },
+      });
+    }
+    if (
+      url.pathname.endsWith(
+        "/bitable/v1/apps/base-token/tables/tblCalendar/records/rec-1",
+      )
+    ) {
+      assert.equal(options.method, "PUT");
+      assert.equal(url.searchParams.get("user_id_type"), "open_id");
+      assert.deepEqual(JSON.parse(options.body), { fields: { 状态: "完成" } });
+      return Response.json({
+        code: 0,
+        data: { record: { record_id: "rec-1", fields: { 状态: "完成" } } },
+      });
+    }
+    if (decodeURIComponent(url.pathname).endsWith("/values/数据!A1:B2")) {
+      return Response.json({
+        code: 0,
+        data: { valueRange: { values: [[1, 2]] } },
+      });
+    }
+    if (url.pathname.endsWith("/values_append")) {
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), {
+        valueRange: { range: "数据!A:B", values: [["新增", 3]] },
+      });
+      return Response.json({ code: 0, data: { updates: { updatedRows: 1 } } });
+    }
+    if (url.pathname.endsWith("/values_clear")) {
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), { ranges: ["数据!A2:B2"] });
+      return Response.json({
+        code: 0,
+        data: { clearedRanges: ["数据!A2:B2"] },
+      });
+    }
+    if (url.pathname.endsWith("/values")) {
+      assert.equal(options.method, "PUT");
+      assert.deepEqual(JSON.parse(options.body), {
+        valueRange: { range: "数据!A1:B1", values: [["名称", "数量"]] },
+      });
+      return Response.json({ code: 0, data: { updatedCells: 2 } });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  const service = createFeishuOAuthService({
+    config,
+    database,
+    fetchImpl,
+    now: () => 1_000_000,
+  });
+  const server = createServer(service.handler);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const headers = {
+    Authorization: `Bearer ${connectionToken}`,
+    "Content-Type": "application/json",
+  };
+  const sheetBase = `${origin}/api/integrations/feishu/drive/spreadsheets/sheet-token`;
+  try {
+    const search = await fetch(
+      `${origin}/api/integrations/feishu/drive/search`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          query: "共享报告",
+          count: 20,
+          offset: 0,
+          docs_types: ["sheet", "docx"],
+        }),
+      },
+    );
+    const searchBody = await search.json();
+    assert.equal(searchBody.docs_entities[0].docs_token, "shared-sheet");
+    assert.equal(searchBody.docs_entities[0].owned_by_current_user, true);
+
+    const meta = await fetch(`${sheetBase}/meta`, { headers });
+    assert.equal((await meta.json()).properties.title, "共享表");
+    const read = await fetch(
+      `${sheetBase}/values?range=${encodeURIComponent("数据!A1:B2")}`,
+      { headers },
+    );
+    assert.deepEqual((await read.json()).valueRange.values, [[1, 2]]);
+    const records = await fetch(
+      `${origin}/api/integrations/feishu/drive/bitables/base-token/tables/tblCalendar/records?page_size=50&page_token=next-page`,
+      { headers },
+    );
+    assert.equal((await records.json()).items[0].record_id, "rec-1");
+    const fields = await fetch(
+      `${origin}/api/integrations/feishu/drive/bitables/base-token/tables/tblCalendar/fields?page_size=100`,
+      { headers },
+    );
+    assert.equal((await fields.json()).items[0].field_id, "fld-1");
+    const updated = await fetch(
+      `${origin}/api/integrations/feishu/drive/bitables/base-token/tables/tblCalendar/records/rec-1`,
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ fields: { 状态: "完成" } }),
+      },
+    );
+    assert.equal((await updated.json()).record.record_id, "rec-1");
+    const denied = await fetch(
+      `${origin}/api/integrations/feishu/drive/spreadsheets/denied/meta`,
+      { headers },
+    );
+    assert.equal(denied.status, 403);
+    assert.deepEqual(await denied.json(), {
+      error: "feishu_permission_denied_or_scope_missing",
+      upstream_code: 99991679,
+    });
+    for (const [action, body] of [
+      ["values", { range: "数据!A1:B1", values: [["名称", "数量"]] }],
+      ["append", { range: "数据!A:B", values: [["新增", 3]] }],
+      ["clear", { range: "数据!A2:B2" }],
+    ]) {
+      const response = await fetch(`${sheetBase}/${action}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      assert.equal(response.status, 200);
+    }
+    assert.equal(calls.length, 10);
   } finally {
     await new Promise((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),

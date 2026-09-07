@@ -33,7 +33,17 @@ class UserAuthorizedFeishuDriveTests(unittest.TestCase):
             call = statement.value
             if isinstance(call.func, ast.Attribute) and call.func.attr == "register":
                 names.extend(keyword.value.value for keyword in call.keywords if keyword.arg == "name" and isinstance(keyword.value, ast.Constant))
-        for name in ("feishu_docx_read", "feishu_docx_list_blocks", "feishu_docx_append_text", "feishu_docx_update_block"):
+        for name in (
+            "feishu_docx_read", "feishu_docx_list_blocks",
+            "feishu_docx_append_text", "feishu_docx_update_block",
+            "feishu_sheet_get_metadata", "feishu_sheet_read_range",
+            "feishu_sheet_write_range", "feishu_sheet_append_rows",
+            "feishu_sheet_clear_range",
+            "feishu_bitable_list_fields", "feishu_bitable_list_records",
+            "feishu_bitable_update_record",
+            "feishu_markdown_read", "feishu_pdf_read",
+            "feishu_drive_list_locations",
+        ):
             self.assertEqual(names.count(name), 1)
 
     def test_document_read_accepts_url_and_passes_pagination(self) -> None:
@@ -103,6 +113,45 @@ class UserAuthorizedFeishuDriveTests(unittest.TestCase):
         self.assertEqual(result["files"][0]["token"], "file-1")
         list_page.assert_called_once_with("user-root", "", 100)
 
+    def test_list_accepts_a_shared_folder_link(self) -> None:
+        with (
+            patch.object(drive, "_list_page", return_value={"files": []}) as list_page,
+            patch.object(drive, "_register_shared_folder") as register,
+        ):
+            result = json.loads(drive._handle_list_files({
+                "folder_token": "https://tenant.feishu.cn/drive/folder/shared-1?from=share",
+            }))
+        self.assertTrue(result["success"])
+        self.assertEqual(result["scope"], "selected_folder")
+        self.assertEqual(result["listed_folder_token"], "shared-1")
+        self.assertNotIn("user_root", result)
+        list_page.assert_called_once_with("shared-1", "", 100)
+        register.assert_called_once_with(
+            "shared-1",
+            "https://tenant.feishu.cn/drive/folder/shared-1?from=share",
+        )
+
+    def test_shared_folder_registry_is_profile_scoped_and_discoverable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(
+                drive, "_shared_folder_directory", return_value=Path(temp_dir)
+            ):
+                drive._register_shared_folder(
+                    "shared-1",
+                    "https://tenant.feishu.cn/drive/folder/shared-1",
+                )
+                stored = drive._registered_shared_folders()
+                with patch.object(
+                    drive, "_root", return_value={"token": "user-root"}
+                ):
+                    result = json.loads(drive._handle_list_locations({}))
+        self.assertEqual(stored[0]["folder_token"], "shared-1")
+        self.assertEqual(result["registered_shared_count"], 1)
+        self.assertEqual(
+            [location["scope"] for location in result["locations"]],
+            ["personal_root", "registered_shared_folder"],
+        )
+
     def test_create_folder_defaults_to_the_connected_users_root(self) -> None:
         with (
             patch.object(drive, "_root", return_value={"token": "user-root"}),
@@ -147,6 +196,96 @@ class UserAuthorizedFeishuDriveTests(unittest.TestCase):
         self.assertEqual(call.args[:2], ("POST", "/api/integrations/feishu/drive/files/upload"))
         self.assertEqual(call.kwargs["body"]["parent_node"], "folder-1")
         self.assertEqual(base64.b64decode(call.kwargs["body"]["content_base64"]), b"ready")
+
+    def test_markdown_read_downloads_utf8_content_and_paginates(self) -> None:
+        with patch.object(
+            drive,
+            "_proxy_request",
+            return_value={
+                "content_base64": base64.b64encode("# 标题\n正文".encode()).decode(),
+                "content_type": "text/markdown",
+                "size": len("# 标题\n正文".encode()),
+            },
+        ) as request:
+            result = json.loads(
+                drive._handle_markdown_read(
+                    {
+                        "file_token": "https://tenant.feishu.cn/file/file-1",
+                        "offset": 2,
+                        "limit": 3,
+                    }
+                )
+            )
+        self.assertTrue(result["success"])
+        self.assertEqual(result["content"], "标题\n")
+        self.assertEqual(result["next_offset"], 5)
+        request.assert_called_once_with(
+            "GET",
+            "/api/integrations/feishu/drive/files/file-1/content",
+            timeout=60,
+        )
+
+    def test_markdown_read_rejects_non_utf8_and_untrusted_urls(self) -> None:
+        with patch.object(
+            drive,
+            "_proxy_request",
+            return_value={
+                "content_base64": base64.b64encode(b"\xff").decode(),
+                "size": 1,
+            },
+        ):
+            invalid_encoding = json.loads(
+                drive._handle_markdown_read({"file_token": "file-1"})
+            )
+        self.assertIn("UTF-8", invalid_encoding["error"])
+        with patch.object(drive, "_proxy_request") as request:
+            invalid_url = json.loads(
+                drive._handle_markdown_read(
+                    {"file_token": "https://evil.test/file/file-1"}
+                )
+            )
+        self.assertIn("error", invalid_url)
+        request.assert_not_called()
+
+    def test_pdf_read_returns_bounded_text_and_next_page(self) -> None:
+        with (
+            patch.object(
+                drive,
+                "_download_file_bytes",
+                return_value=("pdf-1", b"pdf", "application/pdf"),
+            ),
+            patch.object(
+                drive,
+                "_extract_pdf_text",
+                return_value=(30, 20, "--- 第 1 页 ---\n正文内容"),
+            ) as extract,
+        ):
+            result = json.loads(
+                drive._handle_pdf_read(
+                    {"file_token": "pdf-1", "offset": 0, "limit": 8}
+                )
+            )
+        self.assertTrue(result["success"])
+        self.assertEqual(result["total_pages"], 30)
+        self.assertEqual(result["next_page"], 21)
+        self.assertEqual(result["next_offset"], 8)
+        extract.assert_called_once_with(b"pdf", 1, None)
+
+    def test_pdf_read_explains_when_selected_pages_have_no_text(self) -> None:
+        with (
+            patch.object(
+                drive,
+                "_download_file_bytes",
+                return_value=("pdf-1", b"pdf", "application/pdf"),
+            ),
+            patch.object(
+                drive,
+                "_extract_pdf_text",
+                return_value=(1, 1, "--- 第 1 页 ---"),
+            ),
+        ):
+            result = json.loads(drive._handle_pdf_read({"file_token": "pdf-1"}))
+        self.assertIn("OCR", result["error"])
 
     # @lat: [[feishu-drive#Destructive operation guard]]
     def test_delete_requires_exact_confirmation_and_rejects_folders(self) -> None:
@@ -196,12 +335,304 @@ class UserAuthorizedFeishuDriveTests(unittest.TestCase):
             ],
         }
         with (
-            patch.object(drive, "_root", return_value={"token": "user-root"}),
             patch.object(drive, "_list_all", side_effect=lambda token: listings[token]),
+            patch.object(drive, "_register_shared_folder"),
         ):
-            result = json.loads(drive._handle_search_files({"query": "报告"}))
+            result = json.loads(
+                drive._handle_search_files(
+                    {"query": "报告", "folder_token": "user-root"}
+                )
+            )
 
         self.assertEqual([item["token"] for item in result["matches"]], ["file-a", "file-b"])
+
+    def test_search_without_folder_uses_all_accessible_documents(self) -> None:
+        with (
+            patch.object(
+                drive,
+                "_proxy_request",
+                return_value={
+                    "docs_entities": [{"docs_token": "shared-doc", "title": "共享报告"}],
+                    "has_more": True,
+                },
+            ) as request,
+            patch.object(drive, "_root", side_effect=drive.FeishuDriveError("offline")),
+        ):
+            result = json.loads(drive._handle_search_files({"query": "报告", "limit": 20}))
+        self.assertTrue(result["success"])
+        self.assertEqual(result["scope"], "all_accessible_documents")
+        self.assertEqual(result["matches"][0]["docs_token"], "shared-doc")
+        self.assertEqual(result["matches"][0]["token"], "shared-doc")
+        self.assertEqual(result["matches"][0]["name"], "共享报告")
+        self.assertEqual(result["next_offset"], 1)
+        request.assert_called_once_with(
+            "POST",
+            "/api/integrations/feishu/drive/search",
+            body={"query": "报告", "count": 20, "offset": 0, "docs_types": None},
+        )
+
+    def test_global_search_prefers_current_users_personal_file(self) -> None:
+        search_data = {
+            "docs_entities": [
+                {
+                    "docs_token": "other-copy",
+                    "title": "任务跟进看板",
+                    "owned_by_current_user": False,
+                },
+                {
+                    "docs_token": "my-copy",
+                    "title": "任务跟进看板",
+                    "owned_by_current_user": True,
+                },
+            ]
+        }
+        with (
+            patch.object(drive, "_proxy_request", return_value=search_data),
+            patch.object(drive, "_root", return_value={"token": "user-root"}),
+            patch.object(
+                drive,
+                "_list_all",
+                return_value=[
+                    {"token": "my-copy", "type": "sheet"},
+                    {"token": "other-personal", "type": "sheet"},
+                ],
+            ),
+        ):
+            result = json.loads(
+                drive._handle_search_files({"query": "任务跟进看板"})
+            )
+        self.assertEqual(result["preferred_match"]["token"], "my-copy")
+        self.assertTrue(result["preferred_match"]["owned_by_current_user"])
+        self.assertTrue(result["preferred_match"]["in_personal_files"])
+        self.assertEqual(result["matches"][0]["token"], "my-copy")
+        self.assertEqual(
+            [item["token"] for item in result["alternative_matches"]],
+            ["other-copy"],
+        )
+
+    def test_sheet_links_and_range_actions_are_validated(self) -> None:
+        metadata = {"sheets": [{"sheetId": "sid-data", "title": "数据"}]}
+        with patch.object(
+            drive,
+            "_proxy_request",
+            side_effect=[metadata, {"valueRange": {"values": [[1]]}}],
+        ) as request:
+            result = json.loads(drive._handle_sheet({
+                "spreadsheet_token": "https://tenant.feishu.cn/sheets/sheet-1?sheet=abc",
+                "range": "数据!A1:B2",
+            }, "read"))
+        self.assertTrue(result["success"])
+        self.assertEqual(result["resolved_range"], "sid-data!A1:B2")
+        self.assertEqual(
+            request.call_args_list[1].args,
+            ("GET", "/api/integrations/feishu/drive/spreadsheets/sheet-1/values"),
+        )
+        self.assertEqual(request.call_args_list[1].kwargs["query"], {"range": "sid-data!A1:B2"})
+
+        with patch.object(drive, "_proxy_request") as request:
+            invalid = json.loads(drive._handle_sheet({
+                "spreadsheet_token": "sheet-1", "range": "数据!A1", "values": [{"bad": True}],
+            }, "write"))
+        self.assertIn("数组", invalid["error"])
+        request.assert_not_called()
+
+    def test_sheet_write_append_and_clear_use_distinct_proxy_actions(self) -> None:
+        metadata = {"sheets": [{"sheetId": "sid-data", "title": "数据"}]}
+
+        def respond(method: str, path: str, **kwargs: object) -> dict:
+            return metadata if path.endswith("/meta") else {"ok": True}
+
+        with patch.object(drive, "_proxy_request", side_effect=respond) as request:
+            written = json.loads(drive._handle_sheet({
+                "spreadsheet_token": "sheet-1", "range": "数据!A1:B1", "values": [["名称", 1]],
+            }, "write"))
+            self.assertTrue(written["success"])
+            request.assert_called_with(
+                "POST",
+                "/api/integrations/feishu/drive/spreadsheets/sheet-1/values",
+                body={"range": "sid-data!A1:B1", "values": [["名称", 1]]},
+                timeout=60,
+            )
+            request.reset_mock()
+            drive._handle_sheet({
+                "spreadsheet_token": "sheet-1", "range": "数据!A:B", "values": [["新增", 2]],
+            }, "append")
+            request.assert_called_with(
+                "POST",
+                "/api/integrations/feishu/drive/spreadsheets/sheet-1/append",
+                body={"range": "sid-data!A:B", "values": [["新增", 2]]},
+                timeout=60,
+            )
+            request.reset_mock()
+            denied = json.loads(drive._handle_sheet({
+                "spreadsheet_token": "sheet-1", "range": "数据!A2:B2", "confirmation": "yes",
+            }, "clear"))
+            self.assertIn("confirmation", denied["error"])
+            request.assert_not_called()
+            cleared = json.loads(drive._handle_sheet({
+                "spreadsheet_token": "sheet-1", "range": "数据!A2:B2",
+                "confirmation": "CLEAR:sheet-1:数据!A2:B2",
+            }, "clear"))
+            self.assertTrue(cleared["success"])
+            request.assert_called_with(
+                "POST",
+                "/api/integrations/feishu/drive/spreadsheets/sheet-1/clear",
+                body={"range": "sid-data!A2:B2"},
+            )
+
+    def test_sheet_range_accepts_sheet_id_and_reports_available_sheets(self) -> None:
+        metadata = {"sheets": [{"sheetId": "sid-data", "title": "数据"}]}
+        with patch.object(drive, "_proxy_request", return_value=metadata):
+            requested, resolved, sheet_id, title, block_type, block_token = drive._resolve_sheet_range(
+                "/sheet", "sid-data!A1:B2"
+            )
+            missing = json.loads(
+                drive._handle_sheet(
+                    {"spreadsheet_token": "sheet-1", "range": "不存在!A1"},
+                    "read",
+                )
+            )
+        self.assertEqual(requested, "sid-data!A1:B2")
+        self.assertEqual(resolved, "sid-data!A1:B2")
+        self.assertEqual((sheet_id, title), ("sid-data", "数据"))
+        self.assertEqual((block_type, block_token), ("", ""))
+        self.assertIn("数据 (sid-data)", missing["error"])
+
+    def test_single_cell_write_expands_range_for_feishu(self) -> None:
+        metadata = {"sheets": [{"sheetId": "sid-data", "title": "数据"}]}
+
+        def respond(method: str, path: str, **kwargs: object) -> dict:
+            return metadata if path.endswith("/meta") else {"ok": True}
+
+        with patch.object(drive, "_proxy_request", side_effect=respond) as request:
+            result = json.loads(drive._handle_sheet({
+                "spreadsheet_token": "sheet-1",
+                "range": "数据!C18",
+                "values": [["备忘录"]],
+            }, "write"))
+        self.assertTrue(result["success"])
+        self.assertEqual(result["requested_range"], "数据!C18")
+        self.assertEqual(result["resolved_range"], "sid-data!C18:C18")
+        request.assert_called_with(
+            "POST",
+            "/api/integrations/feishu/drive/spreadsheets/sheet-1/values",
+            body={"range": "sid-data!C18:C18", "values": [["备忘录"]]},
+            timeout=60,
+        )
+
+    def test_embedded_bitable_sheet_reads_records_instead_of_cell_range(self) -> None:
+        metadata = {"sheets": [{
+            "sheetId": "calendar",
+            "title": "日历",
+            "blockInfo": {
+                "blockType": "BITABLE_BLOCK",
+                "blockToken": "base-token_tblCalendar",
+            },
+        }]}
+        with patch.object(
+            drive,
+            "_proxy_request",
+            side_effect=[metadata, {"items": [{"record_id": "rec-1"}]}],
+        ) as request:
+            result = json.loads(drive._handle_sheet({
+                "spreadsheet_token": "sheet-1",
+                "range": "日历!A1:E20",
+                "page_size": 50,
+            }, "read"))
+        self.assertTrue(result["success"])
+        self.assertEqual(result["content_type"], "embedded_bitable")
+        self.assertEqual(result["data"]["items"][0]["record_id"], "rec-1")
+        request.assert_called_with(
+            "GET",
+            "/api/integrations/feishu/drive/bitables/base-token/tables/tblCalendar/records",
+            query={"page_size": 50, "page_token": None},
+        )
+
+    def test_embedded_bitable_sheet_rejects_sheet_cell_writes(self) -> None:
+        metadata = {"sheets": [{
+            "sheetId": "calendar",
+            "title": "日历",
+            "blockInfo": {
+                "blockType": "BITABLE_BLOCK",
+                "blockToken": "base-token_tblCalendar",
+            },
+        }]}
+        with patch.object(drive, "_proxy_request", return_value=metadata) as request:
+            result = json.loads(drive._handle_sheet({
+                "spreadsheet_token": "sheet-1",
+                "range": "日历!A1",
+                "values": [["错误写法"]],
+            }, "write"))
+        self.assertIn("嵌入式多维表格", result["error"])
+        self.assertEqual(request.call_count, 1)
+
+    def test_bitable_fields_and_records_resolve_embedded_sheet(self) -> None:
+        metadata = {"sheets": [{
+            "sheetId": "board",
+            "title": "任务跟进看板",
+            "blockInfo": {
+                "blockType": "BITABLE_BLOCK",
+                "blockToken": "base-token_tblTasks",
+            },
+        }]}
+        with patch.object(
+            drive,
+            "_proxy_request",
+            side_effect=[
+                metadata,
+                {"items": [{"field_id": "fld-1", "field_name": "任务"}]},
+                metadata,
+                {"items": [{"record_id": "rec-1", "fields": {"任务": "拜访"}}]},
+            ],
+        ) as request:
+            fields = json.loads(drive._handle_bitable({
+                "spreadsheet_token": "sheet-1",
+                "sheet": "任务跟进看板",
+            }, "fields"))
+            records = json.loads(drive._handle_bitable({
+                "spreadsheet_token": "sheet-1",
+                "sheet": "board",
+                "page_size": 50,
+            }, "records"))
+        self.assertTrue(fields["success"])
+        self.assertEqual(fields["data"]["items"][0]["field_id"], "fld-1")
+        self.assertEqual(records["data"]["items"][0]["record_id"], "rec-1")
+        self.assertEqual(
+            request.call_args_list[1].args[1],
+            "/api/integrations/feishu/drive/bitables/base-token/tables/tblTasks/fields",
+        )
+        self.assertEqual(
+            request.call_args_list[3].args[1],
+            "/api/integrations/feishu/drive/bitables/base-token/tables/tblTasks/records",
+        )
+
+    def test_bitable_update_record_sends_only_supplied_fields(self) -> None:
+        metadata = {"sheets": [{
+            "sheetId": "board",
+            "title": "任务跟进看板",
+            "blockInfo": {
+                "blockType": "BITABLE_BLOCK",
+                "blockToken": "base-token_tblTasks",
+            },
+        }]}
+        with patch.object(
+            drive,
+            "_proxy_request",
+            side_effect=[metadata, {"record": {"record_id": "rec-1"}}],
+        ) as request:
+            result = json.loads(drive._handle_bitable({
+                "spreadsheet_token": "sheet-1",
+                "sheet": "board",
+                "record_id": "rec-1",
+                "fields": {"状态": "完成"},
+            }, "update"))
+        self.assertTrue(result["success"])
+        request.assert_called_with(
+            "PUT",
+            "/api/integrations/feishu/drive/bitables/base-token/tables/tblTasks/records/rec-1",
+            body={"fields": {"状态": "完成"}},
+            timeout=60,
+        )
 
 
 if __name__ == "__main__":

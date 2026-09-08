@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ContractCompareFeature, {
   renderInlineDifference,
 } from "./ContractCompareFeature";
@@ -18,6 +18,10 @@ const newFile = {
 };
 
 describe("ContractCompareFeature", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     Object.defineProperty(window, "hermesAPI", {
       configurable: true,
@@ -120,9 +124,36 @@ describe("ContractCompareFeature", () => {
 
   // @lat: [[feature-workspace#Contract comparison#Side-by-side review]]
   it("renders both documents and a navigable change summary", async () => {
+    class NarrowResizeObserver {
+      private readonly callback: ResizeObserverCallback;
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+
+      observe(target: Element): void {
+        this.callback(
+          [
+            {
+              target,
+              contentRect: { width: 820 },
+            } as ResizeObserverEntry,
+          ],
+          this as unknown as ResizeObserver,
+        );
+      }
+
+      disconnect(): void {}
+      unobserve(): void {}
+    }
+    vi.stubGlobal("ResizeObserver", NarrowResizeObserver);
+
     render(<ContractCompareFeature profile="default" />);
     fireEvent.click(screen.getByRole("button", { name: /选择旧版合同/ }));
-    await screen.findByText("旧合同.docx");
+    expect(await screen.findByText("旧合同.docx")).toHaveAttribute(
+      "title",
+      "旧合同.docx",
+    );
     fireEvent.click(screen.getByRole("button", { name: /选择新版合同/ }));
     await screen.findByText("新合同.docx");
     const compareButton = screen.getByRole("button", {
@@ -140,6 +171,24 @@ describe("ContractCompareFeature", () => {
     expect(screen.getByLabelText("差异类型")).toBeInTheDocument();
     expect(screen.getAllByRole("table")).toHaveLength(2);
     expect(screen.getAllByRole("cell")[0]).toHaveAttribute("colspan", "2");
+
+    const resultToggle = screen.getByRole("button", {
+      name: "展开比对结果",
+    });
+    expect(resultToggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(resultToggle);
+    expect(
+      screen.getByRole("button", { name: "收起比对结果" }),
+    ).toHaveAttribute("aria-expanded", "true");
+
+    const resizer = screen.getByRole("separator", {
+      name: "调整左右合同宽度",
+    });
+    expect(resizer).toHaveAttribute("aria-valuenow", "50");
+    fireEvent.keyDown(resizer, { key: "ArrowLeft" });
+    expect(resizer).toHaveAttribute("aria-valuenow", "45");
+    fireEvent.doubleClick(resizer);
+    expect(resizer).toHaveAttribute("aria-valuenow", "50");
   });
 
   it("highlights only the changed middle of a modified paragraph", () => {
@@ -155,5 +204,49 @@ describe("ContractCompareFeature", () => {
     );
     expect(container.querySelector("mark")?.textContent).toBe("1");
     expect(container.textContent).toBe("金额为100元");
+  });
+
+  it("does not highlight the remaining text on the new side of a deletion", () => {
+    const oldSide = render(
+      <>{renderInlineDifference("文档管理", "管理", "modified", "old")}</>,
+    );
+    expect(oldSide.container.querySelector("mark")?.textContent).toBe("文档");
+    expect(oldSide.container.textContent).toBe("文档管理");
+    oldSide.unmount();
+
+    const newSide = render(
+      <>{renderInlineDifference("管理", "文档管理", "modified", "new")}</>,
+    );
+    expect(newSide.container.querySelector("mark")).toBeNull();
+    expect(newSide.container.textContent).toBe("管理");
+  });
+
+  it("does not highlight the existing text on the old side of an insertion", () => {
+    const oldSide = render(
+      <>{renderInlineDifference("管理", "文档管理", "modified", "old")}</>,
+    );
+    expect(oldSide.container.querySelector("mark")).toBeNull();
+    expect(oldSide.container.textContent).toBe("管理");
+    oldSide.unmount();
+
+    const newSide = render(
+      <>{renderInlineDifference("文档管理", "管理", "modified", "new")}</>,
+    );
+    expect(newSide.container.querySelector("mark")?.textContent).toBe("文档");
+    expect(newSide.container.textContent).toBe("文档管理");
+  });
+
+  it("keeps the shortened number unmarked after a character deletion", () => {
+    const oldSide = render(
+      <>{renderInlineDifference("250000", "25000", "modified", "old")}</>,
+    );
+    expect(oldSide.container.querySelector("mark")?.textContent).toBe("0");
+    oldSide.unmount();
+
+    const newSide = render(
+      <>{renderInlineDifference("25000", "250000", "modified", "new")}</>,
+    );
+    expect(newSide.container.querySelector("mark")).toBeNull();
+    expect(newSide.container.textContent).toBe("25000");
   });
 });

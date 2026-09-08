@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -94,9 +95,11 @@ export function renderInlineDifference(
   return (
     <>
       {before}
-      <mark className={`contract-inline-mark modified ${side}`}>
-        {changed || text}
-      </mark>
+      {changed ? (
+        <mark className={`contract-inline-mark modified ${side}`}>
+          {changed}
+        </mark>
+      ) : null}
       {after}
     </>
   );
@@ -138,8 +141,7 @@ function DocumentContent({
 }): React.JSX.Element {
   const differencesByUnit = new Map<string, ContractDifference>();
   for (const difference of differences) {
-    const unitId =
-      side === "old" ? difference.oldUnitId : difference.newUnitId;
+    const unitId = side === "old" ? difference.oldUnitId : difference.newUnitId;
     if (unitId) differencesByUnit.set(unitId, difference);
   }
 
@@ -249,9 +251,16 @@ export default function ContractCompareFeature({
   const [search, setSearch] = useState("");
   const [activeDiffId, setActiveDiffId] = useState("");
   const [resultLimit, setResultLimit] = useState(80);
+  const [oldPaneWidth, setOldPaneWidth] = useState(50);
+  const [compactReview, setCompactReview] = useState(false);
+  const [resultsCollapsed, setResultsCollapsed] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const comparisonRef = useRef<HTMLDivElement>(null);
   const oldPaneRef = useRef<HTMLDivElement>(null);
   const newPaneRef = useRef<HTMLDivElement>(null);
   const synchronizingRef = useRef(false);
+  const resizingRef = useRef(false);
+  const previousCompactRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -275,6 +284,21 @@ export default function ContractCompareFeature({
       cancelled = true;
     };
   }, [profile]);
+
+  useEffect(() => {
+    const element = detailRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const compact = entry.contentRect.width < 980;
+      setCompactReview(compact);
+      if (previousCompactRef.current !== compact) {
+        setResultsCollapsed(compact);
+        previousCompactRef.current = compact;
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   const selectedModel = useMemo(
     () => models.find((item) => item.id === modelId),
@@ -402,8 +426,18 @@ export default function ContractCompareFeature({
     focusDifference(filteredChanges[next]);
   };
 
+  const resizeDocumentPanes = (clientX: number): void => {
+    const bounds = comparisonRef.current?.getBoundingClientRect();
+    if (!bounds?.width) return;
+    const percentage = ((clientX - bounds.left) / bounds.width) * 100;
+    setOldPaneWidth(Math.min(70, Math.max(30, Math.round(percentage))));
+  };
+
   return (
-    <div className="feature-detail contract-compare-detail">
+    <div
+      ref={detailRef}
+      className={`feature-detail contract-compare-detail${compactReview ? " compact" : ""}`}
+    >
       <header className="feature-detail-header">
         <span className="feature-title-icon">
           <FileDiff size={23} />
@@ -428,7 +462,9 @@ export default function ContractCompareFeature({
                 <strong>
                   {side === "old" ? "选择旧版合同" : "选择新版合同"}
                 </strong>
-                <small>{file?.name || "支持 DOCX、PDF，最大 50 MB"}</small>
+                <small title={file?.name || undefined}>
+                  {file?.name || "支持 DOCX、PDF，最大 50 MB"}
+                </small>
               </span>
             </button>
           );
@@ -495,121 +531,199 @@ export default function ContractCompareFeature({
           </div>
 
           <div className="contract-review-layout">
-            <div className="contract-document-comparison">
-              {(["old", "new"] as const).map((side) => (
-                <section key={side} className="contract-document-pane">
-                  <header>
-                    <span className={side}>
-                      {side === "old" ? "旧版" : "新版"}
-                    </span>
-                    <strong>
-                      {side === "old" ? result.oldFileName : result.newFileName}
-                    </strong>
-                  </header>
-                  <div
-                    ref={side === "old" ? oldPaneRef : newPaneRef}
-                    className="contract-document-scroll"
-                    style={{ fontSize: `${zoom}%` }}
-                    onScroll={(event) => syncDocumentScroll(side, event)}
-                  >
-                    <div className="contract-document-page">
-                      {side === "old" && result.oldDocument ? (
-                        <DocumentContent
-                          document={result.oldDocument}
-                          differences={result.differences}
-                          side={side}
-                          activeDiffId={activeDiffId}
-                        />
-                      ) : side === "new" && result.newDocument ? (
-                        <DocumentContent
-                          document={result.newDocument}
-                          differences={result.differences}
-                          side={side}
-                          activeDiffId={activeDiffId}
-                        />
-                      ) : (
-                        result.differences.map((item) => (
-                          <DocumentRow
-                            key={`${side}-${item.id}`}
-                            item={item}
+            <div
+              ref={comparisonRef}
+              className="contract-document-comparison"
+              style={{
+                gridTemplateColumns: `${oldPaneWidth}fr 6px ${100 - oldPaneWidth}fr`,
+              }}
+            >
+              {(["old", "new"] as const).map((side, index) => (
+                <Fragment key={side}>
+                  {index === 1 && (
+                    <div
+                      className="contract-pane-resizer"
+                      role="separator"
+                      aria-label="调整左右合同宽度"
+                      aria-orientation="vertical"
+                      aria-valuemin={30}
+                      aria-valuemax={70}
+                      aria-valuenow={oldPaneWidth}
+                      tabIndex={0}
+                      title="拖动调整宽度，双击恢复均分"
+                      onDoubleClick={() => setOldPaneWidth(50)}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowLeft") {
+                          event.preventDefault();
+                          setOldPaneWidth((value) => Math.max(30, value - 5));
+                        } else if (event.key === "ArrowRight") {
+                          event.preventDefault();
+                          setOldPaneWidth((value) => Math.min(70, value + 5));
+                        } else if (event.key === "Home") {
+                          event.preventDefault();
+                          setOldPaneWidth(30);
+                        } else if (event.key === "End") {
+                          event.preventDefault();
+                          setOldPaneWidth(70);
+                        }
+                      }}
+                      onPointerDown={(event) => {
+                        resizingRef.current = true;
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        resizeDocumentPanes(event.clientX);
+                      }}
+                      onPointerMove={(event) => {
+                        if (resizingRef.current)
+                          resizeDocumentPanes(event.clientX);
+                      }}
+                      onPointerUp={(event) => {
+                        resizingRef.current = false;
+                        event.currentTarget.releasePointerCapture(
+                          event.pointerId,
+                        );
+                      }}
+                      onPointerCancel={() => {
+                        resizingRef.current = false;
+                      }}
+                    />
+                  )}
+                  <section className="contract-document-pane">
+                    <header>
+                      <span className={side}>
+                        {side === "old" ? "旧版" : "新版"}
+                      </span>
+                      <strong>
+                        {side === "old"
+                          ? result.oldFileName
+                          : result.newFileName}
+                      </strong>
+                    </header>
+                    <div
+                      ref={side === "old" ? oldPaneRef : newPaneRef}
+                      className="contract-document-scroll"
+                      style={{ fontSize: `${zoom}%` }}
+                      onScroll={(event) => syncDocumentScroll(side, event)}
+                    >
+                      <div className="contract-document-page">
+                        {side === "old" && result.oldDocument ? (
+                          <DocumentContent
+                            document={result.oldDocument}
+                            differences={result.differences}
                             side={side}
-                            active={item.id === activeDiffId}
+                            activeDiffId={activeDiffId}
                           />
-                        ))
-                      )}
+                        ) : side === "new" && result.newDocument ? (
+                          <DocumentContent
+                            document={result.newDocument}
+                            differences={result.differences}
+                            side={side}
+                            activeDiffId={activeDiffId}
+                          />
+                        ) : (
+                          result.differences.map((item) => (
+                            <DocumentRow
+                              key={`${side}-${item.id}`}
+                              item={item}
+                              side={side}
+                              active={item.id === activeDiffId}
+                            />
+                          ))
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </section>
+                  </section>
+                </Fragment>
               ))}
             </div>
 
-            <aside className="contract-result-sidebar">
+            <aside
+              className={`contract-result-sidebar${resultsCollapsed ? " collapsed" : ""}`}
+            >
               <header>
                 <strong>比对结果</strong>
-                <span>{changes.length} 处变化</span>
+                <div>
+                  <span>{changes.length} 处变化</span>
+                  <button
+                    type="button"
+                    className="contract-result-toggle"
+                    aria-label={
+                      resultsCollapsed ? "展开比对结果" : "收起比对结果"
+                    }
+                    aria-expanded={!resultsCollapsed}
+                    onClick={() => setResultsCollapsed((value) => !value)}
+                  >
+                    {resultsCollapsed ? (
+                      <ChevronDown size={16} />
+                    ) : (
+                      <ChevronUp size={16} />
+                    )}
+                  </button>
+                </div>
               </header>
-              <div className="contract-summary compact">
-                {(["added", "removed", "modified"] as const).map((kind) => (
-                  <span key={kind} className={kind}>
-                    <strong>{result.summary[kind]}</strong>
-                    <small>{KIND_LABEL[kind]}</small>
-                  </span>
-                ))}
-              </div>
-              <div className="contract-result-filters">
-                <select
-                  aria-label="差异类型"
-                  value={filter}
-                  onChange={(event) => {
-                    setFilter(event.target.value as DifferenceFilter);
-                    setResultLimit(80);
-                  }}
-                >
-                  {CHANGE_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {kind === "all" ? "全部类型" : KIND_LABEL[kind]}
-                    </option>
+              <div className="contract-result-sidebar-body">
+                <div className="contract-summary compact">
+                  {(["added", "removed", "modified"] as const).map((kind) => (
+                    <span key={kind} className={kind}>
+                      <strong>{result.summary[kind]}</strong>
+                      <small>{KIND_LABEL[kind]}</small>
+                    </span>
                   ))}
-                </select>
-                <label>
-                  <Search size={15} />
-                  <input
-                    aria-label="搜索差异"
-                    value={search}
-                    placeholder="搜索变化内容"
+                </div>
+                <div className="contract-result-filters">
+                  <select
+                    aria-label="差异类型"
+                    value={filter}
                     onChange={(event) => {
-                      setSearch(event.target.value);
+                      setFilter(event.target.value as DifferenceFilter);
                       setResultLimit(80);
                     }}
-                  />
-                </label>
-              </div>
-              <div className="contract-result-list">
-                {filteredChanges.slice(0, resultLimit).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`${item.kind}${item.id === activeDiffId ? " active" : ""}`}
-                    onClick={() => focusDifference(item)}
                   >
-                    <span>
-                      <i /> {KIND_LABEL[item.kind]}
-                    </span>
-                    <small>{item.newText || item.oldText}</small>
-                  </button>
-                ))}
-                {filteredChanges.length > resultLimit && (
-                  <button
-                    type="button"
-                    className="contract-load-more"
-                    onClick={() => setResultLimit((value) => value + 80)}
-                  >
-                    再显示 80 条
-                  </button>
-                )}
-                {!filteredChanges.length && (
-                  <div className="feature-empty">没有符合筛选条件的变化</div>
-                )}
+                    {CHANGE_KINDS.map((kind) => (
+                      <option key={kind} value={kind}>
+                        {kind === "all" ? "全部类型" : KIND_LABEL[kind]}
+                      </option>
+                    ))}
+                  </select>
+                  <label>
+                    <Search size={15} />
+                    <input
+                      aria-label="搜索差异"
+                      value={search}
+                      placeholder="搜索变化内容"
+                      onChange={(event) => {
+                        setSearch(event.target.value);
+                        setResultLimit(80);
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="contract-result-list">
+                  {filteredChanges.slice(0, resultLimit).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`${item.kind}${item.id === activeDiffId ? " active" : ""}`}
+                      onClick={() => focusDifference(item)}
+                    >
+                      <span>
+                        <i /> {KIND_LABEL[item.kind]}
+                      </span>
+                      <small>{item.newText || item.oldText}</small>
+                    </button>
+                  ))}
+                  {filteredChanges.length > resultLimit && (
+                    <button
+                      type="button"
+                      className="contract-load-more"
+                      onClick={() => setResultLimit((value) => value + 80)}
+                    >
+                      再显示 80 条
+                    </button>
+                  )}
+                  {!filteredChanges.length && (
+                    <div className="feature-empty">没有符合筛选条件的变化</div>
+                  )}
+                </div>
               </div>
             </aside>
           </div>

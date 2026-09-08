@@ -51,6 +51,14 @@ import type {
   WorkRecordSnapshot,
   WorkRecordSummary,
 } from "../shared/work-records";
+import type {
+  ContractAiAnalysisRequest,
+  ContractComparisonResult,
+  FeatureFileKind,
+  FeatureOperationResult,
+  FeaturePickedFile,
+  OcrDocumentResult,
+} from "../shared/feature-workspace";
 
 /**
  * Mirror of the renderer-side `CredentialPoolEntry` ambient type
@@ -1935,6 +1943,23 @@ const hermesAPI = {
     lines?: number,
   ): Promise<{ content: string; path: string }> =>
     ipcRenderer.invoke("read-logs", logFile, lines),
+
+  // Feature workspace
+  pickFeatureFile: (kind: FeatureFileKind): Promise<FeaturePickedFile | null> =>
+    ipcRenderer.invoke("feature-pick-file", kind),
+  runFeatureOcr: (
+    filePath: string,
+  ): Promise<FeatureOperationResult<OcrDocumentResult>> =>
+    ipcRenderer.invoke("feature-run-ocr", filePath),
+  compareContracts: (
+    oldPath: string,
+    newPath: string,
+  ): Promise<FeatureOperationResult<ContractComparisonResult>> =>
+    ipcRenderer.invoke("feature-compare-contracts", oldPath, newPath),
+  analyzeContract: (
+    request: ContractAiAnalysisRequest,
+  ): Promise<FeatureOperationResult<string>> =>
+    ipcRenderer.invoke("feature-analyze-contract", request),
 };
 
 if (process.contextIsolated) {

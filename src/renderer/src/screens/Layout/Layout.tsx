@@ -31,6 +31,7 @@ import Providers from "../Providers/Providers";
 import Schedules from "../Schedules/Schedules";
 import Kanban from "../Kanban/Kanban";
 import WorkRecords from "../WorkRecords/WorkRecords";
+import FeatureHub from "../Features/FeatureHub";
 import RemoteNotice from "../../components/RemoteNotice";
 import VerifyWarningBanner from "../../components/VerifyWarningBanner";
 import { useSettingsModal } from "../../components/settings/SettingsModalContext";
@@ -38,6 +39,7 @@ import {
   Compass,
   Timer,
   History,
+  Puzzle,
   Kanban as KanbanIcon,
   Download,
   PanelLeftClose,
@@ -57,9 +59,11 @@ type View =
   | "memory"
   | "tools"
   | "schedules"
+  | "features"
   | "records"
   | "kanban";
 
+// @lat: [[feature-workspace#Navigation and execution boundary]]
 const PINNED_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
   { view: "discover", icon: Compass, labelKey: "navigation.discover" },
   // "agents" (Profiles) is reached from the sidebar-footer ProfileSwitcher's
@@ -68,6 +72,7 @@ const PINNED_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
   // "skills" lives under the Discover tab (installed + community), so it's no
   // longer a top-level nav item.
   { view: "schedules", icon: Timer, labelKey: "navigation.schedules" },
+  { view: "features", icon: Puzzle, labelKey: "navigation.features" },
   { view: "records", icon: History, labelKey: "navigation.records" },
 ];
 
@@ -1035,6 +1040,16 @@ function Layout({
           {visitedViews.has("schedules") && (
             <div style={paneStyle("schedules")}>
               <Schedules profile={activeProfile} />
+            </div>
+          )}
+
+          {visitedViews.has("features") && (
+            <div style={paneStyle("features")}>
+              {remoteMode ? (
+                <RemoteNotice feature="Feature workspace" />
+              ) : (
+                <FeatureHub profile={activeProfile} />
+              )}
             </div>
           )}
 

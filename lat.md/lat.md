@@ -18,6 +18,7 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[desktop-updates]] — GitHub release checks, startup upgrade button behavior, and the Settings auto-upgrade preference.
 - [[sidebar-navigation]] — the recent-sessions list under the Chat nav item, capped at five with a "Show more" button that opens the full session list in a modal.
 - [[work-records]] — the profile-scoped six-month work ledger, with non-blocking turn capture, local SQLite persistence, title-only search, review, rename, and export.
+- [[feature-workspace]] — the sidebar document-tool workspace for offline OCR, deterministic contract comparison, and user-selected optional AI interpretation.
 - [[context-folder]] — the per-session linked working folder, persisted in a desktop-owned state.db table so a re-opened conversation restores its folder.
 - [[main-process]] — the Electron main-process entrypoint, app lifecycle modules, and centralized IPC registry.
 - [[remote-dashboard-oauth]] — direct Remote dashboard browser authentication, main-process cookie isolation, and single-use WebSocket ticket handling.

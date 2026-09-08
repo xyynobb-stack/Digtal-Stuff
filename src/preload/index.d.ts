@@ -53,6 +53,14 @@ import type {
   WorkRecordSnapshot,
   WorkRecordSummary,
 } from "../shared/work-records";
+import type {
+  ContractAiAnalysisRequest,
+  ContractComparisonResult,
+  FeatureFileKind,
+  FeatureOperationResult,
+  FeaturePickedFile,
+  OcrDocumentResult,
+} from "../shared/feature-workspace";
 
 interface ElectronAPI {
   process: {
@@ -1426,6 +1434,19 @@ interface HermesAPI {
     logFile?: string,
     lines?: number,
   ) => Promise<{ content: string; path: string }>;
+
+  // Feature workspace
+  pickFeatureFile: (kind: FeatureFileKind) => Promise<FeaturePickedFile | null>;
+  runFeatureOcr: (
+    filePath: string,
+  ) => Promise<FeatureOperationResult<OcrDocumentResult>>;
+  compareContracts: (
+    oldPath: string,
+    newPath: string,
+  ) => Promise<FeatureOperationResult<ContractComparisonResult>>;
+  analyzeContract: (
+    request: ContractAiAnalysisRequest,
+  ) => Promise<FeatureOperationResult<string>>;
 }
 
 declare global {

@@ -1,0 +1,47 @@
+# Feature workspace
+
+“功能区”在计划任务之后提供可扩展的本地文档工具入口，首批能力包括 OCR 和合同比对，并保持普通应用启动不加载推理引擎。
+
+## Navigation and execution boundary
+
+功能区是独立的侧边栏页面；渲染进程只选择文件和展示结果，文件校验、子进程调用与模型请求都经由受限 preload IPC 交给主进程。
+
+## Offline dependency packaging
+
+OCR 依赖必须安装进受管理的离线 Agent 虚拟环境，并由 Runtime 归档校验和 release 工作流导入检查共同保证，禁止在用户首次运行时联网安装。
+
+RapidOCR 和 ONNX Runtime 仅在 MinerU 不可用且需要本地回退时导入，因此不能加入安装探针或应用冷启动路径；MinerU 权重只部署在服务器，不进入安装包。
+
+## OCR
+
+OCR 支持常见图片和 PDF；安装版在本地判断文字页与扫描页，文字层直接提取，扫描页面按受限并发发送至配置的 MinerU 服务，失败时回退本地 RapidOCR。
+
+安装包默认通过出口映射 `183.230.226.81:8086` 连接 MinerU；网关将请求转到宿主机 `8008`，Docker 再转到容器 `8000`。部署环境可通过 `JINGYUAI_MINERU_API_BASE` 覆盖外部地址。
+
+MinerU 的 Markdown 标题和 HTML 表格在 worker 中转为结构化块，再由渲染进程创建安全的原生元素；不可访问的服务端图片路径不会进入界面或复制文本。
+
+### MinerU page routing
+
+PDF 页面根据原生文字量与整页图片覆盖率分流；扫描页以受控 DPI 分批渲染，避免大文档同时驻留全部页面图像，并兼容 MinerU 多版本 Markdown 返回结构。
+
+## Contract comparison
+
+合同比对先在本地提取 DOCX 或文字型 PDF；扫描 PDF 页面复用 OCR 的 MinerU 分流与本地回退，再生成可复核的差异，AI 解读不能修改精确结果。
+
+### Side-by-side review
+
+结果界面左右连续展示旧版与新版正文、同步滚动并直接标注变化，右侧差异导航支持按类型筛选、搜索和定位；DOCX 表格保留行列、横向合并、纵向合并和列宽比例，并在单元格内标记差异。
+
+合同比对详情顶部提供始终可见的返回功能区入口，切换工具无需离开功能区页面。
+
+### Structured Word tables
+
+DOCX 解析器按正文顺序提取段落和表格，并保留表格列宽、横向合并与纵向合并；左右视图在对应单元格内显示文本级差异。
+
+### Deterministic paragraph diff
+
+PDF 视觉行先合并为文本块和自然段；段落对齐关闭自动噪声判断，并为每项差异保留新旧段落序号、正文和相似度，使同一输入得到稳定且可定位的结果。
+
+## Optional AI interpretation
+
+用户可从当前 Profile 有权使用的模型中选择一个模型，只把变化条款发送给它，并选择中立、甲方或乙方立场；输出必须标为辅助分析而非法律意见。

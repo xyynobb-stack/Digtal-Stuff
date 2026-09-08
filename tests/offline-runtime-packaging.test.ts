@@ -77,6 +77,8 @@ describe("single Runtime archive", () => {
       "hermes-agent/hermes_cli/web_dist/index.html",
       "hermes-agent/venv/Scripts/python.exe",
       "hermes-agent/venv/Scripts/hermes.exe",
+      "hermes-agent/venv/Lib/site-packages/rapidocr/__init__.py",
+      "hermes-agent/venv/Lib/site-packages/onnxruntime/__init__.py",
       "python-runtime/python.exe",
       "python-runtime/DLLs/sqlite3.dll",
       "python-runtime/desktop-sqlite-runtime.json",
@@ -110,6 +112,41 @@ describe("single Runtime archive", () => {
 });
 
 describe("managed Runtime dependency verification", () => {
+  // @lat: [[feature-workspace#Offline dependency packaging]]
+  it("ships the document worker outside asar and verifies OCR dependencies", () => {
+    const builder = readFileSync(
+      join(process.cwd(), "electron-builder.yml"),
+      "utf8",
+    );
+    const worker = join(
+      process.cwd(),
+      "resources",
+      "feature-workers",
+      "document_tools.py",
+    );
+    const mineruConfig = join(
+      process.cwd(),
+      "resources",
+      "feature-workers",
+      "mineru-config.json",
+    );
+    expect(existsSync(worker)).toBe(true);
+    expect(existsSync(mineruConfig)).toBe(true);
+    expect(builder).toContain("resources/**");
+    expect(builder).toContain("asarUnpack:");
+
+    const packager = readFileSync(
+      join(process.cwd(), "scripts", "package-offline-runtime.mjs"),
+      "utf8",
+    );
+    expect(packager).toContain(
+      '"hermes-agent/venv/Lib/site-packages/rapidocr/__init__.py"',
+    );
+    expect(packager).toContain(
+      '"hermes-agent/venv/Lib/site-packages/onnxruntime/__init__.py"',
+    );
+  });
+
   // @lat: [[main-process#Offline Windows runtime#Lightweight activation probe]]
   it("keeps activation lightweight and validates RAG imports during release builds", () => {
     const installer = readFileSync(
@@ -473,6 +510,8 @@ describe("desktop DDGS web search", () => {
     expect(requirements).toContain("primp==1.3.1");
     expect(requirements).toContain("ddgs==9.16.0");
     expect(requirements).toContain("pymupdf==1.28.0");
+    expect(requirements).toContain("rapidocr==3.9.2");
+    expect(requirements).toContain("onnxruntime==1.29.0");
     expect(requirements).not.toContain("lark-oapi");
 
     for (const workflow of ["release.yml", "beta-release.yml"]) {
@@ -482,10 +521,12 @@ describe("desktop DDGS web search", () => {
       );
       expect(source).toContain("resources/desktop-agent-requirements.txt");
       expect(source).toContain(
-        "numpy, pymilvus, ddgs, pymupdf, importlib.metadata",
+        "numpy, pymilvus, ddgs, pymupdf, rapidocr, onnxruntime, importlib.metadata",
       );
       expect(source).toContain("metadata.version('primp') == '1.3.1'");
       expect(source).toContain("metadata.version('PyMuPDF') == '1.28.0'");
+      expect(source).toContain("metadata.version('rapidocr') == '3.9.2'");
+      expect(source).toContain("metadata.version('onnxruntime') == '1.29.0'");
     }
   });
 });

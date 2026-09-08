@@ -23,6 +23,16 @@ import type {
   WorkRecordQuery,
   WorkRecordSnapshot,
 } from "../../shared/work-records";
+import type {
+  ContractAiAnalysisRequest,
+  FeatureFileKind,
+} from "../../shared/feature-workspace";
+import {
+  analyzeContractWithModel,
+  inspectFeatureFile,
+  runContractComparison,
+  runFeatureOcr,
+} from "../document-features";
 import { getWorkRecordStore } from "../work-records";
 import type {
   DesktopSessionContinuationItem,
@@ -3647,6 +3657,43 @@ export function registerIpcHandlers(context: IpcContext): void {
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
+
+  // Feature workspace. File paths are chosen by the native dialog and
+  // validated in the main process before any worker is started.
+  ipcMain.handle("feature-pick-file", async (event, kind: FeatureFileKind) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const filters =
+      kind === "ocr"
+        ? [
+            {
+              name: "图片或 PDF",
+              extensions: ["png", "jpg", "jpeg", "webp", "bmp", "pdf"],
+            },
+          ]
+        : [{ name: "合同文档", extensions: ["docx", "pdf"] }];
+    const options: Electron.OpenDialogOptions = {
+      properties: ["openFile"],
+      filters,
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return inspectFeatureFile(result.filePaths[0], kind);
+  });
+  ipcMain.handle("feature-run-ocr", (_event, filePath: string) =>
+    runFeatureOcr(filePath),
+  );
+  ipcMain.handle(
+    "feature-compare-contracts",
+    (_event, oldPath: string, newPath: string) =>
+      runContractComparison(oldPath, newPath),
+  );
+  ipcMain.handle(
+    "feature-analyze-contract",
+    (_event, request: ContractAiAnalysisRequest) =>
+      analyzeContractWithModel(request),
+  );
 
   // Read directory contents for worktree panel
   ipcMain.handle(

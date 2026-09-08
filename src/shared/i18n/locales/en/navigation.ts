@@ -17,6 +17,7 @@ export default {
   memory: "Memory",
   tools: "Capabilities",
   schedules: "Schedules",
+  features: "Feature workspace",
   records: "My records",
   kanban: "Kanban",
   gateway: "Gateway",

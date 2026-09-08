@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "apiBase": "http://183.230.226.81:8086",
+  "backend": "hybrid-engine",
+  "language": "ch",
+  "connectTimeoutSeconds": 5,
+  "pageTimeoutSeconds": 600,
+  "maxConcurrency": 4,
+  "renderDpi": 250,
+  "mixedImageMinAreaRatio": 0.08
+}

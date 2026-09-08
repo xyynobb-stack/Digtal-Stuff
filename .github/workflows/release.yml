@@ -179,7 +179,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not install market-report RAG dependencies" }
             & $venvPython -m pip install --disable-pip-version-check -r $desktopRequirements
             if ($LASTEXITCODE -ne 0) { throw "Could not install desktop web-search dependencies" }
-            & $venvPython -c "import hermes_cli, run_agent, edge_tts, numpy, pymilvus, ddgs, pymupdf, importlib.metadata as metadata; assert metadata.version('primp') == '1.3.1', metadata.version('primp'); assert metadata.version('PyMuPDF') == '1.28.0', metadata.version('PyMuPDF')"
+            & $venvPython -c "import hermes_cli, run_agent, edge_tts, numpy, pymilvus, ddgs, pymupdf, rapidocr, onnxruntime, importlib.metadata as metadata; assert metadata.version('primp') == '1.3.1', metadata.version('primp'); assert metadata.version('PyMuPDF') == '1.28.0', metadata.version('PyMuPDF'); assert metadata.version('rapidocr') == '3.9.2', metadata.version('rapidocr'); assert metadata.version('onnxruntime') == '1.29.0', metadata.version('onnxruntime')"
             if ($LASTEXITCODE -ne 0) { throw "Bundled Hermes Agent import check failed" }
             & $venvPython -c "from tui_gateway import server; required = {'model.options', 'model.identity', 'model.resolve', 'session.create', 'session.model.set', 'session.readiness'}; missing = required - server._methods.keys(); assert not missing, missing"
             if ($LASTEXITCODE -ne 0) { throw "Desktop Agent RPC registration check failed" }

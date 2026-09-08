@@ -103,6 +103,7 @@ export async function packageOfflineRuntime({ runtimeRoot, packageRoot }) {
 }
 
 /** Verify the sidecar and required entries without expanding the archive. */
+// @lat: [[feature-workspace#Offline dependency packaging]]
 export async function verifyOfflineRuntimePackage(packageRoot) {
   const resolvedPackageRoot = path.resolve(packageRoot);
   const manifestPath = path.join(
@@ -136,6 +137,8 @@ export async function verifyOfflineRuntimePackage(packageRoot) {
     "hermes-agent/hermes_cli/web_dist/index.html",
     "hermes-agent/venv/Scripts/python.exe",
     "hermes-agent/venv/Scripts/hermes.exe",
+    "hermes-agent/venv/Lib/site-packages/rapidocr/__init__.py",
+    "hermes-agent/venv/Lib/site-packages/onnxruntime/__init__.py",
     "python-runtime/python.exe",
     "python-runtime/DLLs/sqlite3.dll",
     "python-runtime/desktop-sqlite-runtime.json",

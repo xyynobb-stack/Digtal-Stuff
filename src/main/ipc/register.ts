@@ -1,5 +1,10 @@
 import { recordInstallCheck } from "../install-check-log";
 import {
+  loadExperience,
+  previewExperience,
+  publishExperience,
+} from "../experience-skill";
+import {
   app,
   shell,
   BrowserWindow,
@@ -156,6 +161,7 @@ import {
   testRemoteConnection,
   restartGateway,
   startGatewayWithRecovery,
+  beginGatewayStartupTrace,
   stopGatewayAndWait,
   notifyProfileSwitched,
   setSshRemoteApiKey,
@@ -1249,7 +1255,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         const model = available.some((entry) => entry.model === "Kimi-2.6")
           ? "Kimi-2.6"
           : String(available[0]?.model || "");
-        if (!model) throw new Error("该员工没有可用于聊天的 OpenAI 模型。");
+        if (!model) throw new Error("该员工没有可用的对话模型。");
 
         let targetProfile = findEmployeeProfile(identity.userId);
         if (!targetProfile) {
@@ -1462,9 +1468,16 @@ export function registerIpcHandlers(context: IpcContext): void {
             },
           );
 
-          const gatewayReady = isGatewayRunning(targetProfile)
-            ? await restartGateway(targetProfile)
-            : await startGatewayWithRecovery(targetProfile);
+          const finishGatewayStartupTrace =
+            beginGatewayStartupTrace(targetProfile);
+          let gatewayReady: boolean;
+          try {
+            gatewayReady = isGatewayRunning(targetProfile)
+              ? await restartGateway(targetProfile)
+              : await startGatewayWithRecovery(targetProfile);
+          } finally {
+            finishGatewayStartupTrace();
+          }
           if (!gatewayReady) {
             throw new Error("员工 Profile 已生成，但网关未能通过健康检查。");
           }
@@ -3659,6 +3672,19 @@ export function registerIpcHandlers(context: IpcContext): void {
   });
 
   // Feature workspace. File paths are chosen by the native dialog and
+  ipcMain.handle("experience-load", (_event, profile: string) =>
+    loadExperience(profile),
+  );
+  ipcMain.handle(
+    "experience-preview",
+    (_event, profile: string, template: unknown, revision: string) =>
+      previewExperience(profile, template, revision),
+  );
+  ipcMain.handle(
+    "experience-publish",
+    (_event, profile: string, token: string) =>
+      publishExperience(profile, token),
+  );
   // validated in the main process before any worker is started.
   ipcMain.handle("feature-pick-file", async (event, kind: FeatureFileKind) => {
     const win = BrowserWindow.fromWebContents(event.sender);

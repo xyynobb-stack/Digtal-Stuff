@@ -1945,6 +1945,21 @@ const hermesAPI = {
     ipcRenderer.invoke("read-logs", logFile, lines),
 
   // Feature workspace
+  loadExperience: (
+    profile: string,
+  ): Promise<import("../shared/experience-skill").ExperienceState> =>
+    ipcRenderer.invoke("experience-load", profile),
+  previewExperience: (
+    profile: string,
+    template: import("../shared/experience-skill").ExperienceTemplate,
+    revision: string,
+  ): Promise<import("../shared/experience-skill").ExperiencePreview> =>
+    ipcRenderer.invoke("experience-preview", profile, template, revision),
+  publishExperience: (
+    profile: string,
+    token: string,
+  ): Promise<{ revision: string }> =>
+    ipcRenderer.invoke("experience-publish", profile, token),
   pickFeatureFile: (kind: FeatureFileKind): Promise<FeaturePickedFile | null> =>
     ipcRenderer.invoke("feature-pick-file", kind),
   runFeatureOcr: (

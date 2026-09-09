@@ -1,0 +1,214 @@
+.experience-skill {
+  max-width: 960px;
+  width: 100%;
+  padding-bottom: 32px;
+}
+.experience-skill > p {
+  line-height: 1.6;
+  margin: 12px 0;
+}
+.experience-skill fieldset {
+  border: 1px solid var(--border-color, #d6dce3);
+  border-radius: 12px;
+  margin: 24px 0;
+  padding: 20px;
+  min-width: 0;
+}
+.experience-skill legend {
+  font-weight: 600;
+  padding: 0 8px;
+}
+.experience-skill label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+  font-weight: 500;
+}
+.experience-skill input,
+.experience-skill textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #c5cdd6);
+  border-radius: 8px;
+  background: var(--bg-primary, transparent);
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+}
+.experience-skill textarea {
+  resize: vertical;
+}
+.experience-skill input:focus,
+.experience-skill textarea:focus {
+  border-color: var(--accent-text);
+  outline: 3px solid color-mix(in srgb, var(--accent-text) 14%, transparent);
+}
+.experience-delete-zone {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 36px;
+}
+.experience-delete-button,
+.experience-delete-cancel {
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.experience-delete-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border));
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 7%, var(--bg-secondary));
+}
+.experience-delete-confirm {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--error) 6%, var(--bg-secondary));
+}
+.experience-delete-confirm > span {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.experience-delete-confirm-button {
+  border: 1px solid var(--error);
+  background: var(--error);
+  color: #fff;
+}
+.experience-delete-confirm-button:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.experience-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-secondary);
+}
+.experience-add-button {
+  margin-right: auto;
+  border: 1px solid var(--border-bright);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.experience-add-button:hover:not(:disabled) {
+  border-color: var(--accent-text);
+  color: var(--accent-text);
+  background: var(--accent-subtle);
+}
+.experience-primary-action,
+.experience-publish-action {
+  min-height: 42px;
+  padding-inline: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 78%, #000);
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.experience-primary-action:hover:not(:disabled),
+.experience-publish-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 11px 25px color-mix(in srgb, var(--accent) 31%, transparent);
+}
+.experience-primary-action:active:not(:disabled),
+.experience-publish-action:active:not(:disabled) {
+  transform: translateY(0);
+}
+.experience-spinner {
+  animation: experience-spin 850ms linear infinite;
+}
+@keyframes experience-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.experience-preview-card {
+  margin-top: 30px;
+  padding: 22px;
+  border: 1px solid color-mix(in srgb, var(--accent-text) 24%, var(--border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent-subtle) 34%, var(--bg-secondary));
+  box-shadow: 0 14px 36px color-mix(in srgb, #000 8%, transparent);
+}
+.experience-preview-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.experience-preview-heading h2,
+.experience-preview-heading p {
+  margin: 0;
+}
+.experience-preview-heading p {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.experience-preview-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 11px;
+  color: var(--accent-text);
+  background: var(--accent-subtle);
+}
+.experience-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 600px;
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--border-color, #d6dce3);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 16px 0;
+}
+.experience-publish-footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-top: 4px;
+}
+.experience-publish-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+.experience-publish-copy span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.experience-error {
+  color: #c83232;
+}
+@media (max-width: 720px) {
+  .experience-delete-confirm,
+  .experience-publish-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .experience-delete-confirm > span {
+    margin-bottom: 2px;
+  }
+  .experience-publish-action {
+    width: 100%;
+  }
+}

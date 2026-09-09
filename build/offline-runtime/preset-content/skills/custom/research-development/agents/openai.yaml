@@ -1,0 +1,4 @@
+interface:
+  display_name: "研发"
+  short_description: "完成软件设计、开发、测试、发布与技术交付"
+  default_prompt: "使用 $research-development 将需求转化为经过验证、可维护的技术交付。"

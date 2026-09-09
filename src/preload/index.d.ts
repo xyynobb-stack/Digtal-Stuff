@@ -1436,6 +1436,18 @@ interface HermesAPI {
   ) => Promise<{ content: string; path: string }>;
 
   // Feature workspace
+  loadExperience: (
+    profile: string,
+  ) => Promise<import("../shared/experience-skill").ExperienceState>;
+  previewExperience: (
+    profile: string,
+    template: import("../shared/experience-skill").ExperienceTemplate,
+    revision: string,
+  ) => Promise<import("../shared/experience-skill").ExperiencePreview>;
+  publishExperience: (
+    profile: string,
+    token: string,
+  ) => Promise<{ revision: string }>;
   pickFeatureFile: (kind: FeatureFileKind) => Promise<FeaturePickedFile | null>;
   runFeatureOcr: (
     filePath: string,

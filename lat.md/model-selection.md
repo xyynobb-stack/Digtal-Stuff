@@ -20,17 +20,19 @@ A **Configure** button is pinned at the bottom of the provider rail (below the s
 
 ## Employee phone model allowlist
 
-Phone-provisioned local users see only conversational models granted to the active employee Profile, including Chat Completions and Responses models.
+Phone-provisioned local users see only conversational models granted to the active employee Profile, including Chat Completions, Responses, and Anthropic Messages models.
 
 The main process persists the Profile-scoped grant through [[src/main/employee-model-access.ts#writeEmployeeModelAccess]] and applies the active Profile's grant to `list-models`; unrelated rows remain stored but are not returned. [[src/renderer/src/screens/Chat/hooks/useModelConfig.ts#useModelConfig]] also suppresses Ollama Cloud discovery merging while the grant is active, preventing live models from bypassing the allowlist. Remote and SSH catalogs, and local Profiles without a phone grant, retain their normal behavior.
 
-The company endpoint has two fixed internal named routes sharing a credential: `company-platform` uses `chat_completions`, and `company-platform-responses` uses `codex_responses`. Per-route model lists are refreshed on provisioning, including empty lists, and model-library rows retain their protocol. No model selection flips a shared provider's protocol or rewrites the global default. The existing serialized picker queue and session-owned pending switch carry the concrete provider identity.
+The company endpoint has three fixed internal named routes sharing a credential: `company-platform` uses `chat_completions`, `company-platform-responses` uses `codex_responses`, and `company-platform-anthropic` uses `anthropic_messages`. Per-route model lists are refreshed on provisioning, including empty lists, and model-library rows retain their protocol. No model selection flips a shared provider's protocol or rewrites the global default. The existing serialized picker queue and session-owned pending switch carry the concrete provider identity.
 
 Both cold creation and switching resolve model membership within the selected endpoint before URL-only matching. Persisted custom identities likewise recover by model plus URL, avoiding Chat/Responses confusion on resume. Successful live switches clear obsolete cold-build pending picks; running turns still reject mutation. Development preparation and packaged overlays install the same resolver, and protocol acknowledgements reflect the live client.
 
 ### Mixed employee protocols
 
-Verify that employee import includes both supported conversation protocols, prefers Chat Completions when both are advertised, and excludes compact-only or image-only endpoints.
+Verify that employee import validates `preferred_api_format`, keeps Claude on Messages, applies tested family defaults for older catalogs, and excludes non-conversation endpoints.
+
+The compatibility defaults route GPT 5.6 through Responses and DeepSeek, Qwen, and Grok through Chat Completions.
 
 ### Profile-scoped employee grants
 

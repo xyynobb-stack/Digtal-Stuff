@@ -1,16 +1,30 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { FileDiff, ScanText, ArrowLeft, ChevronRight } from "lucide-react";
+import {
+  FileDiff,
+  ScanText,
+  ArrowLeft,
+  ChevronRight,
+  BookOpen,
+} from "lucide-react";
 
 const OcrFeature = lazy(() => import("./OcrFeature"));
 const ContractCompareFeature = lazy(() => import("./ContractCompareFeature"));
+const ExperienceSkillFeature = lazy(() => import("./ExperienceSkillFeature"));
 
-type FeatureId = "ocr" | "contract-compare";
+type FeatureId = "ocr" | "contract-compare" | "experience-skill";
 
 interface FeatureHubProps {
   profile: string;
 }
 
 const FEATURES = [
+  {
+    id: "experience-skill" as const,
+    title: "岗位经验沉淀",
+    description:
+      "填写真实工作场景，沉淀为带流程和来源的个人 SKILL，在聊天中按需选择。",
+    icon: BookOpen,
+  },
   {
     id: "ocr" as const,
     title: "OCR 文字识别",
@@ -52,8 +66,10 @@ export default function FeatureHub({
         >
           {selected === "ocr" ? (
             <OcrFeature />
-          ) : (
+          ) : selected === "contract-compare" ? (
             <ContractCompareFeature profile={profile} />
+          ) : (
+            <ExperienceSkillFeature key={profile} profile={profile} />
           )}
         </Suspense>
       </section>
@@ -65,7 +81,7 @@ export default function FeatureHub({
       <header className="feature-header">
         <div>
           <h1>功能区</h1>
-          <p>选择一项本地文档工具。处理引擎仅在执行任务时加载。</p>
+          <p>选择一项本地文档工具。</p>
         </div>
       </header>
       <div className="feature-grid">

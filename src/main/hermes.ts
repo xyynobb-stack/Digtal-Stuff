@@ -53,6 +53,7 @@ import { getSecret } from "./secrets";
 import { readModels } from "./models";
 import { providerListSafe } from "./secrets";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
+import { recordColdStartTiming } from "./cold-start-timing";
 import { type Attachment, escapeXmlAttr } from "../shared/attachments";
 import { type SessionModelOverride } from "../shared/model-override";
 import {
@@ -970,11 +971,29 @@ async function waitForApiServerReady(
   profile?: string,
   pollMs = 250,
 ): Promise<boolean> {
+  const startedAt = Date.now();
+  let attempts = 0;
+  recordGatewayStartupTrace(profile, "gateway.health_wait_started", {
+    timeoutMs,
+    pollMs,
+  });
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await isApiServerReady(profile)) return true;
+    attempts += 1;
+    if (await isApiServerReady(profile)) {
+      recordGatewayStartupTrace(profile, "gateway.health_ready", {
+        attempts,
+        elapsedMs: Date.now() - startedAt,
+      });
+      return true;
+    }
     await delay(pollMs);
   }
+  recordGatewayStartupTrace(profile, "gateway.health_timeout", {
+    attempts,
+    elapsedMs: Date.now() - startedAt,
+    processRunning: isGatewayRunning(profile),
+  });
   return false;
 }
 
@@ -3346,6 +3365,13 @@ export function startGatewayDetailed(profile?: string): GatewayStartResult {
 
   const key = profileKey(profile);
   const gatewayEnv = buildGatewayEnv(profile);
+  const startupTraceId = gatewayStartupTraceByProfile.get(key);
+  if (startupTraceId) {
+    // Python emits per-module import timings to the profile's stderr log,
+    // covering the interval before gateway logging and PID publication.
+    gatewayEnv.PYTHONPROFILEIMPORTTIME = "1";
+    gatewayEnv.HERMES_GATEWAY_EXIT_DIAG = "1";
+  }
   try {
     mirrorCompanyFallbackProvider(profile);
   } catch {
@@ -3358,6 +3384,17 @@ export function startGatewayDetailed(profile?: string): GatewayStartResult {
   // default profile's log. stdout is ignored (the gateway daemonizes and
   // writes its own logs).
   const logPath = gatewayLogPath(profile);
+  if (startupTraceId) {
+    try {
+      appendFileSync(
+        logPath,
+        `\n[JINGYU_GATEWAY_STARTUP_TRACE id=${startupTraceId} profile=${key}]\n`,
+        "utf8",
+      );
+    } catch {
+      // Diagnostics must never block gateway startup.
+    }
+  }
   // Open the log synchronously and hand spawn a real fd. A createWriteStream
   // opens its fd asynchronously, so passing the stream to stdio races: when
   // the fd hasn't resolved yet (fd: null) Electron's Node rejects it with
@@ -3377,6 +3414,10 @@ export function startGatewayDetailed(profile?: string): GatewayStartResult {
   // put. The default profile takes no flag.
   const cliArgs = gatewayCliCommandArgs(profile, ["gateway"]);
   let proc: ChildProcess;
+  recordGatewayStartupTrace(profile, "gateway.spawn_requested", {
+    python: getHermesPython(),
+    cwd: HERMES_REPO,
+  });
   try {
     proc = spawn(getHermesPython(), hermesCliArgs(cliArgs), {
       cwd: HERMES_REPO,
@@ -3419,6 +3460,12 @@ export function startGatewayDetailed(profile?: string): GatewayStartResult {
   });
 
   proc.on("close", (code, signal) => {
+    recordGatewayStartupTrace(
+      profile,
+      "gateway.process_closed",
+      { pid: proc.pid ?? null, code, signal },
+      startupTraceId,
+    );
     if (code !== null && code !== 0) {
       console.error(
         `[gateway:${key}] Process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}. ` +
@@ -3435,6 +3482,9 @@ export function startGatewayDetailed(profile?: string): GatewayStartResult {
   proc.unref();
   gatewayProcesses.set(key, proc);
   appStartedProfiles.add(key);
+  recordGatewayStartupTrace(profile, "gateway.process_spawned", {
+    pid: proc.pid ?? null,
+  });
   warmTuiGatewayClient(profile);
 
   // Wait a bit then check if API server came up (only meaningful for the
@@ -3609,11 +3659,22 @@ async function waitForApiServerStopped(
   timeoutMs = 5000,
   pollMs = 250,
 ): Promise<boolean> {
+  const startedAt = Date.now();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (!(await isApiServerReady(profile))) return true;
+    if (!(await isApiServerReady(profile))) {
+      recordGatewayStartupTrace(profile, "gateway.stop_ready", {
+        elapsedMs: Date.now() - startedAt,
+        processRunning: isGatewayRunning(profile),
+      });
+      return true;
+    }
     await delay(pollMs);
   }
+  recordGatewayStartupTrace(profile, "gateway.stop_timeout", {
+    elapsedMs: Date.now() - startedAt,
+    processRunning: isGatewayRunning(profile),
+  });
   return false;
 }
 
@@ -3639,6 +3700,52 @@ function gatewayRestartProfileKey(profile?: string): string {
 
 let gatewayRestartQueueTail: Promise<unknown> = Promise.resolve();
 const gatewayRestartByProfile = new Map<string, Promise<boolean>>();
+const gatewayStartupTraceByProfile = new Map<string, string>();
+
+type GatewayStartupTimingStage = Extract<
+  import("../shared/cold-start-timing").ColdStartTimingStage,
+  `gateway.${string}`
+>;
+
+function recordGatewayStartupTrace(
+  profile: string | undefined,
+  stage: GatewayStartupTimingStage,
+  fields: Record<string, unknown> = {},
+  traceId = gatewayStartupTraceByProfile.get(profileKey(profile)),
+): void {
+  if (!traceId) return;
+  const detail = Object.entries({
+    traceId,
+    profile: profileKey(profile),
+    ...fields,
+  })
+    .map(([field, value]) => `${field}=${String(value)}`)
+    .join("; ");
+  recordColdStartTiming({ stage, detail });
+}
+
+/** Enable metadata-only gateway startup diagnostics for one provisioning run. */
+export function beginGatewayStartupTrace(profile?: string): () => void {
+  const key = profileKey(profile);
+  const traceId = randomUUID();
+  gatewayStartupTraceByProfile.set(key, traceId);
+  recordGatewayStartupTrace(
+    profile,
+    "gateway.startup_trace_started",
+    {},
+    traceId,
+  );
+  return () => {
+    if (gatewayStartupTraceByProfile.get(key) !== traceId) return;
+    recordGatewayStartupTrace(
+      profile,
+      "gateway.startup_trace_finished",
+      {},
+      traceId,
+    );
+    gatewayStartupTraceByProfile.delete(key);
+  };
+}
 
 function markGatewayRestartFailed(profile?: string): void {
   const key = profileKey(profile);
@@ -3698,6 +3805,10 @@ async function restartGatewayLocallyOnce(
   healthPollMs = 250,
   stopTimeoutMs = 5000,
 ): Promise<boolean> {
+  recordGatewayStartupTrace(profile, "gateway.restart_started", {
+    healthTimeoutMs,
+    stopTimeoutMs,
+  });
   try {
     if (isRemoteMode()) return false;
     ensureInitialized();
@@ -3707,6 +3818,10 @@ async function restartGatewayLocallyOnce(
     const previousProcess = gatewayProcesses.get(key) ?? null;
     const previousStartedByApp = appStartedProfiles.has(key);
     const previousPidEntry = readPidFileEntry(profile);
+    recordGatewayStartupTrace(profile, "gateway.stop_requested", {
+      trackedPid: previousProcess?.pid ?? null,
+      pidFilePid: previousPidEntry?.pid ?? null,
+    });
     stopGateway(profile, true);
     const stopped = await waitForApiServerStopped(
       profile,
@@ -3723,6 +3838,9 @@ async function restartGatewayLocallyOnce(
         previousStartedByApp,
         previousPidEntry,
       );
+      recordGatewayStartupTrace(profile, "gateway.restart_failed", {
+        reason: "stop_timeout",
+      });
       return false;
     }
 
@@ -3730,6 +3848,10 @@ async function restartGatewayLocallyOnce(
     if (!startResult.success && !startResult.alreadyRunning) {
       setApiCacheFor(profile, false);
       markGatewayRestartFailed(profile);
+      recordGatewayStartupTrace(profile, "gateway.restart_failed", {
+        reason: "spawn_failed",
+        error: startResult.error || "unknown",
+      });
       return false;
     }
 
@@ -3741,11 +3863,18 @@ async function restartGatewayLocallyOnce(
     setApiCacheFor(profile, ready);
     if (!ready) {
       markGatewayRestartFailed(profile);
+      recordGatewayStartupTrace(profile, "gateway.restart_failed", {
+        reason: "health_timeout",
+      });
     }
     return ready;
   } catch (err) {
     console.error("[gateway] Native restart failed:", (err as Error).message);
     markGatewayRestartFailed(profile);
+    recordGatewayStartupTrace(profile, "gateway.restart_failed", {
+      reason: "exception",
+      error: err instanceof Error ? err.message : String(err),
+    });
     return false;
   }
 }

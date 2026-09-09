@@ -11,14 +11,20 @@ export interface EmployeeAvailableModelPayload {
   name?: unknown;
   display_name?: unknown;
   api_formats?: unknown;
+  preferred_api_format?: unknown;
   config?: { context_limit?: unknown };
 }
+
+export type EmployeeModelApiMode =
+  | "chat_completions"
+  | "codex_responses"
+  | "anthropic_messages";
 
 export interface EmployeeChatModel {
   model: string;
   name: string;
   contextLength?: number;
-  apiMode: "chat_completions" | "codex_responses";
+  apiMode: EmployeeModelApiMode;
 }
 
 // Separate named routes share credentials, never a mutable protocol setting.
@@ -33,7 +39,68 @@ export const EMPLOYEE_MODEL_ROUTES = [
     slug: "company-platform-responses",
     name: "Company Platform Responses",
   },
+  {
+    apiMode: "anthropic_messages",
+    slug: "company-platform-anthropic",
+    name: "Company Platform Anthropic",
+  },
 ] as const;
+
+type EmployeeApiFormat = "openai:chat" | "openai:responses" | "claude:messages";
+
+const API_MODE_BY_FORMAT: Record<EmployeeApiFormat, EmployeeModelApiMode> = {
+  "openai:chat": "chat_completions",
+  "openai:responses": "codex_responses",
+  "claude:messages": "anthropic_messages",
+};
+
+function isEmployeeApiFormat(value: unknown): value is EmployeeApiFormat {
+  return (
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(API_MODE_BY_FORMAT, value)
+  );
+}
+
+function knownModelPreferredFormat(model: string): EmployeeApiFormat | null {
+  const normalized = model.toLowerCase();
+  if (normalized.startsWith("claude-")) return "claude:messages";
+  if (normalized.startsWith("gpt-5.6-")) return "openai:responses";
+  if (
+    normalized.startsWith("deepseek-") ||
+    normalized.startsWith("qwen") ||
+    normalized.startsWith("grok-")
+  ) {
+    return "openai:chat";
+  }
+  return null;
+}
+
+function resolveEmployeeApiFormat(
+  model: string,
+  rawFormats: unknown[],
+  rawPreferred: unknown,
+): EmployeeApiFormat | null {
+  const formats = new Set(rawFormats.filter(isEmployeeApiFormat));
+
+  // Claude must use its native wire protocol even if the catalog also
+  // advertises compatibility shims that the upstream route cannot execute.
+  const knownPreferred = knownModelPreferredFormat(model);
+  if (knownPreferred === "claude:messages") {
+    return formats.has(knownPreferred) ? knownPreferred : null;
+  }
+
+  if (isEmployeeApiFormat(rawPreferred) && formats.has(rawPreferred)) {
+    return rawPreferred;
+  }
+
+  if (knownPreferred && formats.has(knownPreferred)) return knownPreferred;
+
+  // Backward compatibility for older catalogs without preferred_api_format.
+  if (formats.has("openai:chat")) return "openai:chat";
+  if (formats.has("openai:responses")) return "openai:responses";
+  if (formats.has("claude:messages")) return "claude:messages";
+  return null;
+}
 
 export interface EmployeeModelAccess {
   provider: string;
@@ -47,8 +114,9 @@ function normalizeBaseUrl(value: string): string {
 }
 
 /**
- * Import supported conversational protocols, not just Chat Completions.
- * Compact-only is not a conversation endpoint. Prefer chat when both exist.
+ * Import supported conversational protocols and bind each model to one stable
+ * route. Prefer the catalog's valid preferred_api_format, with tested family
+ * defaults for catalogs that have not published that field yet.
  */
 export function normalizeEmployeeChatModels(
   entries: EmployeeAvailableModelPayload[] | undefined,
@@ -61,11 +129,12 @@ export function normalizeEmployeeChatModels(
     const formats = Array.isArray(entry.api_formats)
       ? entry.api_formats
       : [entry.api_formats];
-    const apiMode = formats.includes("openai:chat")
-      ? "chat_completions"
-      : formats.includes("openai:responses")
-        ? "codex_responses"
-        : null;
+    const apiFormat = resolveEmployeeApiFormat(
+      model,
+      formats,
+      entry.preferred_api_format,
+    );
+    const apiMode = apiFormat ? API_MODE_BY_FORMAT[apiFormat] : null;
     if (!model || !apiMode || seen.has(model)) {
       continue;
     }

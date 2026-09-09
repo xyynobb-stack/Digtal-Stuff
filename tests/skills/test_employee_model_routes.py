@@ -40,6 +40,7 @@ class EmployeeRoutesTests(unittest.TestCase):
         self.ctx = SimpleNamespace(user_providers={
             "company-platform": {"base_url": URL, "api_mode": "chat_completions", "models": ["deepseek-v4-flash"]},
             "company-platform-responses": {"base_url": URL, "api_mode": "codex_responses", "models": ["gpt-5.6-luna", "gpt-5.6-terra"]},
+            "company-platform-anthropic": {"base_url": URL, "api_mode": "anthropic_messages", "models": ["claude-opus-5"]},
         }, custom_providers=[])
         self.sessions = {"live": {"agent": None}, "other": {"agent": None}}
         self.ns.update({"_sessions": self.sessions, "_model_picker_context": lambda agent: self.ctx})
@@ -49,9 +50,10 @@ class EmployeeRoutesTests(unittest.TestCase):
 
     # @lat: [[model-selection#Employee phone model allowlist#Protocol-safe session routing]]
     def test_same_endpoint_routes_by_model_not_provider_order(self):
-        for model in ["gpt-5.6-luna", "deepseek-v4-flash", "gpt-5.6-terra"]:
+        for model in ["gpt-5.6-luna", "deepseek-v4-flash", "gpt-5.6-terra", "claude-opus-5"]:
             route = self.resolve(model)
-            expected = "chat_completions" if model.startswith("deepseek") else "codex_responses"
+            expected = ("chat_completions" if model.startswith("deepseek") else
+                        "anthropic_messages" if model.startswith("claude") else "codex_responses")
             self.assertEqual(route["api_mode"], expected)
         self.ctx.user_providers = dict(reversed(list(self.ctx.user_providers.items())))
         self.assertEqual(self.resolve("deepseek-v4-flash")["provider"], "company-platform")
@@ -62,6 +64,12 @@ class EmployeeRoutesTests(unittest.TestCase):
         self.assertEqual(result["result"]["info"]["api_mode"], "codex_responses")
         self.assertEqual(self.sessions["live"]["model_override"]["provider"], "company-platform-responses")
         self.assertNotIn("model_override", self.sessions["other"])
+
+        anthropic = self.ns["desktop_session_create"](
+            2, {"provider": "custom", "model": "claude-opus-5", "base_url": URL}
+        )
+        self.assertEqual(anthropic["result"]["info"]["api_mode"], "anthropic_messages")
+        self.assertEqual(self.sessions["live"]["model_override"]["provider"], "company-platform-anthropic")
 
     def test_migrated_transport_preserves_responses_route(self):
         cfg = self.ctx.user_providers["company-platform-responses"]

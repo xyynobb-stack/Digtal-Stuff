@@ -15,6 +15,16 @@ interface ChatIpcCallbacks {
   toolProgress?: Callback<[string, string]>;
   toolEvent?: Callback<[string, unknown]>;
   usage?: Callback<[string, UsageState]>;
+  contractAnalysis?: Callback<
+    [
+      {
+        profile: string;
+        sessionId: string;
+        phase: "started" | "completed" | "failed";
+        modelOverride: { provider: string; model: string; baseUrl: string };
+      },
+    ]
+  >;
   approval?: Callback<
     [
       string,
@@ -87,6 +97,12 @@ function installHermesApi(callbacks: ChatIpcCallbacks): {
         callbacks.usage = cb;
         return vi.fn();
       },
+      onContractAnalysisSessionUpdate: (
+        cb: NonNullable<ChatIpcCallbacks["contractAnalysis"]>,
+      ) => {
+        callbacks.contractAnalysis = cb;
+        return vi.fn();
+      },
     },
   });
 
@@ -107,6 +123,7 @@ function Harness({
 
   useChatIPC({
     runId: "run-1",
+    profile: "default",
     sessionScopeId,
     setMessages,
     setHermesSessionId,
@@ -151,7 +168,13 @@ describe("useChatIPC session scoping", () => {
   it("ignores late DB refreshes from an old session after the visible chat is cleared", async () => {
     const callbacks: ChatIpcCallbacks = {};
     const api = installHermesApi(callbacks);
+    api.getSessionMessages.mockResolvedValue([]);
     const view = render(<Harness sessionScopeId="old-session" />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const readsBeforeClear = api.getSessionMessages.mock.calls.length;
 
     view.rerender(<Harness sessionScopeId={null} />);
 
@@ -159,7 +182,7 @@ describe("useChatIPC session scoping", () => {
       callbacks.done?.("run-1", "old-session");
     });
 
-    expect(api.getSessionMessages).not.toHaveBeenCalled();
+    expect(api.getSessionMessages).toHaveBeenCalledTimes(readsBeforeClear);
     expect(screen.getByTestId("ids")).toHaveTextContent("[]");
   });
 
@@ -173,6 +196,46 @@ describe("useChatIPC session scoping", () => {
     });
 
     expect(api.getSessionMessages).toHaveBeenCalledWith("old-session");
+    expect(screen.getByTestId("ids")).toHaveTextContent(
+      JSON.stringify(["db-1", "db-2"]),
+    );
+  });
+
+  it("refreshes an open contract-analysis session when its background run completes", async () => {
+    const callbacks: ChatIpcCallbacks = {};
+    const api = installHermesApi(callbacks);
+    let completed = false;
+    api.getSessionMessages.mockImplementation(async () =>
+      completed
+        ? [
+            { kind: "user", id: 1, content: "contract prompt" },
+            {
+              kind: "assistant",
+              id: 2,
+              content: "contract result",
+              finishReason: "stop",
+            },
+          ]
+        : [{ kind: "user", id: 1, content: "contract prompt" }],
+    );
+    render(<Harness sessionScopeId="contract-session" />);
+
+    await act(async () => {
+      await Promise.resolve();
+      completed = true;
+      callbacks.contractAnalysis?.({
+        profile: "default",
+        sessionId: "contract-session",
+        phase: "completed",
+        modelOverride: {
+          provider: "custom",
+          model: "claude-opus-5",
+          baseUrl: "https://example.invalid/v1",
+        },
+      });
+      await Promise.resolve();
+    });
+
     expect(screen.getByTestId("ids")).toHaveTextContent(
       JSON.stringify(["db-1", "db-2"]),
     );

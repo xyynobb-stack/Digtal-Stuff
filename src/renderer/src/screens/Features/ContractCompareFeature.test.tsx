@@ -26,7 +26,16 @@ describe("ContractCompareFeature", () => {
     Object.defineProperty(window, "hermesAPI", {
       configurable: true,
       value: {
-        listModels: vi.fn().mockResolvedValue([]),
+        listModels: vi.fn().mockResolvedValue([
+          {
+            id: "claude-opus-5",
+            name: "Claude Opus 5",
+            provider: "company-platform-anthropic",
+            providerLabel: "Company Platform Anthropic",
+            model: "claude-opus-5",
+            baseUrl: "http://example.test",
+          },
+        ]),
         getModelConfig: vi.fn().mockResolvedValue({
           model: "",
           provider: "",
@@ -118,6 +127,14 @@ describe("ContractCompareFeature", () => {
             ],
           },
         }),
+        analyzeContract: vi.fn().mockResolvedValue({
+          success: true,
+          data: "## 重要变化\n\n- **金额**由 100 元调整为 200 元。",
+        }),
+        exportContractAnalysis: vi.fn().mockResolvedValue({
+          success: true,
+          data: "C:\\exports\\合同AI分析.docx",
+        }),
         listFeatureHistory: vi.fn().mockResolvedValue([]),
         saveFeatureHistory: vi.fn().mockImplementation(async (input) => ({
           ...input,
@@ -152,8 +169,12 @@ describe("ContractCompareFeature", () => {
         );
       }
 
-      disconnect(): void {}
-      unobserve(): void {}
+      disconnect(): void {
+        // No observer resources are allocated by this test double.
+      }
+      unobserve(): void {
+        // No observed targets are retained by this test double.
+      }
     }
     vi.stubGlobal("ResizeObserver", NarrowResizeObserver);
 
@@ -268,5 +289,37 @@ describe("ContractCompareFeature", () => {
     );
     expect(newSide.container.querySelector("mark")).toBeNull();
     expect(newSide.container.textContent).toBe("25000");
+  });
+
+  // @lat: [[feature-workspace#Optional AI interpretation#Word export]]
+  it("exports the completed AI analysis as a Word document", async () => {
+    render(<ContractCompareFeature profile="default" />);
+    fireEvent.click(screen.getByRole("button", { name: /选择旧版合同/ }));
+    await screen.findByText("旧合同.docx");
+    fireEvent.click(screen.getByRole("button", { name: /选择新版合同/ }));
+    await screen.findByText("新合同.docx");
+    fireEvent.click(screen.getByRole("button", { name: "开始精确比对" }));
+    await screen.findByText("比对结果");
+
+    const analyzeButton = screen.getByRole("button", { name: "生成 AI 解读" });
+    await waitFor(() => expect(analyzeButton).toBeEnabled());
+    fireEvent.click(analyzeButton);
+    expect(
+      await screen.findByText(/金额.*100 元调整为 200 元/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "导出 Word" }));
+    await waitFor(() =>
+      expect(window.hermesAPI.exportContractAnalysis).toHaveBeenCalledWith({
+        analysis: "## 重要变化\n\n- **金额**由 100 元调整为 200 元。",
+        oldFileName: "旧合同.docx",
+        newFileName: "新合同.docx",
+        modelName: "Company Platform Anthropic · Claude Opus 5",
+        perspective: "neutral",
+      }),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "C:\\exports\\合同AI分析.docx",
+    );
   });
 });

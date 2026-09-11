@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { SessionModelOverride } from "../shared/model-override";
-import { getDbConnection } from "./db";
+import { getDbConnection, getProfileDbConnection } from "./db";
 
 /**
  * Desktop-owned, per-session store for the model/provider chosen from the
@@ -28,12 +28,12 @@ function tableExists(db: Database.Database): boolean {
   return !!row;
 }
 
-export function setSessionModelOverride(
+function writeSessionModelOverride(
+  db: Database.Database | null,
   sessionId: string,
   override: SessionModelOverride | null,
 ): void {
   if (!sessionId) return;
-  const db = getDbConnection(false);
   if (!db) return;
   ensureTable(db);
 
@@ -51,6 +51,26 @@ export function setSessionModelOverride(
        base_url = excluded.base_url,
        updated_at = excluded.updated_at`,
   ).run(sessionId, override.provider, override.model, override.baseUrl || "");
+}
+
+export function setSessionModelOverride(
+  sessionId: string,
+  override: SessionModelOverride | null,
+): void {
+  writeSessionModelOverride(getDbConnection(false), sessionId, override);
+}
+
+/** Store a background task's model against the Profile captured at launch. */
+export function setProfileSessionModelOverride(
+  profile: string,
+  sessionId: string,
+  override: SessionModelOverride | null,
+): void {
+  writeSessionModelOverride(
+    getProfileDbConnection(profile || "default", false),
+    sessionId,
+    override,
+  );
 }
 
 export function getSessionModelOverride(

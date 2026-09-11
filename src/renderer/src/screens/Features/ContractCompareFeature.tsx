@@ -11,6 +11,7 @@ import {
 import {
   ChevronDown,
   ChevronUp,
+  Download,
   FileDiff,
   History,
   Search,
@@ -249,6 +250,8 @@ export default function ContractCompareFeature({
     useState<ContractAnalysisContext>("changes-only");
   const [analysis, setAnalysis] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState("");
   const [syncScroll, setSyncScroll] = useState(true);
   const [zoom, setZoom] = useState(100);
   const [filter, setFilter] = useState<DifferenceFilter>("all");
@@ -356,6 +359,7 @@ export default function ContractCompareFeature({
     else setNewFile(selected);
     setResult(null);
     setAnalysis("");
+    setExportNotice("");
     setActiveHistoryId("");
     setError("");
   };
@@ -365,6 +369,7 @@ export default function ContractCompareFeature({
     setRunning(true);
     setError("");
     setAnalysis("");
+    setExportNotice("");
     try {
       const response = await window.hermesAPI.compareContracts(
         oldFile.path,
@@ -439,6 +444,30 @@ export default function ContractCompareFeature({
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const exportAnalysis = async (): Promise<void> => {
+    if (!analysis || !oldFile || !newFile || exporting) return;
+    setExporting(true);
+    setExportNotice("");
+    setError("");
+    try {
+      const response = await window.hermesAPI.exportContractAnalysis({
+        analysis,
+        oldFileName: oldFile.name,
+        newFileName: newFile.name,
+        modelName: selectedModel
+          ? `${selectedModel.providerLabel || selectedModel.provider} · ${selectedModel.name}`
+          : undefined,
+        perspective,
+      });
+      if (!response.success) throw new Error(response.error || "导出失败");
+      if (response.data) setExportNotice(`Word 文档已导出到：${response.data}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -915,7 +944,31 @@ export default function ContractCompareFeature({
                 {analyzing ? "正在解读…" : "生成 AI 解读"}
               </button>
             </div>
-            {analysis && <div className="contract-ai-result">{analysis}</div>}
+            {analysis && (
+              <div className="contract-ai-output">
+                <div className="contract-ai-output-toolbar">
+                  <div>
+                    <strong>分析结果</strong>
+                    <small>导出时会自动转换为排版后的 Word 文档。</small>
+                  </div>
+                  <button
+                    className="feature-secondary-button contract-export-button"
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => void exportAnalysis()}
+                  >
+                    <Download size={16} />
+                    {exporting ? "正在导出…" : "导出 Word"}
+                  </button>
+                </div>
+                {exportNotice && (
+                  <p className="contract-export-notice" role="status">
+                    {exportNotice}
+                  </p>
+                )}
+                <div className="contract-ai-result">{analysis}</div>
+              </div>
+            )}
           </section>
         </>
       )}

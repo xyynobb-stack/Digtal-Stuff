@@ -55,6 +55,8 @@ import type {
 } from "../shared/work-records";
 import type {
   ContractAiAnalysisRequest,
+  ContractAnalysisExportRequest,
+  ContractAnalysisSessionUpdate,
   ContractComparisonResult,
   FeatureFileKind,
   FeatureHistoryKind,
@@ -1463,6 +1465,12 @@ interface HermesAPI {
   analyzeContract: (
     request: ContractAiAnalysisRequest,
   ) => Promise<FeatureOperationResult<string>>;
+  exportContractAnalysis: (
+    request: ContractAnalysisExportRequest,
+  ) => Promise<FeatureOperationResult<string | null>>;
+  onContractAnalysisSessionUpdate: (
+    callback: (update: ContractAnalysisSessionUpdate) => void,
+  ) => () => void;
   saveFeatureHistory: (
     input: FeatureHistorySaveInput,
   ) => Promise<FeatureHistoryRecord>;

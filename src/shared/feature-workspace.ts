@@ -104,6 +104,21 @@ export interface ContractAiAnalysisRequest {
   comparison: ContractComparisonResult;
 }
 
+export interface ContractAnalysisExportRequest {
+  analysis: string;
+  oldFileName: string;
+  newFileName: string;
+  modelName?: string;
+  perspective: ContractAnalysisPerspective;
+}
+
+export interface ContractAnalysisSessionUpdate {
+  profile: string;
+  sessionId: string;
+  phase: "started" | "completed" | "failed";
+  modelOverride: import("./model-override").SessionModelOverride;
+}
+
 export interface FeatureOperationResult<T> {
   success: boolean;
   data?: T;

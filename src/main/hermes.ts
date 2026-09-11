@@ -471,6 +471,9 @@ export async function transcribeAudio(
 
 interface ChatHandle {
   abort: () => void;
+  /** Desktop-generated session id when the selected transport knows it before
+   * the first streamed token. Background features use it to bind UI metadata. */
+  sessionId?: string;
 }
 
 interface GatewayRpcFrame {
@@ -1650,6 +1653,7 @@ function sendMessageViaApi(
   req.end();
 
   return {
+    sessionId: sessionId || undefined,
     abort: () => {
       controller.abort();
     },
@@ -2031,6 +2035,7 @@ function sendMessageViaRuns(
   startReq.end();
 
   return {
+    sessionId: sessionId || undefined,
     abort: () => {
       if (finished && !fallbackStarted) return;
       controller.abort();
@@ -3062,6 +3067,7 @@ async function sendMessageViaBestApiWithLocalRecovery(
     override,
     outputDirectory,
   );
+  handle.sessionId = activeHandle.sessionId;
 
   return handle;
 }

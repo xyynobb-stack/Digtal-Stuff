@@ -53,6 +53,8 @@ import type {
 } from "../shared/work-records";
 import type {
   ContractAiAnalysisRequest,
+  ContractAnalysisExportRequest,
+  ContractAnalysisSessionUpdate,
   ContractComparisonResult,
   FeatureFileKind,
   FeatureHistoryKind,
@@ -1979,6 +1981,21 @@ const hermesAPI = {
     request: ContractAiAnalysisRequest,
   ): Promise<FeatureOperationResult<string>> =>
     ipcRenderer.invoke("feature-analyze-contract", request),
+  exportContractAnalysis: (
+    request: ContractAnalysisExportRequest,
+  ): Promise<FeatureOperationResult<string | null>> =>
+    ipcRenderer.invoke("feature-export-contract-analysis", request),
+  onContractAnalysisSessionUpdate: (
+    callback: (update: ContractAnalysisSessionUpdate) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      update: ContractAnalysisSessionUpdate,
+    ): void => callback(update);
+    ipcRenderer.on("contract-analysis-session-update", handler);
+    return () =>
+      ipcRenderer.removeListener("contract-analysis-session-update", handler);
+  },
   saveFeatureHistory: (
     input: FeatureHistorySaveInput,
   ): Promise<FeatureHistoryRecord> =>

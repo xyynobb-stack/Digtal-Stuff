@@ -1,16 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getDbConnection } from "./db";
+import { getDbConnection, getProfileDbConnection } from "./db";
 import {
   deleteSessionModelOverrideForSession,
   getSessionModelOverride,
+  setProfileSessionModelOverride,
   setSessionModelOverride,
 } from "./session-model-override-store";
 
 vi.mock("./db", () => ({
   getDbConnection: vi.fn(),
+  getProfileDbConnection: vi.fn(),
 }));
 
 const mockedGetDbConnection = vi.mocked(getDbConnection);
+const mockedGetProfileDbConnection = vi.mocked(getProfileDbConnection);
 
 class FakeStatement {
   constructor(
@@ -82,6 +85,8 @@ describe("session model override store", () => {
     db = new FakeDb();
     mockedGetDbConnection.mockReset();
     mockedGetDbConnection.mockReturnValue(db as never);
+    mockedGetProfileDbConnection.mockReset();
+    mockedGetProfileDbConnection.mockReturnValue(db as never);
   });
 
   afterEach(() => {
@@ -122,5 +127,19 @@ describe("session model override store", () => {
     });
     deleteSessionModelOverrideForSession(db as never, "s2");
     expect(getSessionModelOverride("s2")).toBeNull();
+  });
+
+  it("writes a background session to the Profile captured by its caller", () => {
+    setProfileSessionModelOverride("employee-a", "contract-session", {
+      provider: "custom",
+      model: "claude-opus-5",
+      baseUrl: "https://example.invalid/v1",
+    });
+
+    expect(mockedGetProfileDbConnection).toHaveBeenCalledWith(
+      "employee-a",
+      false,
+    );
+    expect(db.rows.get("contract-session")?.model).toBe("claude-opus-5");
   });
 });

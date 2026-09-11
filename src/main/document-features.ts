@@ -1,10 +1,11 @@
-import { app } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import { spawn } from "child_process";
-import { basename, extname, join } from "path";
+import { basename, extname, join, parse } from "path";
 import { existsSync } from "fs";
 import { stat } from "fs/promises";
 import type {
   ContractAiAnalysisRequest,
+  ContractAnalysisExportRequest,
   ContractComparisonResult,
   FeatureFileKind,
   FeatureOperationResult,
@@ -204,6 +205,7 @@ function analysisPrompt(request: ContractAiAnalysisRequest): string {
 // @lat: [[feature-workspace#Optional AI interpretation]]
 export async function analyzeContractWithModel(
   request: ContractAiAnalysisRequest,
+  onSessionStarted?: (sessionId: string) => void,
 ): Promise<FeatureOperationResult<string>> {
   if (!request.model.trim())
     return { success: false, error: "请先选择用于分析的模型" };
@@ -215,7 +217,13 @@ export async function analyzeContractWithModel(
   return await new Promise((resolve) => {
     let output = "";
     let settled = false;
-    let handle: { abort: () => void } | undefined;
+    let announcedSessionId = "";
+    let handle: { abort: () => void; sessionId?: string } | undefined;
+    const announceSession = (sessionId?: string): void => {
+      if (!sessionId || sessionId === announcedSessionId) return;
+      announcedSessionId = sessionId;
+      onSessionStarted?.(sessionId);
+    };
     const finish = (result: FeatureOperationResult<string>): void => {
       if (settled) return;
       settled = true;
@@ -232,7 +240,11 @@ export async function analyzeContractWithModel(
         onChunk: (chunk) => {
           output += chunk;
         },
-        onDone: () => finish({ success: true, data: output.trim() }),
+        onSessionStarted: announceSession,
+        onDone: (sessionId) => {
+          announceSession(sessionId);
+          finish({ success: true, data: output.trim() });
+        },
         onError: (error) => finish({ success: false, error }),
       },
       request.profile,
@@ -244,6 +256,7 @@ export async function analyzeContractWithModel(
     )
       .then((next) => {
         handle = next;
+        announceSession(next.sessionId);
       })
       .catch((error: unknown) =>
         finish({
@@ -252,4 +265,58 @@ export async function analyzeContractWithModel(
         }),
       );
   });
+}
+
+function contractAnalysisExportName(
+  request: ContractAnalysisExportRequest,
+): string {
+  const oldName = parse(request.oldFileName).name || "旧合同";
+  const newName = parse(request.newFileName).name || "新合同";
+  const date = new Date().toISOString().slice(0, 10);
+  const stem = `合同AI分析-${oldName}-与-${newName}-${date}`
+    .replace(/[<>:"/\\|?*]/g, "-")
+    .split("")
+    .map((character) => (character.charCodeAt(0) < 32 ? "-" : character))
+    .join("")
+    .replace(/[. ]+$/g, "")
+    .slice(0, 120);
+  return `${stem || `合同AI分析-${date}`}.docx`;
+}
+
+// @lat: [[feature-workspace#Optional AI interpretation#Word export]]
+export async function exportContractAnalysis(
+  request: ContractAnalysisExportRequest,
+  parentWindow?: BrowserWindow,
+): Promise<FeatureOperationResult<string | null>> {
+  if (!request.analysis.trim()) {
+    return { success: false, error: "当前没有可导出的 AI 解读结果" };
+  }
+  const options: Electron.SaveDialogOptions = {
+    title: "导出合同 AI 分析",
+    defaultPath: join(
+      app.getPath("documents"),
+      contractAnalysisExportName(request),
+    ),
+    buttonLabel: "导出",
+    filters: [{ name: "Word 文档", extensions: ["docx"] }],
+  };
+  const selection = parentWindow
+    ? await dialog.showSaveDialog(parentWindow, options)
+    : await dialog.showSaveDialog(options);
+  if (selection.canceled || !selection.filePath) {
+    return { success: true, data: null };
+  }
+  const outputPath = selection.filePath.toLocaleLowerCase().endsWith(".docx")
+    ? selection.filePath
+    : `${selection.filePath}.docx`;
+  const result = await runWorker<{ path: string }>(
+    {
+      ...request,
+      action: "export_contract_analysis",
+      outputPath,
+    },
+    60_000,
+  );
+  if (!result.success) return { success: false, error: result.error };
+  return { success: true, data: outputPath };
 }

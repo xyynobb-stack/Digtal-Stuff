@@ -30,6 +30,232 @@ _SCANNED_PAGE_IMAGE_RATIO = 0.75
 _SCANNED_PAGE_NATIVE_TEXT_LIMIT = 20
 
 
+def _set_run_font(run: Any, name: str = "Microsoft YaHei", size: float = 10.5) -> None:
+    """Apply a Chinese-capable font to both Latin and East Asian text."""
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    run.font.name = name
+    run.font.size = Pt(size)
+    run._element.rPr.rFonts.set(qn("w:eastAsia"), name)
+
+
+def _add_markdown_runs(paragraph: Any, text: str) -> None:
+    """Render the small inline Markdown subset commonly returned by the agent."""
+    token_pattern = re.compile(
+        r"(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|(?<!\*)\*[^*]+\*(?!\*)|(?<!_)_[^_]+_(?!_))"
+    )
+    cursor = 0
+    for match in token_pattern.finditer(text):
+        if match.start() > cursor:
+            _set_run_font(paragraph.add_run(text[cursor : match.start()]))
+        token = match.group(0)
+        if token.startswith("`"):
+            run = paragraph.add_run(token[1:-1])
+            _set_run_font(run, "Consolas", 10)
+        elif token.startswith(("**", "__")):
+            run = paragraph.add_run(token[2:-2])
+            _set_run_font(run)
+            run.bold = True
+        else:
+            run = paragraph.add_run(token[1:-1])
+            _set_run_font(run)
+            run.italic = True
+        cursor = match.end()
+    if cursor < len(text):
+        _set_run_font(paragraph.add_run(text[cursor:]))
+
+
+def _markdown_table_rows(lines: list[str], start: int) -> tuple[list[list[str]], int] | None:
+    if start + 1 >= len(lines) or "|" not in lines[start]:
+        return None
+
+    def cells(line: str) -> list[str]:
+        return [value.strip() for value in line.strip().strip("|").split("|")]
+
+    header = cells(lines[start])
+    divider = cells(lines[start + 1])
+    if len(header) < 2 or len(header) != len(divider):
+        return None
+    if not all(re.fullmatch(r":?-{3,}:?", value) for value in divider):
+        return None
+    rows = [header]
+    index = start + 2
+    while index < len(lines) and "|" in lines[index] and lines[index].strip():
+        row = cells(lines[index])
+        rows.append((row + [""] * len(header))[: len(header)])
+        index += 1
+    return rows, index
+
+
+def _render_markdown(document: Any, markdown: str) -> None:
+    from docx.enum.text import WD_LINE_SPACING
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    lines = markdown.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    index = 0
+    in_code = False
+    code_lines: list[str] = []
+    while index < len(lines):
+        raw = lines[index]
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            if in_code:
+                paragraph = document.add_paragraph()
+                paragraph.paragraph_format.space_after = Pt(8)
+                shading = OxmlElement("w:shd")
+                shading.set(qn("w:fill"), "F3F4F6")
+                paragraph._p.get_or_add_pPr().append(shading)
+                _set_run_font(paragraph.add_run("\n".join(code_lines)), "Consolas", 9.5)
+                code_lines = []
+                in_code = False
+            else:
+                in_code = True
+            index += 1
+            continue
+        if in_code:
+            code_lines.append(raw)
+            index += 1
+            continue
+        if not stripped:
+            index += 1
+            continue
+
+        table_data = _markdown_table_rows(lines, index)
+        if table_data:
+            rows, next_index = table_data
+            table = document.add_table(rows=len(rows), cols=len(rows[0]))
+            table.style = "Table Grid"
+            for row_index, row in enumerate(rows):
+                for column_index, value in enumerate(row):
+                    cell = table.cell(row_index, column_index)
+                    cell.text = ""
+                    _add_markdown_runs(cell.paragraphs[0], value)
+                    for run in cell.paragraphs[0].runs:
+                        run.bold = row_index == 0 or run.bold
+            document.add_paragraph()
+            index = next_index
+            continue
+
+        heading = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+        bullet = re.match(r"^[-*+]\s+(.+)$", stripped)
+        numbered = re.match(r"^\d+[.)]\s+(.+)$", stripped)
+        quote = re.match(r"^>\s?(.*)$", stripped)
+        if heading:
+            paragraph = document.add_heading(level=min(len(heading.group(1)) + 1, 4))
+            _add_markdown_runs(paragraph, heading.group(2))
+        elif bullet:
+            paragraph = document.add_paragraph(style="List Bullet")
+            _add_markdown_runs(paragraph, bullet.group(1))
+        elif numbered:
+            paragraph = document.add_paragraph(style="List Number")
+            _add_markdown_runs(paragraph, numbered.group(1))
+        elif quote:
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.left_indent = Pt(18)
+            _add_markdown_runs(paragraph, quote.group(1))
+            for run in paragraph.runs:
+                run.italic = True
+        elif re.fullmatch(r"[-*_]{3,}", stripped):
+            index += 1
+            continue
+        else:
+            paragraph = document.add_paragraph()
+            _add_markdown_runs(paragraph, stripped)
+        paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+        paragraph.paragraph_format.space_after = Pt(6)
+        index += 1
+
+    if code_lines:
+        paragraph = document.add_paragraph()
+        _set_run_font(paragraph.add_run("\n".join(code_lines)), "Consolas", 9.5)
+
+
+def _export_contract_analysis(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert the AI's Markdown result into a polished, atomic DOCX export."""
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt
+
+    output_path = Path(str(request.get("outputPath") or "")).expanduser()
+    analysis = str(request.get("analysis") or "").strip()
+    if not str(request.get("outputPath") or "").strip():
+        raise ValueError("缺少导出路径")
+    if output_path.suffix.lower() != ".docx":
+        raise ValueError("导出文件必须为 DOCX 格式")
+    if not analysis:
+        raise ValueError("当前没有可导出的 AI 解读结果")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    document = Document()
+    section = document.sections[0]
+    section.top_margin = Cm(2.4)
+    section.bottom_margin = Cm(2.4)
+    section.left_margin = Cm(2.5)
+    section.right_margin = Cm(2.5)
+
+    normal = document.styles["Normal"]
+    normal.font.name = "Microsoft YaHei"
+    normal.font.size = Pt(10.5)
+    normal._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+    for style_name, size in (("Title", 20), ("Heading 1", 15), ("Heading 2", 13), ("Heading 3", 11.5)):
+        style = document.styles[style_name]
+        style.font.name = "Microsoft YaHei"
+        style.font.size = Pt(size)
+        style._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+
+    title = document.add_paragraph(style="Title")
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title.add_run("合同对比 AI 分析报告")
+    _set_run_font(title_run, "Microsoft YaHei", 20)
+    title_run.bold = True
+
+    perspective = {
+        "party-a": "甲方",
+        "party-b": "乙方",
+        "neutral": "中立",
+    }.get(str(request.get("perspective") or "neutral"), "中立")
+    metadata = [
+        ("旧版合同", str(request.get("oldFileName") or "未命名")),
+        ("新版合同", str(request.get("newFileName") or "未命名")),
+        ("分析模型", str(request.get("modelName") or "未记录")),
+        ("分析立场", perspective),
+        ("导出时间", time.strftime("%Y-%m-%d %H:%M:%S")),
+    ]
+    table = document.add_table(rows=len(metadata), cols=2)
+    table.style = "Light Shading Accent 1"
+    for row_index, (label, value) in enumerate(metadata):
+        label_cell, value_cell = table.rows[row_index].cells
+        label_cell.text = ""
+        value_cell.text = ""
+        label_run = label_cell.paragraphs[0].add_run(label)
+        _set_run_font(label_run)
+        label_run.bold = True
+        _set_run_font(value_cell.paragraphs[0].add_run(value))
+
+    document.add_heading("AI 分析结果", level=1)
+    _render_markdown(document, analysis)
+    notice = document.add_paragraph()
+    notice.paragraph_format.space_before = Pt(12)
+    notice_run = notice.add_run("提示：本报告为 AI 辅助分析结果，不构成正式法律意见。")
+    _set_run_font(notice_run, "Microsoft YaHei", 9)
+    notice_run.italic = True
+
+    temporary_path = output_path.with_name(
+        f".{output_path.stem}.{secrets.token_hex(6)}.tmp.docx"
+    )
+    try:
+        document.save(temporary_path)
+        os.replace(temporary_path, output_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+    return {"path": str(output_path)}
+
+
 def _mineru_config() -> dict[str, Any]:
     """Load the packaged MinerU endpoint while allowing deployment overrides."""
     config_path = Path(__file__).with_name("mineru-config.json")
@@ -894,6 +1120,8 @@ def main() -> None:
         result = _ocr(request)
     elif action == "compare":
         result = _compare(request)
+    elif action == "export_contract_analysis":
+        result = _export_contract_analysis(request)
     else:
         raise ValueError("未知的文档处理操作")
     result["elapsedMs"] = round((time.perf_counter() - started) * 1000)

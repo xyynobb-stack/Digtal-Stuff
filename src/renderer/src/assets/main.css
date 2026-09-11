@@ -18555,6 +18555,10 @@ body:has(.shell-vibrant),
   cursor: not-allowed;
   opacity: 0.5;
 }
+.feature-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .feature-file {
   display: flex;
   gap: 10px;
@@ -19198,12 +19202,47 @@ body:has(.shell-vibrant),
   background: var(--bg-primary);
 }
 .contract-ai-result {
-  margin-top: 14px;
   padding: 14px;
   border-radius: 8px;
   background: var(--bg-primary);
   line-height: 1.7;
   white-space: pre-wrap;
+}
+.contract-ai-output {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-primary);
+}
+.contract-ai-output-toolbar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(
+    in srgb,
+    var(--bg-secondary) 86%,
+    var(--accent-text) 14%
+  );
+}
+.contract-ai-output-toolbar > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.contract-export-button {
+  flex: none;
+  color: var(--accent-text);
+}
+.contract-export-notice {
+  margin: 10px 14px 0;
+  color: var(--success-text, #198754);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 @media (max-width: 850px) {
   .feature-workspace {

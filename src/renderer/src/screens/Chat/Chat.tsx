@@ -527,6 +527,7 @@ function Chat({
 
   const { containerRef, bottomRef } = useChatScroll(messages);
   const modelConfig = useModelConfig(profile);
+  const selectModelForChat = modelConfig.selectModel;
   const chatCurrentModel =
     sessionModelOverride?.model ?? modelConfig.currentModel;
   const chatCurrentProvider =
@@ -554,7 +555,7 @@ function Chat({
           !resumedModelIdentityAppliedRef.current
         ) {
           setSessionModelOverride(override);
-          await modelConfig.selectModel(
+          await selectModelForChat(
             override.provider,
             override.model,
             override.baseUrl,
@@ -570,7 +571,28 @@ function Chat({
     return () => {
       cancelled = true;
     };
-  }, [initialSessionId, modelConfig.selectModel]);
+  }, [initialSessionId, selectModelForChat]);
+
+  useEffect(() => {
+    return window.hermesAPI.onContractAnalysisSessionUpdate((update) => {
+      const ownSessionId = hermesSessionId ?? initialSessionId;
+      if (
+        update.profile !== (profile || "default") ||
+        update.sessionId !== ownSessionId
+      ) {
+        return;
+      }
+      sessionModelOverrideLoadedRef.current = true;
+      resumedModelIdentityAppliedRef.current = true;
+      setSessionModelOverride(update.modelOverride);
+      void selectModelForChat(
+        update.modelOverride.provider,
+        update.modelOverride.model,
+        update.modelOverride.baseUrl,
+        { persist: false },
+      );
+    });
+  }, [hermesSessionId, initialSessionId, profile, selectModelForChat]);
 
   // Persist the chat-local model/provider once a session exists. This stores
   // only routing identity, never API keys, and is gated so a resumed session's
@@ -648,6 +670,7 @@ function Chat({
 
   useChatIPC({
     runId,
+    profile,
     sessionScopeId: visibleSessionScopeId,
     setMessages,
     setHermesSessionId,

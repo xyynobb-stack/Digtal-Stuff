@@ -16,6 +16,8 @@ interface UseChatIPCArgs {
   /** This conversation's run id. Events tagged with a different runId belong
    *  to another mounted/background chat and are ignored. */
   runId: string;
+  /** Profile that owns sessionScopeId. */
+  profile?: string;
   /** The session currently visible in this Chat, if already known. */
   sessionScopeId: string | null;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -137,6 +139,7 @@ export async function settleFinalDbTranscript(
  */
 export function useChatIPC({
   runId,
+  profile,
   sessionScopeId,
   setMessages,
   setHermesSessionId,
@@ -221,6 +224,41 @@ export function useChatIPC({
         void refreshFromDb(sessionId);
       }, 750);
     };
+
+    const settleSessionFromDb = async (sessionId: string): Promise<void> => {
+      await settleFinalDbTranscript(
+        async () =>
+          (await window.hermesAPI.getSessionMessages(
+            sessionId,
+          )) as DbHistoryItem[],
+        (items) => {
+          const dbMessages = dbItemsToChatMessages(items);
+          if (dbMessages.length === 0) return;
+          setMessages((prev) =>
+            reconcileAfterDbRefresh(prev, dbMessages, { phase: "final" }),
+          );
+        },
+        () => !disposed && acceptedSessionIdRef.current === sessionId,
+      );
+    };
+
+    // @lat: [[feature-workspace#Optional AI interpretation]]
+    // Subscribe before re-reading the restored snapshot. If completion lands
+    // between Layout's initial read and this effect, either the event or this
+    // refresh observes the final Assistant row.
+    const cleanupContractAnalysis =
+      window.hermesAPI.onContractAnalysisSessionUpdate((update) => {
+        if (
+          update.profile !== (profile || "default") ||
+          update.sessionId !== acceptedSessionIdRef.current
+        ) {
+          return;
+        }
+        if (update.phase === "completed") {
+          void settleSessionFromDb(update.sessionId);
+        }
+      });
+    if (sessionScopeId) void refreshFromDb(sessionScopeId);
 
     // @lat: [[lat.md/main-process#Main Process#Local cron command execution]]
     // Cron turns run outside this Chat's IPC lifecycle, so they do not emit
@@ -515,9 +553,11 @@ export function useChatIPC({
       cleanupToolProgress();
       cleanupToolEvent();
       cleanupUsage();
+      cleanupContractAnalysis();
     };
   }, [
     runId,
+    profile,
     setMessages,
     setHermesSessionId,
     setToolProgress,

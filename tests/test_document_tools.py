@@ -217,6 +217,42 @@ class DocumentToolsTests(unittest.TestCase):
         self.assertEqual(table["rows"][1]["cells"][0]["rowSpan"], 2)
         self.assertEqual(len(table["rows"][2]["cells"]), 1)
 
+    # @lat: [[feature-workspace#Optional AI interpretation#Word export]]
+    def test_contract_analysis_export_converts_markdown_to_docx_structure(self):
+        from docx import Document
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "分析报告.docx"
+            result = MODULE._export_contract_analysis(
+                {
+                    "outputPath": str(output_path),
+                    "analysis": (
+                        "# 重要变化\n\n"
+                        "1. **合同金额**由 15 万元调整为 113.8 万元。\n\n"
+                        "| 项目 | 建议 |\n| --- | --- |\n| 金额 | 核对含税口径 |"
+                    ),
+                    "oldFileName": "旧合同.docx",
+                    "newFileName": "新合同.pdf",
+                    "modelName": "Claude Opus 5",
+                    "perspective": "neutral",
+                }
+            )
+            document = Document(output_path)
+            paragraph_text = [paragraph.text for paragraph in document.paragraphs]
+
+            self.assertEqual(result["path"], str(output_path))
+            self.assertIn("合同对比 AI 分析报告", paragraph_text)
+            self.assertIn("AI 分析结果", paragraph_text)
+            self.assertFalse(any("**" in text or text.startswith("#") for text in paragraph_text))
+            self.assertTrue(
+                any(
+                    run.bold and "合同金额" in run.text
+                    for paragraph in document.paragraphs
+                    for run in paragraph.runs
+                )
+            )
+            self.assertEqual(len(document.tables), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

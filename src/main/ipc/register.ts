@@ -30,12 +30,15 @@ import type {
 } from "../../shared/work-records";
 import type {
   ContractAiAnalysisRequest,
+  ContractAnalysisExportRequest,
+  ContractAnalysisSessionUpdate,
   FeatureFileKind,
   FeatureHistoryKind,
   FeatureHistorySaveInput,
 } from "../../shared/feature-workspace";
 import {
   analyzeContractWithModel,
+  exportContractAnalysis,
   inspectFeatureFile,
   runContractComparison,
   runFeatureOcr,
@@ -69,6 +72,7 @@ import {
 } from "../session-context-folder-store";
 import {
   getSessionModelOverride,
+  setProfileSessionModelOverride,
   setSessionModelOverride,
 } from "../session-model-override-store";
 import {
@@ -3713,8 +3717,47 @@ export function registerIpcHandlers(context: IpcContext): void {
   );
   ipcMain.handle(
     "feature-analyze-contract",
-    (_event, request: ContractAiAnalysisRequest) =>
-      analyzeContractWithModel(request),
+    async (event, request: ContractAiAnalysisRequest) => {
+      const modelOverride: SessionModelOverride = {
+        provider: request.provider,
+        model: request.model,
+        baseUrl: request.baseUrl,
+      };
+      let sessionId = "";
+      const sendUpdate = (
+        phase: ContractAnalysisSessionUpdate["phase"],
+      ): void => {
+        if (!sessionId || event.sender.isDestroyed()) return;
+        event.sender.send("contract-analysis-session-update", {
+          profile: request.profile,
+          sessionId,
+          phase,
+          modelOverride,
+        } satisfies ContractAnalysisSessionUpdate);
+      };
+      const result = await analyzeContractWithModel(
+        request,
+        (nextSessionId) => {
+          sessionId = nextSessionId;
+          setProfileSessionModelOverride(
+            request.profile,
+            sessionId,
+            modelOverride,
+          );
+          sendUpdate("started");
+        },
+      );
+      sendUpdate(result.success ? "completed" : "failed");
+      return result;
+    },
+  );
+  ipcMain.handle(
+    "feature-export-contract-analysis",
+    (event, request: ContractAnalysisExportRequest) =>
+      exportContractAnalysis(
+        request,
+        BrowserWindow.fromWebContents(event.sender) || undefined,
+      ),
   );
   ipcMain.handle(
     "feature-history-save",

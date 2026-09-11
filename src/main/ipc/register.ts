@@ -31,6 +31,8 @@ import type {
 import type {
   ContractAiAnalysisRequest,
   FeatureFileKind,
+  FeatureHistoryKind,
+  FeatureHistorySaveInput,
 } from "../../shared/feature-workspace";
 import {
   analyzeContractWithModel,
@@ -39,6 +41,7 @@ import {
   runFeatureOcr,
 } from "../document-features";
 import { getWorkRecordStore } from "../work-records";
+import { getFeatureHistoryStore } from "../feature-history";
 import type {
   DesktopSessionContinuationItem,
   DesktopSessionLocalError,
@@ -1170,6 +1173,10 @@ export function registerIpcHandlers(context: IpcContext): void {
         await sshSetEnvValue(conn.ssh, key, value, profile);
         return true;
       }
+      if (key === "AIHUB_API_KEY") {
+        mirrorCompanyFallbackProvider(profile);
+        return true;
+      }
       setEnvValue(key, value, profile);
       if (key === "AIHUB_API_KEY") mirrorCompanyFallbackProvider(profile);
       // Restart gateway so it picks up the new API key.
@@ -1294,19 +1301,8 @@ export function registerIpcHandlers(context: IpcContext): void {
 
           // Secrets remain profile-scoped and are never copied into the
           // employee binding or returned to the renderer.
-          const existingEnv = readEnv(targetProfile);
-          const fallbackApiKey =
-            String(
-              existingEnv.AIHUB_API_KEY || process.env.AIHUB_API_KEY || "",
-            ).trim() ||
-            (typeof employee.fallback_api_key === "string"
-              ? employee.fallback_api_key.trim()
-              : "");
-          let fallbackConfigured = false;
-          if (fallbackApiKey) {
-            setEnvValue("AIHUB_API_KEY", fallbackApiKey, targetProfile);
-            fallbackConfigured = mirrorCompanyFallbackProvider(targetProfile);
-          }
+          mirrorCompanyFallbackProvider(targetProfile);
+          const fallbackConfigured = false;
 
           for (const entry of available) {
             const route = EMPLOYEE_MODEL_ROUTES.find(
@@ -3719,6 +3715,24 @@ export function registerIpcHandlers(context: IpcContext): void {
     "feature-analyze-contract",
     (_event, request: ContractAiAnalysisRequest) =>
       analyzeContractWithModel(request),
+  );
+  ipcMain.handle(
+    "feature-history-save",
+    (_event, input: FeatureHistorySaveInput) =>
+      getFeatureHistoryStore().save(input),
+  );
+  ipcMain.handle(
+    "feature-history-list",
+    (_event, profile: string, kind: FeatureHistoryKind) =>
+      getFeatureHistoryStore().list(profile, kind),
+  );
+  ipcMain.handle("feature-history-get", (_event, profile: string, id: string) =>
+    getFeatureHistoryStore().get(profile, id),
+  );
+  ipcMain.handle(
+    "feature-history-delete",
+    (_event, profile: string, id: string) =>
+      getFeatureHistoryStore().delete(profile, id),
   );
 
   // Read directory contents for worktree panel

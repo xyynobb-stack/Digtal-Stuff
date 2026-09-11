@@ -1,6 +1,6 @@
 {
   "name": "hermes-desktop",
-  "version": "0.7.60",
+  "version": "0.7.61",
   "description": "JingYuAI Desktop — self-improving AI assistant",
   "main": "./out/main/index.js",
   "author": "fathah",

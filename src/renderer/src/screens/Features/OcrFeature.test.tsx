@@ -79,13 +79,22 @@ describe("OcrFeature", () => {
             ],
           },
         }),
+        listFeatureHistory: vi.fn().mockResolvedValue([]),
+        saveFeatureHistory: vi.fn().mockImplementation(async (input) => ({
+          ...input,
+          id: "ocr-history-1",
+          createdAt: 1,
+          updatedAt: 1,
+        })),
+        getFeatureHistory: vi.fn().mockResolvedValue(null),
+        deleteFeatureHistory: vi.fn().mockResolvedValue(true),
       },
     });
   });
 
   // @lat: [[feature-workspace#OCR]]
   it("renders MinerU headings and merged tables without raw markup", async () => {
-    const { container } = render(<OcrFeature />);
+    const { container } = render(<OcrFeature profile="default" />);
     fireEvent.click(screen.getByRole("button", { name: /选择图片或 PDF/ }));
     await screen.findByText("scan.pdf");
     const runButton = screen.getByRole("button", { name: "开始识别" });
@@ -99,5 +108,50 @@ describe("OcrFeature", () => {
     expect(screen.getByText("合计")).toHaveAttribute("colspan", "2");
     expect(container).not.toHaveTextContent("<table>");
     expect(container).not.toHaveTextContent("images/");
+    expect(window.hermesAPI.saveFeatureHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ profile: "default", kind: "ocr" }),
+    );
+  });
+
+  it("restores a persisted OCR result without reopening the source file", async () => {
+    vi.mocked(window.hermesAPI.listFeatureHistory).mockResolvedValue([
+      {
+        id: "saved-ocr",
+        kind: "ocr",
+        title: "历史扫描件",
+        sourceNames: ["moved.pdf"],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    vi.mocked(window.hermesAPI.getFeatureHistory).mockResolvedValue({
+      id: "saved-ocr",
+      profile: "default",
+      kind: "ocr",
+      title: "历史扫描件",
+      file: {
+        path: "C:\\old-location\\moved.pdf",
+        name: "moved.pdf",
+        size: 100,
+        extension: ".pdf",
+      },
+      result: {
+        fileName: "moved.pdf",
+        elapsedMs: 20,
+        text: "已保存的识别结果",
+        pages: [{ page: 1, source: "mineru", text: "已保存的识别结果" }],
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    render(<OcrFeature profile="default" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /历史记录 \(1\)/ }),
+    );
+    fireEvent.click(screen.getByText("历史扫描件").closest("button")!);
+
+    expect(await screen.findByText("已保存的识别结果")).toBeInTheDocument();
+    expect(window.hermesAPI.runFeatureOcr).not.toHaveBeenCalled();
   });
 });

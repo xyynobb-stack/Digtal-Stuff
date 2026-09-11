@@ -57,6 +57,10 @@ import type {
   ContractAiAnalysisRequest,
   ContractComparisonResult,
   FeatureFileKind,
+  FeatureHistoryKind,
+  FeatureHistoryRecord,
+  FeatureHistorySaveInput,
+  FeatureHistorySummary,
   FeatureOperationResult,
   FeaturePickedFile,
   OcrDocumentResult,
@@ -1459,6 +1463,18 @@ interface HermesAPI {
   analyzeContract: (
     request: ContractAiAnalysisRequest,
   ) => Promise<FeatureOperationResult<string>>;
+  saveFeatureHistory: (
+    input: FeatureHistorySaveInput,
+  ) => Promise<FeatureHistoryRecord>;
+  listFeatureHistory: (
+    profile: string,
+    kind: FeatureHistoryKind,
+  ) => Promise<FeatureHistorySummary[]>;
+  getFeatureHistory: (
+    profile: string,
+    id: string,
+  ) => Promise<FeatureHistoryRecord | null>;
+  deleteFeatureHistory: (profile: string, id: string) => Promise<boolean>;
 }
 
 declare global {

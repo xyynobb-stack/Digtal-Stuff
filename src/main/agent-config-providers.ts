@@ -1,5 +1,8 @@
 // @lat: [[provider-setup#Provider setup#Agent config sync for named providers]]
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
+import { join } from "path";
+import { HERMES_HOME } from "./installer";
+import { mergeBundledAihubKey } from "./managed-aihub-key";
 import { profilePaths, safeWriteFile } from "./utils";
 
 /**
@@ -487,31 +490,52 @@ export function upsertAgentManagedFallback(
   return true;
 }
 
-/** Mirror a locally provisioned backup without persisting any secret in YAML. */
+/** Compatibility entry point: clean the retired backup; never provision it. */
 export function mirrorCompanyFallbackProvider(profile?: string): boolean {
   const { envFile } = profilePaths(profile);
-  if (!existsSync(envFile)) return false;
-  const env = readFileSync(envFile, "utf-8");
-  if (!/^\s*AIHUB_API_KEY\s*=\s*\S+/m.test(env)) return false;
-  // Only employee profiles opt into this backup. No global OS-env key can
-  // silently enable sending another profile's data to a third-party gateway.
-  if (!/^\s*CUSTOM_PROVIDER_COMPANY_PLATFORM_KEY\s*=\s*\S+/m.test(env))
-    return false;
-  upsertAgentUserProvider(profile, {
-    name: "AIHub Responses Fallback",
-    slug: "aihub-responses",
-    baseUrl: "https://aihub.dog/v1",
+  if (existsSync(envFile)) {
+    const env = readFileSync(envFile, "utf-8");
+    const cleaned = mergeBundledAihubKey(env, "");
+    if (cleaned !== env) safeWriteFile(envFile, cleaned);
+  }
+  removeAgentUserProvider(profile, {
+    name: "aihub-responses",
     keyEnv: "AIHUB_API_KEY",
-    apiMode: "codex_responses",
-    models: ["gpt-5.6-terra"],
   });
-  return upsertAgentManagedFallback(profile, {
-    provider: "custom:aihub-responses",
-    model: "gpt-5.6-terra",
-    baseUrl: "https://aihub.dog/v1",
-    keyEnv: "AIHUB_API_KEY",
-    apiMode: "codex_responses",
-  });
+  const { file, content } = readConfig(profile);
+  const cleaned = content.replace(
+    /(^fallback_providers[^\S\r\n]*:[^\S\r\n]*(?:#[^\r\n]*)?\r?\n)((?:(?:[ \t]+[^\r\n]*|-[^\r\n]*|#[^\r\n]*|)\r?\n)*)/m,
+    (_match, header: string, body: string) => {
+      const items = [...body.matchAll(/^([ \t]*)-\s+/gm)];
+      if (!items.length) return header + body;
+      const kept = items
+        .map((item, index) =>
+          body.slice(item.index!, items[index + 1]?.index ?? body.length),
+        )
+        .filter(
+          (item) => !/\bAIHUB_API_KEY\b|custom:aihub-responses/.test(item),
+        );
+      return kept.length
+        ? header + body.slice(0, items[0].index) + kept.join("")
+        : "fallback_providers: []\n";
+    },
+  );
+  if (cleaned !== content) safeWriteFile(file, cleaned);
+  return false;
+}
+
+/** Retire the shipped backup in all profiles before any local gateway starts. */
+export function retireCompanyFallbackProfiles(): void {
+  delete process.env.AIHUB_API_KEY;
+  const directory = join(HERMES_HOME, "profiles");
+  const profiles: (string | undefined)[] = [undefined];
+  if (existsSync(directory))
+    profiles.push(
+      ...readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
+        .map((entry) => entry.name),
+    );
+  for (const profile of profiles) mirrorCompanyFallbackProvider(profile);
 }
 
 /** Remove a `providers:` entry matched by key_env, or by slug derived from

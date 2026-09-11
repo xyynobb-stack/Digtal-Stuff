@@ -105,6 +105,7 @@ describe("single Runtime archive", () => {
 
     expect(packaged.manifest.bytes).toBeGreaterThan(0);
     expect(verified.entries.has("hermes-agent/run_agent.py")).toBe(true);
+    expect(verified.entries.has("aihub-fallback.env")).toBe(false);
     expect(
       readFileSync(join(packageRoot, "runtime-archive.json"), "utf8"),
     ).toContain(packaged.manifest.sha256);

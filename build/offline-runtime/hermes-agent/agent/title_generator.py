@@ -363,6 +363,7 @@ def maybe_auto_title(
     main_runtime: dict = None,
     title_callback: Optional[TitleCallback] = None,
     runtime_validator: Optional[RuntimeValidator] = None,
+    session_db_factory: Optional[Callable] = None,
 ) -> None:
     """Fire-and-forget title generation after the first exchange.
 
@@ -370,7 +371,12 @@ def maybe_auto_title(
     - This appears to be the first user→assistant exchange
     - No title is already set
     """
-    if not session_db or not session_id or not user_message or not assistant_response:
+    if (
+        (not session_db and session_db_factory is None)
+        or not session_id
+        or not user_message
+        or not assistant_response
+    ):
         return
 
     # Count user messages in history to detect first exchange.
@@ -387,15 +393,36 @@ def maybe_auto_title(
         logger.debug("Auto-title skipped: auxiliary.title_generation.enabled=false")
         return
 
-    thread = threading.Thread(
-        target=auto_title_session,
-        args=(session_db, session_id, user_message, assistant_response),
-        kwargs={
+    def _run() -> None:
+        kwargs = {
             "failure_callback": failure_callback,
             "main_runtime": main_runtime,
             "title_callback": title_callback,
             "runtime_validator": runtime_validator,
-        },
+        }
+        if session_db_factory is None:
+            auto_title_session(
+                session_db,
+                session_id,
+                user_message,
+                assistant_response,
+                **kwargs,
+            )
+            return
+        # The factory is entered inside the worker. Profile DB handles and
+        # ContextVars therefore remain alive for title generation and are not
+        # captured from (then closed by) the request thread.
+        with session_db_factory() as scoped_db:
+            auto_title_session(
+                scoped_db,
+                session_id,
+                user_message,
+                assistant_response,
+                **kwargs,
+            )
+
+    thread = threading.Thread(
+        target=_run,
         daemon=True,
         name="auto-title",
     )

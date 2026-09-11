@@ -842,9 +842,6 @@ def _(rid, params: dict) -> dict:
             return _err(
                 rid, 4009, "session busy — /interrupt the current turn before /undo"
             )
-        db = _get_db()
-        if db is None:
-            return _db_unavailable_error(rid, code=5008)
         session_key = session.get("session_key", "")
         if not session_key:
             return _err(rid, 4001, "no session key for undo")
@@ -859,17 +856,17 @@ def _(rid, params: dict) -> dict:
         if n < 1:
             n = 1
         try:
-            recents = db.list_recent_user_messages(session_key, limit=max(n, 10))
-        except Exception as e:
-            return _err(rid, 5008, f"undo: failed to load history: {e}")
-        if not recents:
-            return _err(rid, 4018, "no user messages to undo")
-        # recents[0] is the most-recent user turn; pick the Nth-from-last.
-        # If N exceeds the number of user turns, back up to the oldest.
-        target_idx = min(n - 1, len(recents) - 1)
-        target_id = recents[target_idx]["id"]
-        try:
-            result = db.rewind_to_message(session_key, target_id)
+            with _session_db(session) as db:
+                if db is None:
+                    return _db_unavailable_error(rid, code=5008)
+                recents = db.list_recent_user_messages(session_key, limit=max(n, 10))
+                if not recents:
+                    return _err(rid, 4018, "no user messages to undo")
+                # recents[0] is the most-recent user turn; pick the Nth-from-last.
+                # If N exceeds the number of user turns, back up to the oldest.
+                target_idx = min(n - 1, len(recents) - 1)
+                target_id = recents[target_idx]["id"]
+                result = db.rewind_to_message(session_key, target_id)
         except ValueError as e:
             return _err(rid, 4004, f"undo: {e}")
         except Exception as e:

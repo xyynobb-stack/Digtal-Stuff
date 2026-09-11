@@ -1,5 +1,6 @@
 import {
   Fragment,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -11,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   FileDiff,
+  History,
   Search,
   Sparkles,
   Upload,
@@ -25,7 +27,9 @@ import type {
   ContractDifferenceKind,
   ContractDocumentStructure,
   FeaturePickedFile,
+  FeatureHistorySummary,
 } from "../../../../shared/feature-workspace";
+import FeatureHistoryPanel from "./FeatureHistoryPanel";
 
 interface ContractCompareFeatureProps {
   profile: string;
@@ -254,6 +258,10 @@ export default function ContractCompareFeature({
   const [oldPaneWidth, setOldPaneWidth] = useState(50);
   const [compactReview, setCompactReview] = useState(false);
   const [resultsCollapsed, setResultsCollapsed] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [history, setHistory] = useState<FeatureHistorySummary[]>([]);
+  const [activeHistoryId, setActiveHistoryId] = useState("");
   const detailRef = useRef<HTMLDivElement>(null);
   const comparisonRef = useRef<HTMLDivElement>(null);
   const oldPaneRef = useRef<HTMLDivElement>(null);
@@ -261,6 +269,25 @@ export default function ContractCompareFeature({
   const synchronizingRef = useRef(false);
   const resizingRef = useRef(false);
   const previousCompactRef = useRef<boolean | null>(null);
+
+  const refreshHistory = useCallback(async (): Promise<void> => {
+    setHistoryLoading(true);
+    try {
+      setHistory(
+        await window.hermesAPI.listFeatureHistory(profile, "contract-compare"),
+      );
+    } catch (cause) {
+      setError(
+        `历史记录加载失败：${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -329,6 +356,7 @@ export default function ContractCompareFeature({
     else setNewFile(selected);
     setResult(null);
     setAnalysis("");
+    setActiveHistoryId("");
     setError("");
   };
 
@@ -345,6 +373,16 @@ export default function ContractCompareFeature({
       if (!response.success || !response.data)
         throw new Error(response.error || "比对失败");
       setResult(response.data);
+      const saved = await window.hermesAPI.saveFeatureHistory({
+        profile,
+        kind: "contract-compare",
+        title: `${oldFile.name} ↔ ${newFile.name}`,
+        oldFile,
+        newFile,
+        result: response.data,
+      });
+      setActiveHistoryId(saved.id);
+      await refreshHistory();
       const firstChange = response.data.differences.find(
         (item) => item.kind !== "unchanged",
       );
@@ -380,11 +418,71 @@ export default function ContractCompareFeature({
       if (!response.success || !response.data)
         throw new Error(response.error || "AI 解读失败");
       setAnalysis(response.data);
+      if (oldFile && newFile) {
+        const saved = await window.hermesAPI.saveFeatureHistory({
+          id: activeHistoryId || undefined,
+          profile,
+          kind: "contract-compare",
+          title: `${oldFile.name} ↔ ${newFile.name}`,
+          oldFile,
+          newFile,
+          result,
+          analysis: response.data,
+          analysisModelId: selectedModel.id,
+          perspective,
+          contextMode,
+        });
+        setActiveHistoryId(saved.id);
+        await refreshHistory();
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const openHistory = async (id: string): Promise<void> => {
+    setError("");
+    const record = await window.hermesAPI.getFeatureHistory(profile, id);
+    if (!record || record.kind !== "contract-compare") {
+      setError("历史记录不存在或已损坏");
+      await refreshHistory();
+      return;
+    }
+    setOldFile(record.oldFile);
+    setNewFile(record.newFile);
+    setResult(record.result);
+    setAnalysis(record.analysis || "");
+    setPerspective(record.perspective || "neutral");
+    setContextMode(record.contextMode || "changes-only");
+    if (
+      record.analysisModelId &&
+      models.some((model) => model.id === record.analysisModelId)
+    ) {
+      setModelId(record.analysisModelId);
+    }
+    const firstChange = record.result.differences.find(
+      (item) => item.kind !== "unchanged",
+    );
+    setActiveDiffId(firstChange?.id || "");
+    setFilter("all");
+    setSearch("");
+    setResultLimit(80);
+    setActiveHistoryId(record.id);
+    setHistoryOpen(false);
+  };
+
+  const deleteHistory = async (id: string): Promise<void> => {
+    if (!(await window.hermesAPI.deleteFeatureHistory(profile, id))) return;
+    if (activeHistoryId === id) {
+      setOldFile(null);
+      setNewFile(null);
+      setResult(null);
+      setAnalysis("");
+      setActiveHistoryId("");
+    }
+    await refreshHistory();
   };
 
   const syncDocumentScroll = (
@@ -470,14 +568,33 @@ export default function ContractCompareFeature({
           );
         })}
       </div>
-      <button
-        className="feature-primary-button contract-compare-button"
-        type="button"
-        disabled={!oldFile || !newFile || running}
-        onClick={() => void compare()}
-      >
-        {running ? "正在比对…" : "开始精确比对"}
-      </button>
+      <div className="feature-action-bar">
+        <button
+          className="feature-primary-button contract-compare-button"
+          type="button"
+          disabled={!oldFile || !newFile || running}
+          onClick={() => void compare()}
+        >
+          {running ? "正在比对…" : "开始精确比对"}
+        </button>
+        <button
+          className="feature-secondary-button"
+          type="button"
+          aria-expanded={historyOpen}
+          onClick={() => setHistoryOpen((open) => !open)}
+        >
+          <History size={16} /> 历史记录 ({history.length})
+        </button>
+      </div>
+      {historyOpen && (
+        <FeatureHistoryPanel
+          items={history}
+          activeId={activeHistoryId}
+          loading={historyLoading}
+          onOpen={(id) => void openHistory(id)}
+          onDelete={(id) => void deleteHistory(id)}
+        />
+      )}
       {error && <div className="feature-error">{error}</div>}
       {result && (
         <>
@@ -697,7 +814,12 @@ export default function ContractCompareFeature({
                     />
                   </label>
                 </div>
-                <div className="contract-result-list">
+                <div
+                  className="contract-result-list"
+                  role="region"
+                  aria-label="比对结果列表"
+                  tabIndex={0}
+                >
                   {filteredChanges.slice(0, resultLimit).map((item) => (
                     <button
                       key={item.id}

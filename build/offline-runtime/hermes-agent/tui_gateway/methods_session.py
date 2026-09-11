@@ -98,6 +98,7 @@ def _(rid, params: dict) -> dict:
             "create_service_tier_override": create_service_tier_override,
             "parent_session_id": parent_session_id,
             "pending_title": title or None,
+            "profile": profile or "",
             "profile_home": str(profile_home) if profile_home is not None else None,
             "running": False,
             "session_key": key,
@@ -656,6 +657,8 @@ def _(rid, params: dict) -> dict:
                     cwd=profile_resume_cwd,
                     session_db=db,
                     source=source,
+                    profile_home=str(profile_home) if profile_home is not None else None,
+                    profile=profile,
                 )
             finally:
                 if init_home_token is not None:
@@ -673,6 +676,7 @@ def _(rid, params: dict) -> dict:
                 # skills — must resolve to the resumed profile too).
                 if profile_home is not None:
                     _sessions[sid]["profile_home"] = str(profile_home)
+                    _sessions[sid]["profile"] = profile or ""
                 _sessions[sid]["active_session_lease"] = lease
         except Exception as e:
             if lease is not None:
@@ -2310,7 +2314,15 @@ def _(rid, params: dict) -> dict:
                 break
         if last_user_idx is not None:
             removed = len(history) - last_user_idx
-            del history[last_user_idx:]
+            truncated = list(history[:last_user_idx])
+            try:
+                with _session_db(session) as db:
+                    if db is None:
+                        return _db_unavailable_error(rid, code=5008)
+                    db.replace_messages(session["session_key"], truncated)
+            except Exception as exc:
+                return _err(rid, 5008, f"undo: failed to persist history: {exc}")
+            session["history"] = truncated
             session["history_version"] = int(session.get("history_version", 0)) + 1
     return _ok(rid, {"removed": removed})
 
@@ -2688,6 +2700,7 @@ def _(rid, params: dict) -> dict:
                 session_db=branch_db,
                 source=source,
                 profile_home=parent_home,
+                profile=_session_profile(session),
             )
         finally:
             if secret_token is not None:

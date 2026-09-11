@@ -2,6 +2,7 @@
 import {
   existsSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -291,7 +292,7 @@ describe("agent-config providers (config.yaml bridge)", () => {
     expect(readConfig()).toContain("model: keep");
   });
 
-  it("only mirrors the AIHub route for a profile with both local credentials", async () => {
+  it("removes retired credentials instead of mirroring the AIHub route", async () => {
     const m = await mod();
     writeConfig("providers: {}\nfallback_providers: []\n");
     const envFile = join(mockState.hermesHome, ".env");
@@ -301,12 +302,47 @@ describe("agent-config providers (config.yaml bridge)", () => {
       envFile,
       "AIHUB_API_KEY=fake-backup-key\nCUSTOM_PROVIDER_COMPANY_PLATFORM_KEY=fake-primary-key\n",
     );
-    expect(m.mirrorCompanyFallbackProvider()).toBe(true);
+    expect(m.mirrorCompanyFallbackProvider()).toBe(false);
     const first = readConfig();
-    expect(m.mirrorCompanyFallbackProvider()).toBe(true);
+    expect(m.mirrorCompanyFallbackProvider()).toBe(false);
     expect(readConfig()).toBe(first);
     expect(first).not.toContain("fake-backup-key");
     expect(first).not.toContain("fake-primary-key");
+    expect(readFileSync(envFile, "utf8")).not.toContain("AIHUB_API_KEY");
+  });
+
+  it("cleans inactive profiles on startup", async () => {
+    const m = await mod();
+    const directory = join(mockState.hermesHome, "profiles", "employee-test");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(
+      join(directory, ".env"),
+      "export AIHUB_API_KEY=old\nKEEP=yes\n",
+    );
+    writeFileSync(
+      join(directory, "config.yaml"),
+      "fallback_providers:\n  - provider: custom:aihub-responses\n    key_env: AIHUB_API_KEY\n",
+    );
+    m.retireCompanyFallbackProfiles();
+    expect(readFileSync(join(directory, ".env"), "utf8")).toBe("KEEP=yes\n");
+    expect(readFileSync(join(directory, "config.yaml"), "utf8")).toBe(
+      "fallback_providers: []\n",
+    );
+  });
+
+  it("cleans legacy fallback entries while preserving other providers", async () => {
+    const m = await mod();
+    writeConfig(
+      "fallback_providers:\n- provider: custom:aihub-responses\n  key_env: AIHUB_API_KEY\n  model: gpt-5.6-terra\n- provider: custom:keep\n  model: keep\nagent:\n  max_turns: 10\n",
+    );
+    m.mirrorCompanyFallbackProvider();
+    expect(readConfig()).not.toContain("AIHUB_API_KEY");
+    expect(readConfig()).not.toContain("custom:aihub-responses");
+    expect(readConfig()).toContain("custom:keep");
+    expect(readConfig()).toContain("max_turns: 10");
+    const first = readConfig();
+    m.mirrorCompanyFallbackProvider();
+    expect(readConfig()).toBe(first);
   });
 
   it("never appends a duplicate key over an unparseable flow dict", async () => {

@@ -1,8 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import FeatureHub from "./FeatureHub";
 
 describe("FeatureHub", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "hermesAPI", {
+      configurable: true,
+      value: {
+        listFeatureHistory: vi.fn().mockResolvedValue([]),
+      },
+    });
+  });
+
   // @lat: [[feature-workspace#Navigation and execution boundary]]
   it("opens a feature and returns to the catalog without starting its engine", async () => {
     render(<FeatureHub profile="default" />);

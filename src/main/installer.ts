@@ -887,22 +887,17 @@ export async function installBundledProfileContent(
 }
 
 function installBundledAihubKey(targetHome: string): void {
-  const bundledEnv = join(BUNDLED_RUNTIME_ROOT, "aihub-fallback.env");
   const targetEnv = join(targetHome, ".env");
   try {
-    if (!existsSync(bundledEnv)) return;
     const existing = existsSync(targetEnv)
       ? readFileSync(targetEnv, "utf-8")
       : "";
-    const merged = mergeBundledAihubKey(
-      existing,
-      readFileSync(bundledEnv, "utf-8"),
-    );
+    const merged = mergeBundledAihubKey(existing, "");
     mkdirSync(targetHome, { recursive: true });
     if (merged !== existing) writeFileSync(targetEnv, merged, "utf-8");
   } catch (error) {
     console.warn(
-      "[installer] Could not install the bundled AIHub fallback key:",
+      "[installer] Could not remove the retired AIHub fallback key:",
       error instanceof Error ? error.message : String(error),
     );
   }
@@ -1034,9 +1029,7 @@ export function resolveHermesPythonExecutable(
 ): string {
   if (platform === "win32") {
     const pythonw = join(venv, "Scripts", "pythonw.exe");
-    return pathExists(pythonw)
-      ? pythonw
-      : join(venv, "Scripts", "python.exe");
+    return pathExists(pythonw) ? pythonw : join(venv, "Scripts", "python.exe");
   }
   return join(venv, "bin", "python");
 }

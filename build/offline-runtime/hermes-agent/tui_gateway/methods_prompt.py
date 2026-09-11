@@ -230,24 +230,26 @@ def _(rid, params: dict) -> dict:
             # new exchange is appended on top of the "undone" turns — durable
             # zombie history on resume, and the edit/regenerate never sticks.
             # Fail closed: refuse the turn and leave memory/DB unchanged.
-            if (db := _get_db()) is not None:
-                try:
+            try:
+                with _session_db(session) as db:
+                    if db is None:
+                        raise RuntimeError("session database is unavailable")
                     db.replace_messages(session["session_key"], truncated)
-                except Exception as exc:
-                    logger.error(
-                        "prompt.submit: replace_messages failed for session %s "
-                        "(ordinal=%d); refusing turn so memory and DB stay "
-                        "aligned: %s",
-                        sid,
-                        ordinal,
-                        exc,
-                        exc_info=True,
-                    )
-                    return _err(
-                        rid,
-                        5008,
-                        f"failed to persist history truncation: {exc}",
-                    )
+            except Exception as exc:
+                logger.error(
+                    "prompt.submit: replace_messages failed for session %s "
+                    "(ordinal=%d); refusing turn so memory and DB stay "
+                    "aligned: %s",
+                    sid,
+                    ordinal,
+                    exc,
+                    exc_info=True,
+                )
+                return _err(
+                    rid,
+                    5008,
+                    f"failed to persist history truncation: {exc}",
+                )
             session["history"] = truncated
             session["history_version"] = int(session.get("history_version", 0)) + 1
         session["running"] = True
@@ -754,16 +756,28 @@ def _(rid, params: dict) -> dict:
     task_id = f"bg_{uuid.uuid4().hex[:6]}"
 
     def run():
-        session_tokens = _set_session_context(task_id, cwd=_session_cwd(session))
         try:
-            from run_agent import AIAgent
+            with _bound_session_db(
+                session,
+                session_key=task_id,
+                cwd=_session_cwd(session),
+                ui_session_id=parent,
+            ) as background_db:
+                from run_agent import AIAgent
 
-            result = AIAgent(
-                **_background_agent_kwargs(session["agent"], task_id)
-            ).run_conversation(
-                user_message=text,
-                task_id=task_id,
-            )
+                background_agent = AIAgent(
+                    **_background_agent_kwargs(
+                        session["agent"], task_id, session_db=background_db
+                    )
+                )
+                try:
+                    result = background_agent.run_conversation(
+                        user_message=text,
+                        task_id=task_id,
+                    )
+                finally:
+                    if hasattr(background_agent, "close"):
+                        background_agent.close()
             _emit(
                 "background.complete",
                 parent,
@@ -782,8 +796,6 @@ def _(rid, params: dict) -> dict:
                 parent,
                 {"task_id": task_id, "text": f"error: {e}"},
             )
-        finally:
-            _clear_session_context(session_tokens)
 
     threading.Thread(target=run, daemon=True).start()
     return _ok(rid, {"task_id": task_id})
@@ -851,7 +863,19 @@ def _(rid, params: dict) -> dict:
     def run():
         # Pin the validated preview cwd, else the parent workspace — never an
         # invalid client path, which would silently fall back to the launch dir.
-        session_tokens = _set_session_context(task_id, cwd=(preview_cwd or _session_cwd(session)))
+        session_tokens = _set_session_context(
+            task_id,
+            cwd=(preview_cwd or _session_cwd(session)),
+            ui_session_id=parent,
+            profile=_session_profile(session),
+        )
+        profile_home = str(session.get("profile_home") or "").strip()
+        home_token = set_hermes_home_override(profile_home) if profile_home else None
+        secret_token = (
+            set_secret_scope(build_profile_secret_scope(Path(profile_home)))
+            if profile_home
+            else None
+        )
         try:
             from run_agent import AIAgent
             from tools.terminal_tool import register_task_env_overrides
@@ -896,6 +920,10 @@ def _(rid, params: dict) -> dict:
                 clear_task_env_overrides(task_id)
             except Exception:
                 pass
+            if secret_token is not None:
+                reset_secret_scope(secret_token)
+            if home_token is not None:
+                reset_hermes_home_override(home_token)
             _clear_session_context(session_tokens)
 
     threading.Thread(target=run, daemon=True).start()

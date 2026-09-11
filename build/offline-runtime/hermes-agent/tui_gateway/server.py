@@ -946,21 +946,26 @@ def _ws_session_is_orphaned(session: dict | None) -> bool:
     return session.get("transport") is _detached_ws_transport
 
 
-def _session_owns_durable_lifecycle(session_id: str | None) -> bool:
+def _session_owns_durable_lifecycle(
+    session_id: str | None,
+    session: dict | None = None,
+) -> bool:
     """Whether this TUI/desktop session may end its durable DB row by key."""
     if not session_id:
         return True
     try:
-        db = _get_db()
-        if db is None:
-            return True
-        # Don't end gateway-originated sessions — the gateway owns their
-        # lifecycle. The TUI is only a viewer there (#60609).
-        row = db.get_session(session_id)
+        with _session_db(session or {}) as db:
+            if db is None:
+                return True
+            # Don't end gateway-originated sessions — the gateway owns their
+            # lifecycle. The TUI is only a viewer there (#60609).
+            row = db.get_session(session_id)
         source = (row or {}).get("source", "")
         return not _is_gateway_owned_source(source)
     except Exception:
-        return True
+        # Never infer ownership from another profile's launch DB when the
+        # session's own database cannot be inspected.
+        return not bool(str((session or {}).get("profile_home") or "").strip())
 
 
 def _session_async_delegation_selectors(
@@ -982,7 +987,9 @@ def _session_async_delegation_selectors(
     agent = session.get("agent")
     session_key = str(session.get("session_key") or "")
     session_id = getattr(agent, "session_id", None) or session_key
-    owned_session_key = session_key if _session_owns_durable_lifecycle(session_id) else ""
+    owned_session_key = (
+        session_key if _session_owns_durable_lifecycle(session_id, session) else ""
+    )
     return own_sid, owned_session_key
 
 
@@ -2138,12 +2145,14 @@ def _start_agent_build(sid: str, session: dict) -> None:
                     secret_token = set_secret_scope(build_profile_secret_scope(Path(profile_home)))
                 except Exception:
                     pass
-                try:
-                    from hermes_state import SessionDB
+                from hermes_state import SessionDB
 
+                try:
                     session_db = SessionDB(db_path=Path(profile_home) / "state.db")
-                except Exception:
-                    session_db = None
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"failed to open session database for profile {_session_profile(current)!r}"
+                    ) from exc
 
             try:
                 from tui_gateway.entry import ensure_mcp_discovery_started
@@ -2600,6 +2609,17 @@ def _session_source(session: dict | None) -> str:
     return _resolve_session_platform()
 
 
+def _session_profile(session: dict | None) -> str:
+    """Return the immutable profile identity captured by a live session."""
+    if not session:
+        return ""
+    profile = str(session.get("profile") or "").strip()
+    if profile:
+        return profile
+    profile_home = str(session.get("profile_home") or "").strip()
+    return Path(profile_home).name if profile_home else ""
+
+
 def _register_session_cwd(session: dict | None) -> None:
     if not session:
         return
@@ -2647,9 +2667,10 @@ def _ensure_session_db_row(session: dict) -> None:
 
         try:
             db = SessionDB(db_path=Path(profile_home) / "state.db")
-        except Exception:
-            logger.debug("failed to open profile db for session row", exc_info=True)
-            return
+        except Exception as exc:
+            raise RuntimeError(
+                f"failed to open session database for profile {_session_profile(session)!r}"
+            ) from exc
         close_db = True
     else:
         db = _get_db()
@@ -2802,8 +2823,13 @@ def _session_db(session: dict):
 
         try:
             db, close_db = SessionDB(db_path=Path(profile_home) / "state.db"), True
-        except Exception:
-            logger.debug("failed to open profile db for session", exc_info=True)
+        except Exception as exc:
+            # A named-profile session must never fall back to the launch
+            # profile's database. That would turn an availability failure into
+            # silent cross-employee data corruption.
+            raise RuntimeError(
+                f"failed to open session database for profile {_session_profile(session)!r}"
+            ) from exc
     else:
         db = _get_db()
     try:
@@ -3047,6 +3073,7 @@ def _set_session_context(
     cwd: str | None = None,
     *,
     ui_session_id: str = "",
+    profile: str | None = None,
 ) -> list:
     try:
         from gateway.session_context import set_session_vars
@@ -3067,10 +3094,12 @@ def _set_session_context(
         # fall back to the session_key (matching the id derivation used at
         # session-finalize), so an identified session is never left blank.
         session_id = session_key
+        resolved_profile = str(profile or "").strip()
         with _sessions_lock:
             for sess in list(_sessions.values()):
                 if sess.get("session_key") == session_key:
                     source = _session_source(sess)
+                    resolved_profile = _session_profile(sess)
                     session_id = (
                         getattr(sess.get("agent"), "session_id", None) or session_key
                     )
@@ -3081,6 +3110,7 @@ def _set_session_context(
             source=source,
             cwd=resolved,
             ui_session_id=ui_session_id,
+            profile=resolved_profile,
             cron_session="",
         )
     except Exception:
@@ -3096,6 +3126,60 @@ def _clear_session_context(tokens: list) -> None:
         clear_session_vars(tokens)
     except Exception:
         pass
+
+
+@contextlib.contextmanager
+def _session_environment(
+    session: dict,
+    *,
+    session_key: str | None = None,
+    cwd: str | None = None,
+    ui_session_id: str = "",
+):
+    """Bind Profile, Home, secrets and cwd for work that outlives a request."""
+    key = str(session_key or session.get("session_key") or "")
+    profile_home = str(session.get("profile_home") or "").strip()
+    tokens = _set_session_context(
+        key,
+        cwd=cwd if cwd is not None else _session_cwd(session),
+        ui_session_id=ui_session_id,
+        profile=_session_profile(session),
+    )
+    home_token = set_hermes_home_override(profile_home) if profile_home else None
+    secret_token = (
+        set_secret_scope(build_profile_secret_scope(Path(profile_home)))
+        if profile_home
+        else None
+    )
+    try:
+        yield
+    finally:
+        if secret_token is not None:
+            reset_secret_scope(secret_token)
+        if home_token is not None:
+            reset_hermes_home_override(home_token)
+        _clear_session_context(tokens)
+
+
+@contextlib.contextmanager
+def _bound_session_db(
+    session: dict,
+    *,
+    session_key: str | None = None,
+    cwd: str | None = None,
+    ui_session_id: str = "",
+):
+    """Bind a session environment and yield only that session's database."""
+    with _session_environment(
+        session,
+        session_key=session_key,
+        cwd=cwd,
+        ui_session_id=ui_session_id,
+    ):
+        with _session_db(session) as db:
+            if db is None:
+                raise RuntimeError("session database is unavailable")
+            yield db
 
 
 def _enable_gateway_prompts() -> None:
@@ -3758,33 +3842,31 @@ def _persist_live_session_runtime(session: dict | None) -> None:
     if agent is None or not session_key:
         return
 
-    db = getattr(agent, "_session_db", None) or _get_db()
-    if db is None:
-        return
-
     try:
-        row = db.get_session(session_key) or {}
-        raw_config = row.get("model_config")
-        existing_config = {}
-        if isinstance(raw_config, dict):
-            existing_config = raw_config
-        elif isinstance(raw_config, str) and raw_config.strip():
-            parsed = json.loads(raw_config)
-            if isinstance(parsed, dict):
-                existing_config = parsed
-        model_config = _runtime_model_config(agent, existing_config)
-        create_service_tier_override = session.get("create_service_tier_override")
-        if create_service_tier_override is not None:
-            # _runtime_model_config sees agent.service_tier=None for explicit
-            # normal and would otherwise erase the distinction on every live
-            # metadata persist.
-            model_config["service_tier"] = create_service_tier_override or "normal"
-        model = str(getattr(agent, "model", "") or "").strip()
-        if hasattr(db, "update_session_meta"):
-            db.update_session_meta(session_key, json.dumps(model_config), model or None)
-        elif model and hasattr(db, "update_session_model"):
-            db.update_session_model(session_key, model)
+        with _session_db(session) as db:
+            if db is None:
+                return
+            row = db.get_session(session_key) or {}
+            raw_config = row.get("model_config")
+            existing_config = {}
+            if isinstance(raw_config, dict):
+                existing_config = raw_config
+            elif isinstance(raw_config, str) and raw_config.strip():
+                parsed = json.loads(raw_config)
+                if isinstance(parsed, dict):
+                    existing_config = parsed
+            model_config = _runtime_model_config(agent, existing_config)
+            create_service_tier_override = session.get("create_service_tier_override")
+            if create_service_tier_override is not None:
+                model_config["service_tier"] = create_service_tier_override or "normal"
+            model = str(getattr(agent, "model", "") or "").strip()
+            if hasattr(db, "update_session_meta"):
+                db.update_session_meta(session_key, json.dumps(model_config), model or None)
+            elif model and hasattr(db, "update_session_model"):
+                db.update_session_model(session_key, model)
     except Exception:
+        if str(session.get("profile_home") or "").strip():
+            raise
         logger.debug("failed to persist live session runtime", exc_info=True)
 
 
@@ -3797,15 +3879,16 @@ def _persist_live_session_system_prompt(session: dict | None) -> None:
     if agent is None or not session_key or not hasattr(agent, "_build_system_prompt"):
         return
 
-    db = getattr(agent, "_session_db", None) or _get_db()
-    if db is None or not hasattr(db, "update_system_prompt"):
-        return
-
     try:
-        prompt = agent._build_system_prompt(None)
-        agent._cached_system_prompt = prompt
-        db.update_system_prompt(getattr(agent, "session_id", None) or session_key, prompt)
+        with _session_db(session) as db:
+            if db is None or not hasattr(db, "update_system_prompt"):
+                return
+            prompt = agent._build_system_prompt(None)
+            agent._cached_system_prompt = prompt
+            db.update_system_prompt(getattr(agent, "session_id", None) or session_key, prompt)
     except Exception:
+        if str(session.get("profile_home") or "").strip():
+            raise
         logger.debug("failed to persist live session system prompt", exc_info=True)
 
 
@@ -5940,7 +6023,7 @@ def _agent_fallback_model(agent):
     return _load_fallback_model()
 
 
-def _background_agent_kwargs(agent, task_id: str) -> dict:
+def _background_agent_kwargs(agent, task_id: str, *, session_db) -> dict:
     cfg = _load_cfg()
 
     return {
@@ -5973,13 +6056,13 @@ def _background_agent_kwargs(agent, task_id: str) -> dict:
         "service_tier": getattr(agent, "service_tier", None) or _load_service_tier(),
         "request_overrides": dict(getattr(agent, "request_overrides", {}) or {}),
         "platform": "tui",
-        "session_db": _get_db(),
+        "session_db": session_db,
         "fallback_model": _agent_fallback_model(agent),
     }
 
 
 def _ephemeral_preview_agent_kwargs(agent, task_id: str) -> dict:
-    kwargs = _background_agent_kwargs(agent, task_id)
+    kwargs = _background_agent_kwargs(agent, task_id, session_db=None)
     kwargs.update(
         {
             "enabled_toolsets": ["terminal", "file"],
@@ -6481,6 +6564,7 @@ def _init_session(
     session_db=None,
     source: str | None = None,
     profile_home: str | None = None,
+    profile: str | None = None,
 ):
     now = time.time()
     with _sessions_lock:
@@ -6508,6 +6592,9 @@ def _init_session(
             # launch profile. SessionBranch copies the parent's value so the
             # child stays on the same state.db.
             "profile_home": profile_home,
+            "profile": str(profile or "").strip() or (
+                Path(profile_home).name if profile_home else ""
+            ),
             # Per-session model override set by an in-session /model switch.
             # Honored on rebuild (/new, resume) so a switch in THIS session
             # never leaks into siblings via process-global env vars.
@@ -6525,8 +6612,12 @@ def _init_session(
 
             db = SessionDB(db_path=Path(profile_home) / "state.db")
             _init_owns_db = True
-        except Exception:
-            db = _get_db()
+        except Exception as exc:
+            with _sessions_lock:
+                _sessions.pop(sid, None)
+            raise RuntimeError(
+                f"failed to open session database for profile {str(profile or Path(profile_home).name)!r}"
+            ) from exc
     else:
         db = _get_db()
     try:
@@ -8066,7 +8157,8 @@ def _live_session_payload(
     # Prefer the persisted display lineage (candidate-inclusive) so this payload
     # matches the eager session.resume + REST transcript; the DB has its own
     # lock, so read it outside the session history lock.
-    history = _live_visible_history(session, _get_db(), in_memory_history)
+    with _session_db(session) as db:
+        history = _live_visible_history(session, db, in_memory_history)
     payload = {
         "info": _fallback_session_info(session),
         "message_count": len(history),
@@ -8809,9 +8901,9 @@ def _notification_event_belongs_elsewhere(sid: str, session: dict, evt: dict) ->
     # desktop session instead of becoming an orphan that any poller may consume.
     resolved_key = evt_key
     try:
-        db = _get_db()
-        if db is not None:
-            resolved_key = db.resolve_resume_session_id(evt_key) or evt_key
+        with _session_db(session) as db:
+            if db is not None:
+                resolved_key = db.resolve_resume_session_id(evt_key) or evt_key
     except Exception:
         resolved_key = evt_key
 
@@ -8883,10 +8975,10 @@ def _session_owns_notification_event(sid: str, session: dict, evt: dict) -> bool
     if evt_key in current_keys:
         return True
     try:
-        db = _get_db()
-        resolved_key = (
-            db.resolve_resume_session_id(evt_key) if db is not None else evt_key
-        ) or evt_key
+        with _session_db(session) as db:
+            resolved_key = (
+                db.resolve_resume_session_id(evt_key) if db is not None else evt_key
+            ) or evt_key
     except Exception:
         resolved_key = evt_key
     return resolved_key in current_keys
@@ -9116,7 +9208,11 @@ def _notification_poller_loop(
         if _now - _last_kanban_poll >= _KANBAN_POLL_SECONDS:
             _last_kanban_poll = _now
             try:
-                _kanban_texts = _collect_kanban_notifications(session)
+                with _session_environment(
+                    session,
+                    ui_session_id=sid,
+                ):
+                    _kanban_texts = _collect_kanban_notifications(session)
             except Exception as _kb_exc:
                 print(
                     f"[tui_gateway] kanban notification poll failed: "
@@ -10030,8 +10126,15 @@ def _run_prompt_submit(
                     # model changed before it fires (#19027).
                     _title_model = getattr(agent, "model", None)
                     _title_provider = getattr(agent, "provider", None)
+                    _title_db_session = {
+                        "session_key": _title_key,
+                        "profile": _session_profile(session),
+                        "profile_home": session.get("profile_home"),
+                        "cwd": _session_cwd(session),
+                        "source": _session_source(session),
+                    }
                     maybe_auto_title(
-                        _get_db(),
+                        None,
                         _title_key,
                         title_text,
                         raw,
@@ -10050,6 +10153,12 @@ def _run_prompt_submit(
                         runtime_validator=lambda: (
                             getattr(agent, "model", None) == _title_model
                             and getattr(agent, "provider", None) == _title_provider
+                        ),
+                        session_db_factory=lambda _s=_title_db_session: _bound_session_db(
+                            _s,
+                            session_key=_title_key,
+                            cwd=_s.get("cwd"),
+                            ui_session_id=sid,
                         ),
                         # Push the generated title live so the sidebar renames
                         # without waiting for the next list refresh (the titler
@@ -12368,12 +12477,13 @@ def _format_live_usage_output(session: dict) -> str:
 def _format_live_history_output(session: dict) -> str:
     with session["history_lock"]:
         history = list(session.get("history", []))
-    db = _get_db()
-    if db is not None and session.get("session_key"):
+    if session.get("session_key"):
         try:
-            history = db.get_messages_as_conversation(
-                session["session_key"], include_ancestors=True, include_row_ids=True
-            )
+            with _session_db(session) as db:
+                if db is not None:
+                    history = db.get_messages_as_conversation(
+                        session["session_key"], include_ancestors=True, include_row_ids=True
+                    )
         except Exception:
             pass
     messages = _history_to_messages(history)
@@ -12408,14 +12518,15 @@ def _format_live_prompt_output(session: dict) -> str:
 
 def _format_live_context_output(session: dict) -> str:
     messages = []
-    db = _get_db()
-    if db is not None and session.get("session_key"):
+    if session.get("session_key"):
         try:
-            messages = _history_to_messages(
-                db.get_messages_as_conversation(
-                    session["session_key"], include_ancestors=True, include_row_ids=True
-                )
-            )
+            with _session_db(session) as db:
+                if db is not None:
+                    messages = _history_to_messages(
+                        db.get_messages_as_conversation(
+                            session["session_key"], include_ancestors=True, include_row_ids=True
+                        )
+                    )
         except Exception:
             messages = []
     if not messages:

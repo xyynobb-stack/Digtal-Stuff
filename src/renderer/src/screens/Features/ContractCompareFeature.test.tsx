@@ -118,6 +118,15 @@ describe("ContractCompareFeature", () => {
             ],
           },
         }),
+        listFeatureHistory: vi.fn().mockResolvedValue([]),
+        saveFeatureHistory: vi.fn().mockImplementation(async (input) => ({
+          ...input,
+          id: "contract-history-1",
+          createdAt: 1,
+          updatedAt: 1,
+        })),
+        getFeatureHistory: vi.fn().mockResolvedValue(null),
+        deleteFeatureHistory: vi.fn().mockResolvedValue(true),
       },
     });
   });
@@ -169,8 +178,19 @@ describe("ContractCompareFeature", () => {
     expect(screen.getByText("1 / 1 处变化")).toBeInTheDocument();
     expect(screen.getAllByText(/第二条 金额为/)).toHaveLength(3);
     expect(screen.getByLabelText("差异类型")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "比对结果列表" }),
+    ).toHaveAttribute("tabindex", "0");
     expect(screen.getAllByRole("table")).toHaveLength(2);
     expect(screen.getAllByRole("cell")[0]).toHaveAttribute("colspan", "2");
+    expect(window.hermesAPI.saveFeatureHistory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profile: "default",
+        kind: "contract-compare",
+        oldFile,
+        newFile,
+      }),
+    );
 
     const resultToggle = screen.getByRole("button", {
       name: "展开比对结果",

@@ -10,6 +10,11 @@ function replaceRequired(source, before, after) {
 
 export function patchCompanyFallbackSafety(source, kind) {
   let next = source.replace(/\r\n/g, "\n");
+  // Apply retirement even to already-patched cached runtimes.
+  next = next.replaceAll(
+    "_desktop_fb.is_managed(fb) and not _desktop_fb.is_company(agent)",
+    "_desktop_fb.is_managed(fb)",
+  );
   const marker = `JINGYU_COMPANY_FALLBACK_SAFETY_${kind.toUpperCase()}_V2`;
   if (next.includes(marker)) return finishCompanyFallbackSafety(next, kind);
   const change = (before, after) => {
@@ -49,7 +54,7 @@ export function patchCompanyFallbackSafety(source, kind) {
     agent._fallback_index += 1`,
       `    fb = agent._fallback_chain[agent._fallback_index]
     agent._fallback_index += 1
-    if _desktop_fb.is_managed(fb) and not _desktop_fb.is_company(agent):
+    if _desktop_fb.is_managed(fb):
         return agent._try_activate_fallback(reason)  # Never send other providers' data to AIHub.`,
     );
     change(

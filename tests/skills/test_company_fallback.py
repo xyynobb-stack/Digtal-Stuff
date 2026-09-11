@@ -32,8 +32,24 @@ def agent():
                            _strip_think_blocks=lambda text: text)
 
 
+class RetiredFallbackTests(unittest.TestCase):
+    def test_stale_key_does_not_enable_timer_or_switch(self):
+        current = agent()
+        with patch.object(fallback_config, "resolve_entry_api_key", return_value="stale-key"):
+            self.assertFalse(policy.has_backup(current))
+            policy.begin_request(current, 0)
+            self.assertIsNone(current._desktop_first_response_deadline)
+            self.assertFalse(policy.should_switch(current, ClassifiedError(FailoverReason.rate_limit, status_code=429), RuntimeError(), 1))
+
+
 class CompanyFallbackTests(unittest.TestCase):
+    """Historical policy mechanics with explicit test-only backup availability."""
     def setUp(self):
+        def legacy_backup(current):
+            return policy.is_company(current) and any(policy.is_managed(entry) and fallback_config.resolve_entry_api_key(entry) for entry in current._fallback_chain[current._fallback_index:])
+        backup = patch.object(policy, "has_backup", legacy_backup)
+        backup.start()
+        self.addCleanup(backup.stop)
         self.key = patch.object(fallback_config, "resolve_entry_api_key", lambda entry: "fake-test-key")
         self.key.start()
         self.addCleanup(self.key.stop)

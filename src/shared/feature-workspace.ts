@@ -109,3 +109,53 @@ export interface FeatureOperationResult<T> {
   data?: T;
   error?: string;
 }
+
+export type FeatureHistoryKind = "ocr" | "contract-compare";
+
+interface FeatureHistoryBaseInput {
+  id?: string;
+  profile: string;
+  title: string;
+}
+
+export interface OcrFeatureHistoryInput extends FeatureHistoryBaseInput {
+  kind: "ocr";
+  file: FeaturePickedFile;
+  result: OcrDocumentResult;
+}
+
+export interface ContractFeatureHistoryInput extends FeatureHistoryBaseInput {
+  kind: "contract-compare";
+  oldFile: FeaturePickedFile;
+  newFile: FeaturePickedFile;
+  result: ContractComparisonResult;
+  analysis?: string;
+  analysisModelId?: string;
+  perspective?: ContractAnalysisPerspective;
+  contextMode?: ContractAnalysisContext;
+}
+
+export type FeatureHistorySaveInput =
+  | OcrFeatureHistoryInput
+  | ContractFeatureHistoryInput;
+
+export type FeatureHistoryRecord =
+  | (OcrFeatureHistoryInput & {
+      id: string;
+      createdAt: number;
+      updatedAt: number;
+    })
+  | (ContractFeatureHistoryInput & {
+      id: string;
+      createdAt: number;
+      updatedAt: number;
+    });
+
+export interface FeatureHistorySummary {
+  id: string;
+  kind: FeatureHistoryKind;
+  title: string;
+  sourceNames: string[];
+  createdAt: number;
+  updatedAt: number;
+}

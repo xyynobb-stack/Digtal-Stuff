@@ -33,13 +33,8 @@ def is_managed(entry):
 
 
 def has_backup(agent):
-    if not is_company(agent):
-        return False
-    from hermes_cli.fallback_config import resolve_entry_api_key
-    chain = getattr(agent, "_fallback_chain", []) or []
-    index = getattr(agent, "_fallback_index", 0)
-    return any(is_managed(entry) and resolve_entry_api_key(entry)
-               for entry in chain[index:])
+    # Retired: never enable the managed AIHub route or its first-event timer.
+    return False
 
 
 def visible_text(agent):

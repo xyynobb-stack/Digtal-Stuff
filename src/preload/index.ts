@@ -55,6 +55,10 @@ import type {
   ContractAiAnalysisRequest,
   ContractComparisonResult,
   FeatureFileKind,
+  FeatureHistoryKind,
+  FeatureHistoryRecord,
+  FeatureHistorySaveInput,
+  FeatureHistorySummary,
   FeatureOperationResult,
   FeaturePickedFile,
   OcrDocumentResult,
@@ -1975,6 +1979,22 @@ const hermesAPI = {
     request: ContractAiAnalysisRequest,
   ): Promise<FeatureOperationResult<string>> =>
     ipcRenderer.invoke("feature-analyze-contract", request),
+  saveFeatureHistory: (
+    input: FeatureHistorySaveInput,
+  ): Promise<FeatureHistoryRecord> =>
+    ipcRenderer.invoke("feature-history-save", input),
+  listFeatureHistory: (
+    profile: string,
+    kind: FeatureHistoryKind,
+  ): Promise<FeatureHistorySummary[]> =>
+    ipcRenderer.invoke("feature-history-list", profile, kind),
+  getFeatureHistory: (
+    profile: string,
+    id: string,
+  ): Promise<FeatureHistoryRecord | null> =>
+    ipcRenderer.invoke("feature-history-get", profile, id),
+  deleteFeatureHistory: (profile: string, id: string): Promise<boolean> =>
+    ipcRenderer.invoke("feature-history-delete", profile, id),
 };
 
 if (process.contextIsolated) {

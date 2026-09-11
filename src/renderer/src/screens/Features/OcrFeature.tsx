@@ -1,10 +1,12 @@
-import { useState } from "react";
-import { Check, Copy, FileText, ScanText, Upload } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Check, Copy, FileText, History, ScanText, Upload } from "lucide-react";
 import type {
   ContractDocumentBlock,
+  FeatureHistorySummary,
   FeaturePickedFile,
   OcrDocumentResult,
 } from "../../../../shared/feature-workspace";
+import FeatureHistoryPanel from "./FeatureHistoryPanel";
 
 function fileSize(bytes: number): string {
   return bytes < 1024 * 1024
@@ -81,12 +83,37 @@ function OcrBlocks({
   );
 }
 
-export default function OcrFeature(): React.JSX.Element {
+export default function OcrFeature({
+  profile,
+}: {
+  profile: string;
+}): React.JSX.Element {
   const [file, setFile] = useState<FeaturePickedFile | null>(null);
   const [result, setResult] = useState<OcrDocumentResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [history, setHistory] = useState<FeatureHistorySummary[]>([]);
+  const [activeHistoryId, setActiveHistoryId] = useState("");
+
+  const refreshHistory = useCallback(async (): Promise<void> => {
+    setHistoryLoading(true);
+    try {
+      setHistory(await window.hermesAPI.listFeatureHistory(profile, "ocr"));
+    } catch (cause) {
+      setError(
+        `历史记录加载失败：${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
 
   const pick = async (): Promise<void> => {
     setError("");
@@ -94,6 +121,7 @@ export default function OcrFeature(): React.JSX.Element {
     if (selected) {
       setFile(selected);
       setResult(null);
+      setActiveHistoryId("");
     }
   };
 
@@ -106,11 +134,44 @@ export default function OcrFeature(): React.JSX.Element {
       if (!response.success || !response.data)
         throw new Error(response.error || "识别失败");
       setResult(response.data);
+      const saved = await window.hermesAPI.saveFeatureHistory({
+        profile,
+        kind: "ocr",
+        title: response.data.fileName,
+        file,
+        result: response.data,
+      });
+      setActiveHistoryId(saved.id);
+      await refreshHistory();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setRunning(false);
     }
+  };
+
+  const openHistory = async (id: string): Promise<void> => {
+    setError("");
+    const record = await window.hermesAPI.getFeatureHistory(profile, id);
+    if (!record || record.kind !== "ocr") {
+      setError("历史记录不存在或已损坏");
+      await refreshHistory();
+      return;
+    }
+    setFile(record.file);
+    setResult(record.result);
+    setActiveHistoryId(record.id);
+    setHistoryOpen(false);
+  };
+
+  const deleteHistory = async (id: string): Promise<void> => {
+    if (!(await window.hermesAPI.deleteFeatureHistory(profile, id))) return;
+    if (activeHistoryId === id) {
+      setFile(null);
+      setResult(null);
+      setActiveHistoryId("");
+    }
+    await refreshHistory();
   };
 
   const copy = async (): Promise<void> => {
@@ -147,7 +208,24 @@ export default function OcrFeature(): React.JSX.Element {
         >
           {running ? "正在识别…" : "开始识别"}
         </button>
+        <button
+          className="feature-secondary-button"
+          type="button"
+          aria-expanded={historyOpen}
+          onClick={() => setHistoryOpen((open) => !open)}
+        >
+          <History size={16} /> 历史记录 ({history.length})
+        </button>
       </div>
+      {historyOpen && (
+        <FeatureHistoryPanel
+          items={history}
+          activeId={activeHistoryId}
+          loading={historyLoading}
+          onOpen={(id) => void openHistory(id)}
+          onDelete={(id) => void deleteHistory(id)}
+        />
+      )}
       {file && (
         <div className="feature-file">
           <FileText size={18} />

@@ -86,7 +86,7 @@ The provider list is data-driven from `PROVIDERS.setup` in [[src/renderer/src/co
 
 ## Company gateway fallback
 
-Employee profiles can use AIHub Terra as a request-local backup when the company gateway is unavailable, without changing the saved model or other sessions.
+AIHub 自动兜底已停用。启动时清理全部本地 Profile 的 AIHUB_API_KEY 和系统兜底条目，配置下发及安装包不再注入密钥；运行时跳过遗留 AIHub 候选并关闭专用 30 秒计时。下文保留原机制的历史说明。
 
 The route is `https://aihub.dog/v1/responses`, model `gpt-5.6-terra`, protocol `codex_responses`. [[src/main/agent-config-providers.ts#mirrorCompanyFallbackProvider]] enables it only when the profile has both `CUSTOM_PROVIDER_COMPANY_PLATFORM_KEY` and `AIHUB_API_KEY`. Stable and beta workflows require `AIHUB_API_KEY` as a GitHub Actions Secret and write it into the managed Runtime archive, never tracked source or YAML. [[src/main/managed-aihub-key.ts#mergeBundledAihubKey]] adds it to each profile `.env` only when that profile has no nonempty value; employee auto-configuration also prefers the existing managed/profile value over an optional API response value.
 

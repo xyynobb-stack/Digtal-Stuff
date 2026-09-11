@@ -61,7 +61,11 @@ export async function packageOfflineRuntime({ runtimeRoot, packageRoot }) {
 
   const entries = fs
     .readdirSync(resolvedRuntimeRoot)
-    .filter((entry) => entry !== path.basename(resolvedPackageRoot))
+    .filter(
+      (entry) =>
+        entry !== path.basename(resolvedPackageRoot) &&
+        entry !== "aihub-fallback.env",
+    )
     .sort();
   if (entries.length === 0) {
     throw new Error(
@@ -145,7 +149,6 @@ export async function verifyOfflineRuntimePackage(packageRoot) {
     "git/bin/bash.exe",
     "git/cmd/git.exe",
     "employee-lookup.env",
-    "aihub-fallback.env",
     RUNTIME_BUILD_MARKER_NAME,
   ];
   const missing = required.filter((entry) => !entries.has(entry));

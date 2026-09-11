@@ -65,7 +65,7 @@ export default function FeatureHub({
           fallback={<div className="feature-loading">正在加载功能…</div>}
         >
           {selected === "ocr" ? (
-            <OcrFeature />
+            <OcrFeature profile={profile} />
           ) : selected === "contract-compare" ? (
             <ContractCompareFeature profile={profile} />
           ) : (

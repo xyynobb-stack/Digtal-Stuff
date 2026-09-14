@@ -39,6 +39,7 @@ import {
   desktopRuntimeBuildIdentity,
   desktopRuntimeVersionName,
 } from "./runtime-build";
+import { scheduleInactiveRuntimeCleanup } from "./runtime-cleanup";
 import { recordColdStartTiming } from "./cold-start-timing";
 import { recordInstallCheck } from "./install-check-log";
 
@@ -689,6 +690,14 @@ async function prepareBundledRuntime(): Promise<void> {
         targetRepo,
         expectedBuildIdentity,
       );
+      // Historical Runtime trees can contain hundreds of thousands of files.
+      // Reclaim them after startup instead of extending "Checking local install".
+      scheduleInactiveRuntimeCleanup({
+        managedRoot,
+        versionsRoot,
+        currentVersionName: versionName,
+        currentRepo: targetRepo,
+      });
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

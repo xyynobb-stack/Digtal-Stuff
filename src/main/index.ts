@@ -1,6 +1,6 @@
 import { app } from "electron";
 import { applyGpuPreferences, installGpuCrashGuard } from "./gpu-fallback";
-import { startMainProcess } from "./app/start";
+import { focusMainWindow, startMainProcess } from "./app/start";
 import { loadDotEnvForDev } from "./load-env";
 
 // Dev only: make process.env reflect the project `.env` so runtime env reads
@@ -18,4 +18,10 @@ if (process.env.ENABLE_CDP === "1") {
   );
 }
 
-startMainProcess();
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => focusMainWindow());
+  startMainProcess();
+}

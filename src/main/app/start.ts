@@ -34,6 +34,16 @@ const OPEN_DEVTOOLS_ON_START =
 let mainWindow: BrowserWindow | null = null;
 const activeRuns = new Map<string, () => void>();
 
+/** Bring the primary application window forward after a second launch. */
+// @lat: [[main-process#App Lifecycle#Single desktop instance]]
+export function focusMainWindow(): void {
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
+
 export function startMainProcess(): void {
   process.on("uncaughtException", (err) => {
     console.error("[MAIN UNCAUGHT]", err);

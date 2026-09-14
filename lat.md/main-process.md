@@ -42,6 +42,12 @@ Lifecycle code owns Electron windows, global app events, and shutdown cleanup.
 
 [[src/main/app/start.ts#startMainProcess]] registers crash logging, IPC handlers, updater handlers, Electron ready/activate/window-all-closed/before-quit events, CSP headers, security hardening, and the main BrowserWindow.
 
+### Single desktop instance
+
+Only one JingYuAI main process may own the local Runtime lifecycle at a time, preventing parallel launches from racing activation and background reclamation.
+
+[[src/main/index.ts]] acquires Electron's application-level single-instance lock before startup. A later launch exits and asks [[src/main/app/start.ts#focusMainWindow]] to restore and focus the primary window.
+
 [[src/main/app/start.ts]] also supports the `HERMES_OPEN_DEVTOOLS=1` diagnostic launch path so packaged builds can expose renderer console errors when startup fails before the UI paints.
 
 The packaged renderer keeps its meta CSP aligned with the production response CSP so file-backed startup assets load consistently from `file://` before the main-process header can help.
@@ -111,6 +117,12 @@ Windows packages replace the base Python installation's SQLite DLL with a pinned
 `scripts/prepare-sqlite-runtime.mjs` downloads the official x64 SQLite 3.53.4 archive, verifies its published SHA3-256 before replacing `python-runtime/DLLs/sqlite3.dll`, and then runs the bundled Python against a temporary WAL database with an FTS5 virtual table. Local offline staging and both Windows release channels use the same script; CI checks the SQLite version both before and after Electron packaging, so an old or incompatible DLL stops the release.
 
 Before a missing or invalid version is installed, Runtime preparation stops managed gateway/dashboard PID files across profiles and scans the old managed root for bundled Python process trees. It prepares a private `.staging-*` sibling, validates the staged structure, renames it to its final immutable directory, and only then writes final `pyvenv.cfg`/`.pth` relocation paths. Activation requires the base Python executable, venv and CLI launchers, exact final paths, build marker, and a successful Python probe before `active-runtime.json` is switched; staging paths can never survive into an active venv. A failed preparation leaves the prior active version untouched. [[src/renderer/src/screens/RuntimeFailure/RuntimeFailure.tsx#RuntimeFailure]] surfaces the initialization error as “运行时升级失败/文件被占用” with a retry action instead of treating it as a missing install and showing Welcome. Packaged managed runtimes cannot enter the generic network installer, so a failed health check retries managed preparation rather than deleting the immutable Agent directory. Development installs retain the existing `%LOCALAPPDATA%\\hermes` discovery behavior.
+
+### Inactive Runtime reclamation
+
+After a packaged Runtime is validated and activated, historical immutable versions are reclaimed without extending the renderer's local-install check.
+
+[[src/main/runtime-cleanup.ts#cleanupInactiveRuntimeVersions]] re-reads `active-runtime.json`, requires the exact packaged version and repository path, ignores non-directory entries and links, then quarantines and asynchronously removes every inactive version, failed staging tree, and interrupted cleanup tree. Cleanup is best-effort and serial: locked paths remain for a later launch, while the current Runtime and all Profile data remain untouched.
 
 ### Model-visible Agent identity
 

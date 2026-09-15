@@ -890,12 +890,33 @@ export function syncRepositoryPresetWritingTemplates(
     if (!entry.isDirectory()) continue;
     const source = path.join(starterRoot, entry.name);
     if (!fs.existsSync(path.join(source, "metadata.json"))) continue;
-    fs.cpSync(source, path.join(presetTemplatesRoot, entry.name), {
-      recursive: true,
-    });
+    copyWritingTemplateTree(source, path.join(presetTemplatesRoot, entry.name));
     copied.push(entry.name);
   }
   return copied;
+}
+
+/**
+ * Copy a reviewed template without fs.cpSync's silent Node 22/Windows crash
+ * on non-ASCII directory names. Template inventories contain regular files
+ * and directories only; rejecting links also prevents a preset escaping its
+ * repository-owned source tree during packaging.
+ */
+function copyWritingTemplateTree(source, target) {
+  fs.mkdirSync(target, { recursive: true });
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const sourcePath = path.join(source, entry.name);
+    const targetPath = path.join(target, entry.name);
+    if (entry.isDirectory()) {
+      copyWritingTemplateTree(sourcePath, targetPath);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(sourcePath, targetPath);
+    } else {
+      throw new Error(
+        `Unsupported writing template entry during packaging: ${sourcePath}`,
+      );
+    }
+  }
 }
 
 /**

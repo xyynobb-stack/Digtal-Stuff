@@ -621,24 +621,27 @@ describe("market report workflow development overlay", () => {
     tempRoots.push(root);
     const starters = join(root, "starters");
     const presets = join(root, "presets");
-    const source = join(starters, "daily-report-123");
-    mkdirSync(source, { recursive: true });
+    const templateId = "日报模板-123";
+    const source = join(starters, templateId);
+    mkdirSync(join(source, "附件"), { recursive: true });
     writeFileSync(join(source, "metadata.json"), '{"name":"日报模板"}', "utf8");
     writeFileSync(join(source, "日报模板.xlsx"), "canonical");
-    mkdirSync(join(presets, "daily-report-123"), { recursive: true });
-    writeFileSync(join(presets, "daily-report-123", "stale.txt"), "stale");
+    writeFileSync(join(source, "附件", "说明.txt"), "nested");
+    mkdirSync(join(presets, templateId), { recursive: true });
+    writeFileSync(join(presets, templateId, "stale.txt"), "stale");
     mkdirSync(join(presets, "removed-template"), { recursive: true });
     writeFileSync(join(presets, "removed-template", "metadata.json"), "{}");
 
     expect(syncRepositoryPresetWritingTemplates(starters, presets)).toEqual([
-      "daily-report-123",
+      templateId,
     ]);
     expect(
-      readFileSync(join(presets, "daily-report-123", "日报模板.xlsx"), "utf8"),
+      readFileSync(join(presets, templateId, "日报模板.xlsx"), "utf8"),
     ).toBe("canonical");
-    expect(existsSync(join(presets, "daily-report-123", "stale.txt"))).toBe(
-      false,
-    );
+    expect(
+      readFileSync(join(presets, templateId, "附件", "说明.txt"), "utf8"),
+    ).toBe("nested");
+    expect(existsSync(join(presets, templateId, "stale.txt"))).toBe(false);
     expect(existsSync(join(presets, "removed-template"))).toBe(false);
   });
 

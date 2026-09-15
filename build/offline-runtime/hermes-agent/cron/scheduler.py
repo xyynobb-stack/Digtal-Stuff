@@ -2440,6 +2440,23 @@ def _parse_wake_gate(script_output: str) -> bool:
     return gate.get("wakeAgent", True) is not False
 
 
+def _resolve_job_deliverable_output_dir(job: dict) -> Optional[str]:
+    """Resolve the configured directory used for generated user deliverables."""
+    raw = str(job.get("output_dir") or "").strip()
+    if not raw:
+        return None
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError(f"Cron output directory must be absolute: {raw!r}")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"Cron output directory is unavailable: {candidate}") from exc
+    if not resolved.is_dir():
+        raise ValueError(f"Cron output directory is not a directory: {resolved}")
+    return str(resolved)
+
+
 def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
     """Build the effective prompt for a cron job, optionally loading one or more skills first.
 
@@ -2453,6 +2470,18 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
     """
     user_prompt = str(job.get("prompt") or "")
     prompt = user_prompt
+    deliverable_output_dir = _resolve_job_deliverable_output_dir(job)
+    if deliverable_output_dir:
+        output_note = (
+            "[Scheduled job output location]\n"
+            f"Save every newly generated user-facing deliverable in: {deliverable_output_dir}\n"
+            "Use absolute paths under that directory and save deliverables directly "
+            "there unless the task explicitly requests a subdirectory. Do not leave "
+            "the only copy in a temporary workspace or only expose it as a transient "
+            "chat download. The scheduler stores its execution record separately; "
+            "that record does not count as the requested deliverable."
+        )
+        prompt = f"{output_note}\n\n{prompt}"
     skills = job.get("skills")
     # True when runtime-collected DATA (script stdout, upstream-job output)
     # has been injected into the prompt. Data content legitimately quotes
@@ -3047,7 +3076,8 @@ def run_job(
     # letting set_session_vars handle the _SESSION_CWD ContextVar set/clear
     # via its existing machinery (clear_session_vars calls clear_session_cwd
     # internally). This avoids a separate import/set/clear dance (#69396).
-    _job_workdir = (job.get("workdir") or "").strip() or None
+    _configured_workdir = (job.get("workdir") or "").strip() or None
+    _job_workdir = _configured_workdir or _resolve_job_deliverable_output_dir(job)
     if _job_workdir and not Path(_job_workdir).is_dir():
         logger.warning(
             "Job '%s': configured workdir %r no longer exists — running without it",

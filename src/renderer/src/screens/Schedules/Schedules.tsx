@@ -402,7 +402,9 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
         profile,
         selectedModel.model,
         selectedModel.provider,
-        newDeliver === "local" ? newOutputDir || undefined : undefined,
+        newDeliver === "local"
+          ? newOutputDir || localOutputDir || undefined
+          : undefined,
         recommendationType && selectedTemplate
           ? requiredSkillsForTemplate(selectedTemplate)
           : undefined,

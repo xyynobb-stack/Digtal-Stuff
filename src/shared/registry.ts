@@ -12,7 +12,11 @@ export interface RegistryItem {
   name: string;
   /** Optional renderer-only label; identity and actions still use name. */
   displayName?: string;
+  /** Optional renderer-only provider label; provenance remains in author. */
+  displayAuthor?: string;
   description: string;
+  /** Optional localized presentation copy; Registry content remains unchanged. */
+  displayDescription?: string;
   author?: string;
   category?: string;
   tags?: string[];

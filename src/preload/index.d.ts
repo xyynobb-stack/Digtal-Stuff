@@ -5,6 +5,7 @@ import type {
 } from "../shared/employee-workspace";
 import type { Attachment } from "../shared/attachments";
 import type {
+  DeleteWritingTemplateResult,
   ImportWritingTemplateResult,
   ReplaceWritingTemplateResult,
   WritingTemplate,
@@ -914,6 +915,10 @@ interface HermesAPI {
     profile?: string,
   ) => Promise<ReplaceWritingTemplateResult>;
   openWritingTemplate: (id: string, profile?: string) => Promise<boolean>;
+  deleteWritingTemplate: (
+    id: string,
+    profile?: string,
+  ) => Promise<DeleteWritingTemplateResult>;
   getSkillContent: (skillPath: string) => Promise<string>;
   installSkill: (
     identifier: string,

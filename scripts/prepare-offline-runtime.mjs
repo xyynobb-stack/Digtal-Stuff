@@ -156,11 +156,11 @@ const presetSources = [
     label: "repository preset Skills",
   },
   {
-    source: path.join(hermesHome, "writing-templates"),
+    source: path.join(projectRoot, "resources", "starter-writing-templates"),
     target: path.join(presetContentRoot, "writing-templates"),
     include: (entryPath) =>
       fs.existsSync(path.join(entryPath, "metadata.json")),
-    label: "writing templates",
+    label: "repository preset writing templates",
   },
 ];
 

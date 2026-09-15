@@ -256,6 +256,115 @@ def _export_contract_analysis(request: Mapping[str, Any]) -> dict[str, Any]:
     return {"path": str(output_path)}
 
 
+def _export_work_record(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Export one saved work record as an atomic, readable Word document."""
+    from datetime import datetime
+
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt
+
+    output_path = Path(str(request.get("outputPath") or "")).expanduser()
+    if not str(request.get("outputPath") or "").strip():
+        raise ValueError("缺少导出路径")
+    if output_path.suffix.lower() != ".docx":
+        raise ValueError("导出文件必须为 DOCX 格式")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    document = Document()
+    section = document.sections[0]
+    section.top_margin = Cm(2.4)
+    section.bottom_margin = Cm(2.4)
+    section.left_margin = Cm(2.5)
+    section.right_margin = Cm(2.5)
+
+    normal = document.styles["Normal"]
+    normal.font.name = "Microsoft YaHei"
+    normal.font.size = Pt(10.5)
+    normal._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+    for style_name, size in (("Title", 20), ("Heading 1", 15), ("Heading 2", 13)):
+        style = document.styles[style_name]
+        style.font.name = "Microsoft YaHei"
+        style.font.size = Pt(size)
+        style._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+
+    title = document.add_paragraph(style="Title")
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title.add_run(str(request.get("title") or "工作记录"))
+    _set_run_font(title_run, "Microsoft YaHei", 20)
+    title_run.bold = True
+
+    created_at = request.get("createdAt")
+    try:
+        created_text = datetime.fromtimestamp(float(created_at) / 1000).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    except (TypeError, ValueError, OSError):
+        created_text = "未记录"
+    status = {
+        "running": "进行中",
+        "completed": "已完成",
+        "failed": "失败",
+        "interrupted": "已中断",
+    }.get(str(request.get("status") or ""), str(request.get("status") or "未记录"))
+    metadata = [
+        ("员工", str(request.get("profileName") or "未记录")),
+        ("记录时间", created_text),
+        ("状态", status),
+        ("导出时间", time.strftime("%Y-%m-%d %H:%M:%S")),
+    ]
+    table = document.add_table(rows=len(metadata), cols=2)
+    table.style = "Light Shading Accent 1"
+    for row_index, (label, value) in enumerate(metadata):
+        label_cell, value_cell = table.rows[row_index].cells
+        label_cell.text = ""
+        value_cell.text = ""
+        label_run = label_cell.paragraphs[0].add_run(label)
+        _set_run_font(label_run)
+        label_run.bold = True
+        _set_run_font(value_cell.paragraphs[0].add_run(value))
+
+    document.add_heading("我的要求", level=1)
+    _render_markdown(document, str(request.get("prompt") or "暂无内容"))
+
+    document.add_heading("执行过程", level=1)
+    steps = request.get("steps")
+    valid_steps = (
+        [step for step in steps if isinstance(step, Mapping)]
+        if isinstance(steps, list)
+        else []
+    )
+    if valid_steps:
+        for step in valid_steps:
+            step_status = {
+                "running": "进行中",
+                "completed": "已完成",
+                "failed": "失败",
+            }.get(str(step.get("status") or ""), str(step.get("status") or "未记录"))
+            paragraph = document.add_paragraph(style="List Bullet")
+            _add_markdown_runs(
+                paragraph,
+                f"{str(step.get('label') or '未命名步骤')}（{step_status}）",
+            )
+    else:
+        _set_run_font(document.add_paragraph().add_run("暂无执行步骤"))
+
+    document.add_heading("结果摘要", level=1)
+    _render_markdown(document, str(request.get("resultSummary") or "暂无结果"))
+
+    temporary_path = output_path.with_name(
+        f".{output_path.stem}.{secrets.token_hex(6)}.tmp.docx"
+    )
+    try:
+        document.save(temporary_path)
+        os.replace(temporary_path, output_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+    return {"path": str(output_path)}
+
+
 def _mineru_config() -> dict[str, Any]:
     """Load the packaged MinerU endpoint while allowing deployment overrides."""
     config_path = Path(__file__).with_name("mineru-config.json")
@@ -1122,6 +1231,8 @@ def main() -> None:
         result = _compare(request)
     elif action == "export_contract_analysis":
         result = _export_contract_analysis(request)
+    elif action == "export_work_record":
+        result = _export_work_record(request)
     else:
         raise ValueError("未知的文档处理操作")
     result["elapsedMs"] = round((time.perf_counter() - started) * 1000)

@@ -42,6 +42,7 @@ import {
 import { scheduleInactiveRuntimeCleanup } from "./runtime-cleanup";
 import { recordColdStartTiming } from "./cold-start-timing";
 import { recordInstallCheck } from "./install-check-log";
+import { COMPANY_AGENT_IDENTITY } from "./soul";
 
 const IS_WINDOWS = process.platform === "win32";
 const RUNTIME_ARCHIVE_NAME = "runtime.tar";
@@ -938,13 +939,22 @@ const COMPANY_VISIBLE_LANGUAGE_RULES_MARKER =
 const STOCK_SOUL_IDENTITY_REPLACEMENTS = [
   [
     "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
-    "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+    COMPANY_AGENT_IDENTITY,
   ],
   [
     "You are an Agent, an intelligent AI assistant created by Nous Research.",
-    "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+    COMPANY_AGENT_IDENTITY,
   ],
-  ["This offline build of Hermes One", "This offline build of JingYu Agent"],
+  [
+    "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+    COMPANY_AGENT_IDENTITY,
+  ],
+  [
+    "You are JingYuAI, a helpful AI assistant. You are friendly, knowledgeable, and always eager to help.",
+    COMPANY_AGENT_IDENTITY,
+  ],
+  ["You are JingYu Agent, a helpful AI assistant.", COMPANY_AGENT_IDENTITY],
+  ["This offline build of Hermes One", "This offline build of 旌渝数字员工"],
 ] as const;
 const STALE_OFFLINE_TOOLING_GUIDANCE =
   "This offline build of JingYu Agent does not come with Git Bash, curl, or wget pre-installed.\n" +
@@ -971,11 +981,14 @@ export function mergeBundledSoulRules(
   bundledRules: string,
 ): string {
   const migrated = migrateStockSoulIdentity(existing);
+  const withIdentity = migrated.includes(COMPANY_AGENT_IDENTITY)
+    ? migrated
+    : `${migrated.trimEnd()}${migrated.trimEnd() ? "\n\n" : ""}${COMPANY_AGENT_IDENTITY}\n`;
   const rules = bundledRules.trim();
-  if (!rules || migrated.includes(COMPANY_VISIBLE_LANGUAGE_RULES_MARKER)) {
-    return migrated;
+  if (!rules || withIdentity.includes(COMPANY_VISIBLE_LANGUAGE_RULES_MARKER)) {
+    return withIdentity;
   }
-  return `${migrated.trimEnd()}${migrated.trimEnd() ? "\n\n" : ""}${rules}\n`;
+  return `${withIdentity.trimEnd()}${withIdentity.trimEnd() ? "\n\n" : ""}${rules}\n`;
 }
 
 /**

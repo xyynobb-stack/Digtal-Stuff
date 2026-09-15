@@ -27,6 +27,9 @@ import {
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
+export const COMPANY_AGENT_IDENTITY_PROMPT =
+  "你是由旌渝公司提供的数字员工智能助手。品牌名称固定写作“旌渝”，不得将其翻译、音译或改写为“京域”“景域”“JingYu”等其他形式。";
+
 export const JINGYU_AGENT_PROMPT_RELATIVE_PATHS = [
   "agent/prompt_builder.py",
   "agent/system_prompt.py",
@@ -311,7 +314,7 @@ export function patchCompanyResponsesFallbackLoopSource(source) {
  * identity. Internal compatibility names (HERMES_HOME, the `hermes` CLI, and
  * the `hermes-agent` Skill name) intentionally remain unchanged.
  *
- * @returns {string} Agent source with JingYu-facing identity prompts.
+ * @returns {string} Agent source with the managed 旌渝 identity prompts.
  */
 export function patchJingYuAgentIdentitySource(source) {
   const normalized = source
@@ -321,11 +324,11 @@ export function patchJingYuAgentIdentitySource(source) {
   const replacements = [
     [
       "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
-      "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+      COMPANY_AGENT_IDENTITY_PROMPT,
     ],
     [
       "You are an Agent, an intelligent AI assistant created by Nous Research.",
-      "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+      COMPANY_AGENT_IDENTITY_PROMPT,
     ],
     ["This offline build of Hermes One", "This offline build of JingYu Agent"],
     [
@@ -418,6 +421,27 @@ export function patchJingYuAgentIdentitySource(source) {
   let patched = normalized;
   let changed = false;
   for (const [from, to] of replacements) {
+    if (!patched.includes(from)) continue;
+    patched = patched.replaceAll(from, to);
+    changed = true;
+  }
+  const managedIdentityReplacements = [
+    [
+      "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+      COMPANY_AGENT_IDENTITY_PROMPT,
+    ],
+    [
+      "You are JingYuAI, a helpful AI assistant. You are friendly, knowledgeable, and always eager to help.",
+      COMPANY_AGENT_IDENTITY_PROMPT,
+    ],
+    [
+      "You are JingYu Agent, a helpful AI assistant.",
+      COMPANY_AGENT_IDENTITY_PROMPT,
+    ],
+    ["JingYu Agent", "旌渝数字员工"],
+    ["JingYuAI", "旌渝"],
+  ];
+  for (const [from, to] of managedIdentityReplacements) {
     if (!patched.includes(from)) continue;
     patched = patched.replaceAll(from, to);
     changed = true;
@@ -835,6 +859,46 @@ export function syncRepositoryPresetSkills(
 }
 
 /**
+ * Synchronize repository-owned writing templates into the staged Runtime preset.
+ *
+ * Unlike builder-profile templates, these reviewed templates are guaranteed to
+ * be present in every release build, including versioned Runtime overlay jobs.
+ */
+export function syncRepositoryPresetWritingTemplates(
+  starterRoot = path.join(
+    projectRoot,
+    "resources",
+    "starter-writing-templates",
+  ),
+  presetTemplatesRoot = path.join(
+    projectRoot,
+    "build",
+    "offline-runtime",
+    "preset-content",
+    "writing-templates",
+  ),
+) {
+  if (!fs.existsSync(starterRoot)) {
+    throw new Error(
+      `Repository starter writing templates not found: ${starterRoot}`,
+    );
+  }
+  fs.rmSync(presetTemplatesRoot, { recursive: true, force: true });
+  fs.mkdirSync(presetTemplatesRoot, { recursive: true });
+  const copied = [];
+  for (const entry of fs.readdirSync(starterRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const source = path.join(starterRoot, entry.name);
+    if (!fs.existsSync(path.join(source, "metadata.json"))) continue;
+    fs.cpSync(source, path.join(presetTemplatesRoot, entry.name), {
+      recursive: true,
+    });
+    copied.push(entry.name);
+  }
+  return copied;
+}
+
+/**
  * @returns {{agentRoot: string, runAgentPath: string, gatewayServerPath: string, dashboardServerPath: string, dashboardCliPath: string, ttsToolPath: string, executeCodeToolPath: string, desktopMethods: string}}
  * Paths for the verified staged overlay.
  */
@@ -848,6 +912,7 @@ export function applyOfflineRuntimeOverlays({
   overlayRoot = path.join(projectRoot, "resources", "hermes-agent-overlays"),
 } = {}) {
   syncRepositoryPresetSkills();
+  syncRepositoryPresetWritingTemplates();
   const gatewayServerPath = path.join(agentRoot, "tui_gateway", "server.py");
   const gatewayPromptPath = path.join(
     agentRoot,

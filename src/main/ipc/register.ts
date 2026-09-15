@@ -401,6 +401,7 @@ import {
   uninstallSkill,
 } from "../skills";
 import {
+  deleteWritingTemplate,
   importWritingTemplate,
   listWritingTemplates,
   replaceWritingTemplateFile,
@@ -3184,6 +3185,16 @@ export function registerIpcHandlers(context: IpcContext): void {
       );
       if (!template) return false;
       return (await shell.openPath(template.path)) === "";
+    },
+  );
+  ipcMain.handle(
+    "delete-writing-template",
+    (_event, id: string, profile?: string) => {
+      const conn = getConnectionConfig();
+      if (conn.mode === "ssh" || conn.mode === "remote") {
+        return { success: false, error: "当前仅支持删除本机写作模板。" };
+      }
+      return deleteWritingTemplate(id, profile);
     },
   );
   ipcMain.handle("get-skill-content", (_event, skillPath: string) => {

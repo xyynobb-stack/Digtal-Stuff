@@ -5,6 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
+  COMPANY_AGENT_IDENTITY_PROMPT,
   JINGYU_AGENT_PROMPT_RELATIVE_PATHS,
   patchCompanyResponsesFallbackLoopSource,
   patchCompanyResponsesFallbackSource,
@@ -273,13 +274,18 @@ export function ensureDevVisibleLanguageRules(
     if (!fs.existsSync(soulPath)) continue;
     found = true;
     const source = fs.readFileSync(soulPath, "utf8");
-    const migrated = source.replaceAll(
-      staleOfflineToolingGuidance,
-      currentOfflineToolingGuidance,
+    const migrated = patchJingYuAgentIdentitySource(
+      source.replaceAll(
+        staleOfflineToolingGuidance,
+        currentOfflineToolingGuidance,
+      ),
     );
-    const next = migrated.includes(visibleLanguageRulesMarker)
+    const withIdentity = migrated.includes(COMPANY_AGENT_IDENTITY_PROMPT)
       ? migrated
-      : `${migrated.trimEnd()}${migrated.trimEnd() ? "\n\n" : ""}${rules}\n`;
+      : `${migrated.trimEnd()}${migrated.trimEnd() ? "\n\n" : ""}${COMPANY_AGENT_IDENTITY_PROMPT}\n`;
+    const next = withIdentity.includes(visibleLanguageRulesMarker)
+      ? withIdentity
+      : `${withIdentity.trimEnd()}${withIdentity.trimEnd() ? "\n\n" : ""}${rules}\n`;
     if (next !== source) fs.writeFileSync(soulPath, next, "utf8");
   }
   return found;

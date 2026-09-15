@@ -295,14 +295,22 @@ function buildSpec(
   if (item.tags?.length) rows.push({ label: "Tags", chips: item.tags });
   const license = m?.license || item.license;
   if (license) rows.push({ label: "License", value: license });
-  if (item.author) rows.push({ label: "Author", value: item.author });
+  if (item.displayAuthor) {
+    rows.push({ label: "提供方", value: item.displayAuthor });
+  } else if (item.author) {
+    rows.push({ label: "Author", value: item.author });
+  }
   if (item.version) rows.push({ label: "Version", value: item.version });
   const compat = m?.compatibility;
   if (compat?.hermes) {
     rows.push({ label: "Requires JingYuAI", value: compat.hermes, mono: true });
   }
 
-  return { description: m?.description || item.description || "", rows };
+  return {
+    description:
+      item.displayDescription || m?.description || item.description || "",
+    rows,
+  };
 }
 
 /**
@@ -315,14 +323,16 @@ export async function fetchRegistryDetail(
   kind: RegistryKind,
   item: RegistryItem,
 ): Promise<RegistryDetail> {
-  if (!item.path) return { description: item.description || "" };
+  if (!item.path) {
+    return { description: item.displayDescription || item.description || "" };
+  }
 
   if (kind === "skills") {
     for (const file of ["SKILL.md", "README.md"]) {
       const text = await tryFetchText(`${item.path}/${file}`);
       if (text) return { markdown: text };
     }
-    return { description: item.description || "" };
+    return { description: item.displayDescription || item.description || "" };
   }
 
   const m = await fetchManifest(item.path);

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Schedules from "./Schedules";
+import Schedules, { buildCustomSchedule } from "./Schedules";
 
 vi.mock("../../components/useI18n", () => ({
   useI18n: () => ({
@@ -45,7 +45,12 @@ describe("Schedules recommendations", () => {
           model: "gpt-test",
           baseUrl: "https://example.test",
         })),
+        isRemoteMode: vi.fn(async () => false),
         listWritingTemplates: vi.fn(async () => [template]),
+        importWritingTemplate: vi.fn(async () => ({
+          success: true,
+          template,
+        })),
         createCronJob: vi.fn(async () => ({ success: true })),
         selectFolder: vi.fn(async () => null),
       },
@@ -111,5 +116,117 @@ describe("Schedules recommendations", () => {
     expect(call[4]).toBe("writer");
     expect(call[5]).toBe("gpt-test");
     expect(call[6]).toBe("openai");
+  });
+
+  it("creates an ordinary task with an optional template and required workbook skill", async () => {
+    render(<Schedules profile="writer" />);
+
+    await screen.findByText("schedules.empty");
+    fireEvent.click(screen.getByRole("button", { name: "schedules.newTask" }));
+    const selector = await screen.findByLabelText("写作模板（可选）");
+    expect(selector).toHaveValue("");
+    fireEvent.change(selector, { target: { value: template.id } });
+    fireEvent.change(
+      screen.getByPlaceholderText("schedules.promptPlaceholder"),
+      { target: { value: "整理本月项目进展。" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "schedules.create" }));
+
+    await waitFor(() =>
+      expect(window.hermesAPI.createCronJob).toHaveBeenCalled(),
+    );
+    const call = vi.mocked(window.hermesAPI.createCronJob).mock.calls[0];
+    expect(call[1]).toContain("整理本月项目进展。");
+    expect(call[1]).toContain("C:\\templates\\周报模板.xlsx");
+    expect(call[8]).toEqual(["xlsx"]);
+  });
+
+  it("imports a template from the create form and selects it immediately", async () => {
+    const imported = {
+      ...template,
+      id: "new-docx",
+      name: "新合同模板",
+      fileName: "新合同模板.docx",
+      extension: "docx",
+      path: "C:\\templates\\新合同模板.docx",
+    };
+    vi.mocked(window.hermesAPI.listWritingTemplates)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([imported]);
+    vi.mocked(window.hermesAPI.importWritingTemplate).mockResolvedValueOnce({
+      success: true,
+      template: imported,
+    });
+
+    render(<Schedules profile="writer" />);
+    await screen.findByText("schedules.empty");
+    fireEvent.click(screen.getByRole("button", { name: "schedules.newTask" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加写作模板" }));
+
+    await waitFor(() =>
+      expect(window.hermesAPI.importWritingTemplate).toHaveBeenCalledWith(
+        "writer",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("写作模板（可选）")).toHaveValue(
+        imported.id,
+      ),
+    );
+  });
+
+  it("disables local template actions in remote mode", async () => {
+    vi.mocked(window.hermesAPI.isRemoteMode).mockResolvedValueOnce(true);
+
+    render(<Schedules profile="remote-profile" />);
+    await screen.findByText("schedules.empty");
+    fireEvent.click(screen.getByRole("button", { name: "schedules.newTask" }));
+
+    expect(await screen.findByLabelText("写作模板（可选）")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "添加写作模板" })).toBeDisabled();
+    expect(
+      screen.getByText("写作模板目前仅支持本地计划任务。"),
+    ).toBeInTheDocument();
+  });
+
+  it("builds a custom annual schedule from plain date and time fields", async () => {
+    render(<Schedules profile="writer" />);
+    await screen.findByText("schedules.empty");
+    fireEvent.click(screen.getByRole("button", { name: "schedules.newTask" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "schedules.frequencyCustom" }),
+    );
+
+    fireEvent.change(screen.getByLabelText("schedules.customMonth"), {
+      target: { value: "12" },
+    });
+    fireEvent.change(screen.getByLabelText("schedules.customDay"), {
+      target: { value: "31" },
+    });
+    fireEvent.change(screen.getByLabelText("schedules.customHour"), {
+      target: { value: "23" },
+    });
+    fireEvent.change(screen.getByLabelText("schedules.customMinute"), {
+      target: { value: "45" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("schedules.promptPlaceholder"),
+      { target: { value: "生成年度总结。" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "schedules.create" }));
+
+    await waitFor(() =>
+      expect(window.hermesAPI.createCronJob).toHaveBeenCalled(),
+    );
+    expect(vi.mocked(window.hermesAPI.createCronJob).mock.calls[0][0]).toBe(
+      "45 23 31 12 *",
+    );
+  });
+
+  it("rejects impossible custom dates but allows February 29", () => {
+    expect(buildCustomSchedule("2", "30", "9", "0")).toBeNull();
+    expect(buildCustomSchedule("2", "29", "9", "0")).toBe("0 9 29 2 *");
+    expect(buildCustomSchedule("13", "1", "9", "0")).toBeNull();
+    expect(buildCustomSchedule("1", "1", "24", "0")).toBeNull();
   });
 });

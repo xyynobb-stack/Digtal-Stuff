@@ -6,6 +6,7 @@ import type {
 } from "../shared/employee-workspace";
 import type { Attachment } from "../shared/attachments";
 import type {
+  DeleteWritingTemplateResult,
   ImportWritingTemplateResult,
   ReplaceWritingTemplateResult,
   WritingTemplate,
@@ -1269,6 +1270,11 @@ const hermesAPI = {
     ipcRenderer.invoke("replace-writing-template-file", id, profile),
   openWritingTemplate: (id: string, profile?: string): Promise<boolean> =>
     ipcRenderer.invoke("open-writing-template", id, profile),
+  deleteWritingTemplate: (
+    id: string,
+    profile?: string,
+  ): Promise<DeleteWritingTemplateResult> =>
+    ipcRenderer.invoke("delete-writing-template", id, profile),
   getSkillContent: (skillPath: string): Promise<string> =>
     ipcRenderer.invoke("get-skill-content", skillPath),
   installSkill: (

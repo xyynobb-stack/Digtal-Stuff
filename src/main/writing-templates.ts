@@ -5,12 +5,14 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   unlinkSync,
   statSync,
   writeFileSync,
 } from "fs";
 import { basename, extname, join } from "path";
 import type {
+  DeleteWritingTemplateResult,
   ImportWritingTemplateResult,
   ReplaceWritingTemplateResult,
   WritingTemplate,
@@ -237,4 +239,31 @@ export function updateWritingTemplateDescription(
         const { description: _description, ...withoutDescription } = template;
         return withoutDescription;
       })();
+}
+
+/** Delete one validated profile-owned template directory. */
+// @lat: [[discover#Writing templates entry]]
+export function deleteWritingTemplate(
+  id: string,
+  profile?: string,
+): DeleteWritingTemplateResult {
+  try {
+    if (!id || basename(id) !== id || id === "." || id === "..") {
+      return { success: false, error: "写作模板不存在。" };
+    }
+
+    const directory = join(templatesRoot(profile), id);
+    const template = readTemplateMetadata(directory);
+    if (!template || template.id !== id) {
+      return { success: false, error: "写作模板不存在。" };
+    }
+
+    rmSync(directory, { recursive: true });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }

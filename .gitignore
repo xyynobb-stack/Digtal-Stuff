@@ -40,6 +40,9 @@ release/
 # administrator credential and must never be committed.
 /build/offline-runtime/employee-lookup.env
 
+# Generated from resources/starter-writing-templates during packaging.
+/build/offline-runtime/preset-content/writing-templates/
+
 # Downloaded by prepare-portable-git.mjs for local and CI packaging. The full
 # PortableGit distribution is generated build input, not repository source.
 /build/offline-runtime/git/

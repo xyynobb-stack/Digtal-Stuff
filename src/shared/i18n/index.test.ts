@@ -21,8 +21,20 @@ describe("shared i18n", () => {
   it("contains the Chinese reasoning, profile, and appearance labels", () => {
     expect(t("chat.reasoningEffort.title", "zh-CN")).toBe("推理能力");
     expect(t("navigation.profile", "zh-CN")).toBe("个人资料");
-    expect(t("settings.hardwareAcceleration.label", "zh-CN")).toBe(
-      "硬件加速",
+    expect(t("settings.hardwareAcceleration.label", "zh-CN")).toBe("硬件加速");
+  });
+
+  it("contains Simplified Chinese labels for every session-menu action", () => {
+    // @lat: [[sidebar-navigation#Sidebar recent sessions#Row context menu]]
+    expect(t("navigation.sessionMenu.pin", "zh-CN")).toBe("置顶");
+    expect(t("navigation.sessionMenu.unpin", "zh-CN")).toBe("取消置顶");
+    expect(t("navigation.sessionMenu.rename", "zh-CN")).toBe("重命名");
+    expect(t("navigation.sessionMenu.moveToProject", "zh-CN")).toBe(
+      "移动到项目",
+    );
+    expect(t("navigation.sessionMenu.delete", "zh-CN")).toBe("删除");
+    expect(t("navigation.sessionMenu.deleteConfirmTitle", "zh-CN")).toBe(
+      "删除聊天？",
     );
   });
 

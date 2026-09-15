@@ -10,6 +10,12 @@
 
 详情正文拥有独立滚动区域；记录名称在页面内编辑，使用明确的保存和取消操作，不依赖 Electron Renderer 不支持的浏览器原生 `prompt()`。
 
+## Single record Word export
+
+详情底部的“导出这条记录”通过系统另存为对话框输出 DOCX，用户可自选保存位置；顶部“导出我的记录”继续导出筛选结果 CSV，两者互不影响。
+
+单条 Word 包含记录标题、员工与时间等元数据、用户要求、执行过程和结果摘要。模型返回的 Markdown 标题、列表、强调和表格会转换为 Word 结构；文件经临时文件完整写入后原子替换。`python-docx` 只在发布工作流构建离线运行时阶段安装并校验，不进入应用的 `check-install` 或 `verify-install`。
+
 ## Employee workspace continuity
 
 首次员工工作区迁移会在单个 SQLite 事务中把旧 `default` 记录重新归属到已认领的员工 Profile，使“我的记录”和聊天历史同时恢复可见。

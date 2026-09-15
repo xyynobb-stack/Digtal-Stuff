@@ -253,6 +253,42 @@ class DocumentToolsTests(unittest.TestCase):
             )
             self.assertEqual(len(document.tables), 2)
 
+    # @lat: [[work-records#Single record Word export]]
+    def test_work_record_export_converts_result_markdown_to_docx(self):
+        from docx import Document
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "工作记录.docx"
+            result = MODULE._export_work_record(
+                {
+                    "outputPath": str(output_path),
+                    "title": "合同差异分析",
+                    "profileName": "向永驿",
+                    "createdAt": 1_789_444_800_000,
+                    "status": "completed",
+                    "prompt": "请分析两份合同的区别",
+                    "steps": [
+                        {"label": "读取两份合同", "status": "completed"},
+                        {"label": "生成差异摘要", "status": "completed"},
+                    ],
+                    "resultSummary": (
+                        "## 重要变化\n\n"
+                        "1. **合同金额**发生调整。\n\n"
+                        "| 项目 | 结果 |\n| --- | --- |\n| 金额 | 需要复核 |"
+                    ),
+                }
+            )
+            document = Document(output_path)
+            paragraph_text = [paragraph.text for paragraph in document.paragraphs]
+
+            self.assertEqual(result["path"], str(output_path))
+            self.assertIn("合同差异分析", paragraph_text)
+            self.assertIn("我的要求", paragraph_text)
+            self.assertIn("执行过程", paragraph_text)
+            self.assertIn("结果摘要", paragraph_text)
+            self.assertFalse(any("**" in text or text.startswith("#") for text in paragraph_text))
+            self.assertEqual(len(document.tables), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

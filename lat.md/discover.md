@@ -50,11 +50,19 @@ An older product-owned research copy is preserved outside discovery roots when t
 
 The Discover tab row contains Skills, Agents, and 写作模板; MCPs and Workflows are not shown in this employee-facing navigation.
 
-Selecting 写作模板 opens a searchable template view. “添加写作模板” accepts common document and spreadsheet formats (`.xls`/`.xlsx` included), then opens an application modal for the description and refreshes every mounted template view without relying on a browser prompt.
+Selecting 写作模板 opens a searchable template view. The shared “添加写作模板” action accepts common document and spreadsheet formats (`.xls`/`.xlsx` included), refreshes every mounted template view without relying on a browser prompt, and returns the imported template to its caller. Discover opens its application modal for the description, while the schedule form immediately selects the new template.
 
 [[src/main/writing-templates.ts#importWritingTemplate]] copies the selected file byte-for-byte into the current profile's `writing-templates` directory and writes only indexing metadata beside it. The desktop does not parse, normalize, or adapt document contents; [[src/main/writing-templates.ts#listWritingTemplates]] returns the stored originals for display and later Agent attachment.
 
-Employees can select a template and use the fixed bottom actions to preview its description and source-file details or modify it. Preview opens the original in its system application on request; modify updates the description or replaces the stored source through [[src/main/writing-templates.ts#replaceWritingTemplateFile]] while preserving the library id.
+Employees can select a template and use the fixed bottom actions to preview, modify, or delete it. Preview opens the original in its system application on request; modify updates the description or replaces the stored source through [[src/main/writing-templates.ts#replaceWritingTemplateFile]] while preserving the library id. Delete requires an in-app confirmation, validates that the requested id belongs to the current Profile, removes only that template directory through [[src/main/writing-templates.ts#deleteWritingTemplate]], and broadcasts the shared refresh event so chat, Capabilities, and schedule selectors discard the removed entry.
+
+## Agent Chinese presentation
+
+The current Registry Agent catalog uses fixed local Chinese names and summaries while preserving every upstream identity and execution field.
+
+[[src/renderer/src/screens/Discover/agentLocalizations.ts#localizeRegistryAgent]] adds presentation-only `displayName` and `displayDescription` values keyed by the stable English Agent id, plus the company `displayAuthor` for every Agent. Cards show “由旌渝提供” and structured details show “提供方：旌渝”; the original Registry author remains intact, and non-Agent authors are unchanged. Discover searches both original and localized copy, while installation continues to receive the unchanged `id`, `name`, `path`, and upstream `AGENT.md`. Unknown future Agent ids fall back to their Registry name and summary while still using the company provider label.
+
+The localized summary also reaches the structured detail lead through [[src/main/registry.ts#fetchRegistryDetail]]. The full upstream Agent document remains untranslated because it defines executable persona behavior rather than catalog presentation.
 
 ## Capabilities writing templates entry
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReportRecommendationPrompt,
+  buildScheduledTemplatePrompt,
   compareDateParts,
   datePartsToIso,
   daysInMonth,
@@ -57,5 +58,15 @@ describe("schedule report recommendations", () => {
     expect(
       requiredSkillsForTemplate({ ...template, extension: "docx" }),
     ).toBeUndefined();
+  });
+
+  it("adds a replace-safe template contract to an ordinary task prompt", () => {
+    const prompt = buildScheduledTemplatePrompt("整理月度数据。", template);
+
+    expect(prompt).toContain("整理月度数据。");
+    expect(prompt).toContain("C:\\templates\\周报表格.xlsx");
+    expect(prompt).toContain("模板库目录：C:\\templates");
+    expect(prompt).toContain("不得覆盖模板原文件");
+    expect(prompt).toContain("忽略 metadata.json");
   });
 });

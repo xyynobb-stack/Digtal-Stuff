@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import {
   existsSync,
   mkdirSync,
@@ -28,6 +29,7 @@ import {
   patchJingYuAgentIdentitySource,
   patchTtsRequirementsSource,
   syncRepositoryPresetSkills,
+  syncRepositoryPresetWritingTemplates,
 } from "../scripts/apply-offline-runtime-overlays.mjs";
 import { patchDesktopDdgsSource } from "../scripts/patch-desktop-ddgs.mjs";
 import {
@@ -160,6 +162,7 @@ describe("managed Runtime dependency verification", () => {
     expect(probe).toContain("import sys; print(sys.executable)");
     expect(probe).not.toContain("numpy");
     expect(probe).not.toContain("pymilvus");
+    expect(probe).not.toContain("docx");
 
     for (const workflow of ["release.yml", "beta-release.yml"]) {
       const source = readFileSync(
@@ -169,6 +172,7 @@ describe("managed Runtime dependency verification", () => {
       expect(source).toContain(
         "import hermes_cli, run_agent, edge_tts, numpy, pymilvus",
       );
+      expect(source).toContain("onnxruntime, docx, importlib.metadata");
     }
   });
 });
@@ -326,7 +330,9 @@ CLOSE = "the Hermes desktop GUI (the tabs mirroring terminal(background=true) ru
 `;
 
     const patched = patchJingYuAgentIdentitySource(source);
-    expect(patched).toContain("You are JingYu Agent");
+    expect(patched).toContain("你是由旌渝公司提供的数字员工智能助手");
+    expect(patched).toContain("品牌名称固定写作“旌渝”");
+    expect(patched).not.toContain("JingYu Agent");
     expect(patched).not.toContain("You are Hermes Agent");
     expect(patched).not.toContain("Active Hermes profile");
     expect(patched).not.toContain("created by Nous Research");
@@ -358,20 +364,20 @@ CLOSE = "the Hermes desktop GUI (the tabs mirroring terminal(background=true) ru
     expect(ensureDevJingYuAgentIdentity(root, profileSoul)).toBe(true);
     expect(
       readFileSync(join(root, "agent", "prompt_builder.py"), "utf8"),
-    ).toContain("JingYu Agent");
+    ).toContain("旌渝");
     expect(
       readFileSync(join(root, "agent", "system_prompt.py"), "utf8"),
-    ).toContain("JingYu Agent");
+    ).toContain("旌渝");
     expect(
       readFileSync(join(root, "hermes_cli", "default_soul.py"), "utf8"),
-    ).toContain("JingYu Agent");
+    ).toContain("旌渝");
     expect(
       readFileSync(join(root, "hermes_cli", "doctor.py"), "utf8"),
-    ).toContain("JingYu Agent");
+    ).toContain("旌渝");
     expect(readFileSync(join(root, "docker", "SOUL.md"), "utf8")).toContain(
-      "JingYu Agent",
+      "旌渝",
     );
-    expect(readFileSync(profileSoul, "utf8")).toContain("JingYu Agent");
+    expect(readFileSync(profileSoul, "utf8")).toContain("旌渝");
 
     const rulesPath = join(root, "employee-default-soul.md");
     writeFileSync(
@@ -383,6 +389,11 @@ CLOSE = "the Hermes desktop GUI (the tabs mirroring terminal(background=true) ru
     expect(ensureDevVisibleLanguageRules(profileSoul, rulesPath)).toBe(true);
     expect(
       readFileSync(profileSoul, "utf8").match(/JINGYU_VISIBLE_LANGUAGE_RULES/g),
+    ).toHaveLength(1);
+    expect(
+      readFileSync(profileSoul, "utf8").match(
+        /你是由旌渝公司提供的数字员工智能助手/g,
+      ),
     ).toHaveLength(1);
   });
 
@@ -503,7 +514,7 @@ describe("desktop DDGS web search", () => {
     );
   });
 
-  it("pins DDGS and its native primp dependency in both Windows release channels", () => {
+  it("pins desktop-only dependencies and probes them in both Windows release channels", () => {
     const requirements = readFileSync(
       join(process.cwd(), "resources", "desktop-agent-requirements.txt"),
       "utf8",
@@ -513,6 +524,7 @@ describe("desktop DDGS web search", () => {
     expect(requirements).toContain("pymupdf==1.28.0");
     expect(requirements).toContain("rapidocr==3.9.2");
     expect(requirements).toContain("onnxruntime==1.29.0");
+    expect(requirements).toContain("python-docx==1.2.0");
     expect(requirements).not.toContain("lark-oapi");
 
     for (const workflow of ["release.yml", "beta-release.yml"]) {
@@ -522,12 +534,13 @@ describe("desktop DDGS web search", () => {
       );
       expect(source).toContain("resources/desktop-agent-requirements.txt");
       expect(source).toContain(
-        "numpy, pymilvus, ddgs, pymupdf, rapidocr, onnxruntime, importlib.metadata",
+        "numpy, pymilvus, ddgs, pymupdf, rapidocr, onnxruntime, docx, importlib.metadata",
       );
       expect(source).toContain("metadata.version('primp') == '1.3.1'");
       expect(source).toContain("metadata.version('PyMuPDF') == '1.28.0'");
       expect(source).toContain("metadata.version('rapidocr') == '3.9.2'");
       expect(source).toContain("metadata.version('onnxruntime') == '1.29.0'");
+      expect(source).toContain("metadata.version('python-docx') == '1.2.0'");
     }
   });
 });
@@ -601,6 +614,66 @@ describe("market report workflow development overlay", () => {
     expect(
       existsSync(join(presets, "market-report-rag", "scripts", "__pycache__")),
     ).toBe(false);
+  });
+
+  it("refreshes repository writing templates in the staged Runtime preset", () => {
+    const root = mkdtempSync(join(tmpdir(), "jingyuai-template-presets-"));
+    tempRoots.push(root);
+    const starters = join(root, "starters");
+    const presets = join(root, "presets");
+    const source = join(starters, "daily-report-123");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "metadata.json"), '{"name":"日报模板"}', "utf8");
+    writeFileSync(join(source, "日报模板.xlsx"), "canonical");
+    mkdirSync(join(presets, "daily-report-123"), { recursive: true });
+    writeFileSync(join(presets, "daily-report-123", "stale.txt"), "stale");
+    mkdirSync(join(presets, "removed-template"), { recursive: true });
+    writeFileSync(join(presets, "removed-template", "metadata.json"), "{}");
+
+    expect(syncRepositoryPresetWritingTemplates(starters, presets)).toEqual([
+      "daily-report-123",
+    ]);
+    expect(
+      readFileSync(join(presets, "daily-report-123", "日报模板.xlsx"), "utf8"),
+    ).toBe("canonical");
+    expect(existsSync(join(presets, "daily-report-123", "stale.txt"))).toBe(
+      false,
+    );
+    expect(existsSync(join(presets, "removed-template"))).toBe(false);
+  });
+
+  it("keeps every bundled writing template in the repository-owned inventory", () => {
+    // @lat: [[main-process#Packaged preset user content]]
+    const root = join(process.cwd(), "resources", "starter-writing-templates");
+    const expected = [
+      "党建工作总结-汇报-标准大纲-核心要点模板-62379c055f8e",
+      "服务器租赁服务合同模板-ab694772bd54",
+      "个人周报_向永驿_7.31-fe08c380f931",
+      "人力外包服务合同模板-d4e7aa66e5e3",
+      "日报模板-48d06f3f4000",
+      "综合行政通用会议纪要模板-标准版-fd058f5b8187",
+    ].sort();
+    const actual = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+
+    expect(actual).toEqual(expected);
+    for (const id of actual) {
+      const directory = join(root, id);
+      const metadata = JSON.parse(
+        readFileSync(join(directory, "metadata.json"), "utf8"),
+      ) as { id: string; fileName: string; size: number };
+      const template = readFileSync(join(directory, metadata.fileName));
+      expect(metadata.id).toBe(id);
+      expect(metadata.size).toBe(template.byteLength);
+    }
+    const daily = readFileSync(
+      join(root, "日报模板-48d06f3f4000", "日报模板.xlsx"),
+    );
+    expect(createHash("sha256").update(daily).digest("hex").slice(0, 12)).toBe(
+      "48d06f3f4000",
+    );
   });
 
   it("keeps all report Skills as repository-owned custom presets", () => {

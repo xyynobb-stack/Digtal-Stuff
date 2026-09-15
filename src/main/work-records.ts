@@ -401,31 +401,12 @@ export class WorkRecordStore {
   async exportOne(id: string): Promise<string | null> {
     const record = this.get(id);
     if (!record) return null;
-    const result = await dialog.showSaveDialog({
-      defaultPath: `${record.title.replace(/[<>:"/\\|?*]/g, "-")}.md`,
-      filters: [{ name: "Markdown", extensions: ["md"] }],
-    });
-    if (result.canceled || !result.filePath) return null;
-    const body = [
-      `# ${record.title}`,
-      "",
-      `- 时间：${new Date(record.createdAt).toLocaleString()}`,
-      `- 状态：${record.status}`,
-      "",
-      "## 我说",
-      "",
-      record.prompt,
-      "",
-      "## 执行过程",
-      "",
-      ...record.steps.map((s) => `- ${s.label}（${s.status}）`),
-      "",
-      "## 结果",
-      "",
-      record.resultSummary ?? "暂无结果",
-    ].join("\n");
-    writeFileSync(result.filePath, body, "utf8");
-    return result.filePath;
+    // Keep the document worker lazy so opening the local SQLite store does not
+    // pull Python/runtime setup into the app's install-checking path.
+    const { exportWorkRecordDocument } = await import("./document-features");
+    const result = await exportWorkRecordDocument(record);
+    if (!result.success) throw new Error(result.error);
+    return result.data ?? null;
   }
 
   async openAttachment(id: string, index: number): Promise<boolean> {

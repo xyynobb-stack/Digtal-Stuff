@@ -15,12 +15,6 @@ const windowsRuntimeSource = path.join(
 const sourceRepo = path.resolve(
   process.env.HERMES_AGENT_SOURCE || windowsRuntimeSource,
 );
-const presetContentSource = path.join(
-  projectRoot,
-  "build",
-  "offline-runtime",
-  "preset-content",
-);
 const outputRoot = path.join(projectRoot, "build", "offline-runtime-mac");
 const standaloneTag = process.env.PYTHON_BUILD_STANDALONE_TAG || "20260718";
 const targetArch = process.env.MAC_TARGET_ARCH || process.arch;
@@ -60,13 +54,17 @@ function validPresetDirectories(root, requiredFile) {
     .map((entry) => entry.name);
 }
 
-// GitHub's macOS runners cannot read the Windows builder's local Hermes home.
-// The Windows offline preparation command snapshots the selected local user
-// content here; that snapshot must be committed before dispatching this job.
-const presetSkillsSource = path.join(presetContentSource, "skills", "custom");
+// Preset profile content is repository-owned so macOS builds use the same
+// deterministic inventory as Windows without a Windows-generated snapshot.
+const presetSkillsSource = path.join(
+  projectRoot,
+  "resources",
+  "starter-skills",
+);
 const presetTemplatesSource = path.join(
-  presetContentSource,
-  "writing-templates",
+  projectRoot,
+  "resources",
+  "starter-writing-templates",
 );
 const presetSkills = validPresetDirectories(presetSkillsSource, "SKILL.md");
 const presetTemplates = validPresetDirectories(
@@ -75,9 +73,8 @@ const presetTemplates = validPresetDirectories(
 );
 if (presetSkills.length === 0 || presetTemplates.length === 0) {
   throw new Error(
-    "Committed preset content is missing. On the Windows builder, run " +
-      "`npm.cmd run prepare:offline-runtime`, commit " +
-      "`build/offline-runtime/preset-content`, then dispatch the macOS workflow.",
+    "Repository preset content is missing from resources/starter-skills or " +
+      "resources/starter-writing-templates.",
   );
 }
 

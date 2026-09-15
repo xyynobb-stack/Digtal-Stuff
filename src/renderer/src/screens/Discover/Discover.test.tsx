@@ -47,6 +47,7 @@ describe("Discover writing templates entry", () => {
           canceled: true,
         })),
         openWritingTemplate: vi.fn(async () => true),
+        deleteWritingTemplate: vi.fn(async () => ({ success: true })),
       },
     });
   });
@@ -169,6 +170,46 @@ describe("Discover writing templates entry", () => {
     );
   });
 
+  it("confirms deletion and removes the selected writing template", async () => {
+    const template = {
+      id: "obsolete-123",
+      name: "旧模板",
+      fileName: "旧模板.docx",
+      extension: "docx",
+      mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size: 256,
+      createdAt: "2026-08-07T00:00:00.000Z",
+      path: "C:\\templates\\旧模板.docx",
+    };
+    vi.mocked(window.hermesAPI.listWritingTemplates).mockResolvedValue([
+      template,
+    ]);
+
+    render(<Discover visible profile="employee-a" />);
+    const templateTab = screen
+      .getAllByRole("button", { name: /写作模板/ })
+      .find((button) => button.classList.contains("discover-tab"));
+    fireEvent.click(templateTab!);
+    fireEvent.click(await screen.findByRole("button", { name: /旧模板/ }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "删除后无法恢复，请确认是否删除“旧模板”",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await waitFor(() =>
+      expect(window.hermesAPI.deleteWritingTemplate).toHaveBeenCalledWith(
+        "obsolete-123",
+        "employee-a",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "删除" })).toBeDisabled();
+  });
+
   it("separates collapsible system skills from always-visible user skills", async () => {
     // @lat: [[discover#Skill ownership columns]]
     vi.mocked(window.hermesAPI.fetchRegistry).mockResolvedValue({
@@ -222,5 +263,42 @@ describe("Discover writing templates entry", () => {
 
     fireEvent.click(systemToggle);
     expect(screen.getByText("system-research")).toBeVisible();
+  });
+
+  it("shows localized Agent copy while preserving Chinese and English search", async () => {
+    vi.mocked(window.hermesAPI.fetchRegistry).mockResolvedValue({
+      skills: [],
+      mcps: [],
+      agents: [
+        {
+          id: "incident-responder",
+          name: "Incident Responder",
+          description: "Triages production incidents.",
+          author: "Hermes Registry",
+          version: "1.0.0",
+          path: "agents/incident-responder",
+        },
+      ],
+      workflows: [],
+    });
+
+    render(<Discover visible />);
+    const agentsTab = screen
+      .getAllByRole("button", { name: /agents/i })
+      .find((button) => button.classList.contains("discover-tab"));
+    fireEvent.click(agentsTab!);
+
+    expect(await screen.findByText("故障应急专家")).toBeInTheDocument();
+    expect(
+      screen.getByText("处理生产故障、恢复服务并开展无责复盘。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("由旌渝提供 · v1.0.0")).toBeInTheDocument();
+    expect(screen.queryByText(/by Hermes Registry/)).not.toBeInTheDocument();
+
+    const search = screen.getByPlaceholderText("Search");
+    fireEvent.change(search, { target: { value: "Incident Responder" } });
+    expect(screen.getByText("故障应急专家")).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "生产故障" } });
+    expect(screen.getByText("故障应急专家")).toBeInTheDocument();
   });
 });

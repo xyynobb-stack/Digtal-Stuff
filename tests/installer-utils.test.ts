@@ -250,9 +250,9 @@ describe("stock SOUL identity migration", () => {
 
     const migrated = migrateStockSoulIdentity(legacy);
     expect(migrated).toContain(
-      "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.",
+      "你是由旌渝公司提供的数字员工智能助手。品牌名称固定写作“旌渝”",
     );
-    expect(migrated).toContain("This offline build of JingYu Agent");
+    expect(migrated).toContain("This offline build of 旌渝数字员工");
     expect(migrated).toContain(custom);
     expect(migrateStockSoulIdentity(migrated)).toBe(migrated);
   });
@@ -281,8 +281,23 @@ describe("stock SOUL identity migration", () => {
 
     const merged = mergeBundledSoulRules(custom, rules);
     expect(merged).toContain(custom);
+    expect(merged).toContain("你是由旌渝公司提供的数字员工智能助手");
     expect(merged).toContain("JINGYU_VISIBLE_LANGUAGE_RULES");
     expect(mergeBundledSoulRules(merged, rules)).toBe(merged);
+  });
+
+  it("migrates the previous desktop identity once and preserves custom text", async () => {
+    const { mergeBundledSoulRules } = await import("../src/main/installer");
+    const custom = "Keep this employee-specific instruction.";
+    const existing =
+      "You are JingYu Agent, an intelligent AI assistant provided by JingYuAI.\n\n" +
+      custom;
+
+    const migrated = mergeBundledSoulRules(existing, "");
+    expect(migrated).toContain("你是由旌渝公司提供的数字员工智能助手");
+    expect(migrated).not.toContain("You are JingYu Agent");
+    expect(migrated).toContain(custom);
+    expect(mergeBundledSoulRules(migrated, "")).toBe(migrated);
   });
 });
 

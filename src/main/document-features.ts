@@ -12,6 +12,7 @@ import type {
   FeaturePickedFile,
   OcrDocumentResult,
 } from "../shared/feature-workspace";
+import type { WorkRecordDetail } from "../shared/work-records";
 import type { SessionModelOverride } from "../shared/model-override";
 import { getHermesPython, HERMES_HOME } from "./installer";
 import { sendMessage } from "./hermes";
@@ -314,6 +315,56 @@ export async function exportContractAnalysis(
       ...request,
       action: "export_contract_analysis",
       outputPath,
+    },
+    60_000,
+  );
+  if (!result.success) return { success: false, error: result.error };
+  return { success: true, data: outputPath };
+}
+
+function workRecordExportName(record: WorkRecordDetail): string {
+  const fallback = `工作记录-${new Date(record.createdAt).toISOString().slice(0, 10)}`;
+  const stem = record.title
+    .split("")
+    .map((character) => (character.charCodeAt(0) < 32 ? "-" : character))
+    .join("")
+    .replace(/[<>:"/\\|?*]/g, "-")
+    .replace(/[. ]+$/g, "")
+    .slice(0, 120);
+  return `${stem || fallback}.docx`;
+}
+
+// @lat: [[work-records#Single record Word export]]
+export async function exportWorkRecordDocument(
+  record: WorkRecordDetail,
+  parentWindow?: BrowserWindow,
+): Promise<FeatureOperationResult<string | null>> {
+  const options: Electron.SaveDialogOptions = {
+    title: "导出这条记录",
+    defaultPath: join(app.getPath("documents"), workRecordExportName(record)),
+    buttonLabel: "导出",
+    filters: [{ name: "Word 文档", extensions: ["docx"] }],
+  };
+  const selection = parentWindow
+    ? await dialog.showSaveDialog(parentWindow, options)
+    : await dialog.showSaveDialog(options);
+  if (selection.canceled || !selection.filePath) {
+    return { success: true, data: null };
+  }
+  const outputPath = selection.filePath.toLocaleLowerCase().endsWith(".docx")
+    ? selection.filePath
+    : `${selection.filePath}.docx`;
+  const result = await runWorker<{ path: string }>(
+    {
+      action: "export_work_record",
+      outputPath,
+      title: record.title,
+      profileName: record.profileName,
+      createdAt: record.createdAt,
+      status: record.status,
+      prompt: record.prompt,
+      steps: record.steps.map(({ label, status }) => ({ label, status })),
+      resultSummary: record.resultSummary ?? "暂无结果",
     },
     60_000,
   );

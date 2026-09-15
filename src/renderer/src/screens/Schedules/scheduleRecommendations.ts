@@ -25,6 +25,29 @@ export function requiredSkillsForTemplate(
     : undefined;
 }
 
+/** Add a profile-local template contract to an ordinary scheduled task. */
+export function buildScheduledTemplatePrompt(
+  prompt: string | undefined,
+  template: WritingTemplate,
+): string {
+  const templateDirectory = template.path.replace(/[\\/][^\\/]+$/, "");
+  return [
+    prompt?.trim() || "请按照以下写作模板完成本次计划任务。",
+    "",
+    "写作模板：",
+    `- 模板名称：${template.name}`,
+    `- 模板文件绝对路径：${template.path}`,
+    `- 模板库目录：${templateDirectory}`,
+    `- 模板格式：${template.extension.toUpperCase()}`,
+    "",
+    "模板执行要求：",
+    "1. 执行任务前先读取模板原文件，并遵循其结构、栏目、样式和文件格式。",
+    "2. 不得覆盖模板原文件；需要生成文件时，应另存为新的成品文件。",
+    "3. 如果上述模板文件路径已因模板更新而失效，请在模板库目录中读取当前模板文件，但忽略 metadata.json。",
+    "4. 如果任务配置了本地输出目录，将成品文件写入该目录，并在最终回复中说明文件名和保存位置。",
+  ].join("\n");
+}
+
 export function datePartsToIso(parts: DateParts): string {
   return `${parts.year.toString().padStart(4, "0")}-${parts.month
     .toString()

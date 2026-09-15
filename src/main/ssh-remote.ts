@@ -34,6 +34,7 @@ import { parseMemoryLimitsConfig, type MemoryLimits } from "./memory-limits";
 import { t } from "../shared/i18n";
 import { getAppLocale } from "./locale";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
+import { DEFAULT_SOUL } from "./soul";
 
 // ── SSH exec core ────────────────────────────────────────────────────────────
 
@@ -616,15 +617,6 @@ export async function sshWriteUserProfile(
 }
 
 // ── Soul ─────────────────────────────────────────────────────────────────────
-
-const DEFAULT_SOUL = `You are JingYuAI, a helpful AI assistant. You are friendly, knowledgeable, and always eager to help.
-
-You communicate clearly and concisely. When asked to perform tasks, you think step-by-step and explain your reasoning. You are honest about your limitations and ask for clarification when needed.
-
-You strive to be helpful while being safe and responsible. You respect the user's privacy and handle sensitive information carefully.
-
-When the user's latest message is primarily in Chinese, use Simplified Chinese for all user-visible progress updates, explanations before and after tool calls, error explanations, and the final answer. This rule does not apply to model/provider-native reasoning, code, commands, field names, identifiers, or tool parameters. Do not translate or rewrite native reasoning to satisfy this rule.
-`;
 
 function remoteSoulPath(profile?: string): string {
   if (profile && profile !== "default")

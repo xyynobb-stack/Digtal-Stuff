@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus,
   Trash,
@@ -12,9 +12,11 @@ import {
 } from "../../assets/icons";
 import { useI18n } from "../../components/useI18n";
 import { OrbLoader } from "../../components/OrbLoader";
+import { WritingTemplateImportButton } from "../../components/WritingTemplateImportButton";
 import type { WritingTemplate } from "../../../../shared/writing-templates";
 import {
   buildReportRecommendationPrompt,
+  buildScheduledTemplatePrompt,
   compareDateParts,
   daysInMonth,
   requiredSkillsForTemplate,
@@ -62,6 +64,35 @@ type FrequencyType = "minutes" | "hourly" | "daily" | "weekly" | "custom";
 
 interface SchedulesProps {
   profile?: string;
+}
+
+function boundedInteger(
+  value: string,
+  minimum: number,
+  maximum: number,
+): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum
+    ? parsed
+    : null;
+}
+
+export function buildCustomSchedule(
+  monthValue: string,
+  dayValue: string,
+  hourValue: string,
+  minuteValue: string,
+): string | null {
+  const month = boundedInteger(monthValue, 1, 12);
+  const hour = boundedInteger(hourValue, 0, 23);
+  const minute = boundedInteger(minuteValue, 0, 59);
+  if (month === null || hour === null || minute === null) return null;
+  // A year is not part of a recurring cron expression. Use a leap year so
+  // February 29 remains a valid annual schedule while impossible dates fail.
+  const day = boundedInteger(dayValue, 1, daysInMonth(2024, month));
+  if (day === null) return null;
+  return `${minute} ${hour} ${day} ${month} *`;
 }
 
 function toDateParts(date: Date): DateParts {
@@ -176,7 +207,11 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   const [writingTemplates, setWritingTemplates] = useState<WritingTemplate[]>(
     [],
   );
+  const [writingTemplatesAvailable, setWritingTemplatesAvailable] = useState<
+    boolean | null
+  >(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const templateLoadVersion = useRef(0);
   const [employeeName, setEmployeeName] = useState("");
   const [workContent, setWorkContent] = useState("");
   const todayParts = toDateParts(new Date());
@@ -197,7 +232,10 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   const [dailyTime, setDailyTime] = useState("09:00");
   const [weeklyDay, setWeeklyDay] = useState("1");
   const [weeklyTime, setWeeklyTime] = useState("09:00");
-  const [customCron, setCustomCron] = useState("");
+  const [customMonth, setCustomMonth] = useState(String(todayParts.month));
+  const [customDay, setCustomDay] = useState(String(todayParts.day));
+  const [customHour, setCustomHour] = useState("9");
+  const [customMinute, setCustomMinute] = useState("0");
 
   useEffect(() => {
     window.hermesAPI
@@ -262,22 +300,49 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     loadModels();
   }, [loadJobs, loadModels]);
 
-  useEffect(() => {
-    window.hermesAPI
-      .listWritingTemplates(profile)
-      .then((templates) => {
-        setWritingTemplates(templates);
-        setSelectedTemplateId((current) =>
-          templates.some((template) => template.id === current)
-            ? current
-            : templates[0]?.id || "",
-        );
-      })
-      .catch(() => {
-        setWritingTemplates([]);
-        setSelectedTemplateId("");
-      });
+  const loadWritingTemplates = useCallback(async (): Promise<void> => {
+    const version = ++templateLoadVersion.current;
+    let remote = false;
+    try {
+      remote = await window.hermesAPI.isRemoteMode();
+    } catch {
+      // Keep local template import usable if connection-mode probing fails.
+    }
+    if (version !== templateLoadVersion.current) return;
+    if (remote) {
+      setWritingTemplatesAvailable(false);
+      setWritingTemplates([]);
+      setSelectedTemplateId("");
+      return;
+    }
+
+    setWritingTemplatesAvailable(true);
+    try {
+      const templates = await window.hermesAPI.listWritingTemplates(profile);
+      if (version !== templateLoadVersion.current) return;
+      setWritingTemplates(templates);
+      setSelectedTemplateId((current) =>
+        templates.some((template) => template.id === current) ? current : "",
+      );
+    } catch {
+      if (version !== templateLoadVersion.current) return;
+      setWritingTemplates([]);
+      setSelectedTemplateId("");
+    }
   }, [profile]);
+
+  useEffect(() => {
+    setWritingTemplatesAvailable(null);
+    setWritingTemplates([]);
+    setSelectedTemplateId("");
+    void loadWritingTemplates();
+    const refresh = (): void => void loadWritingTemplates();
+    window.addEventListener("hermes-writing-templates-changed", refresh);
+    return () => {
+      templateLoadVersion.current += 1;
+      window.removeEventListener("hermes-writing-templates-changed", refresh);
+    };
+  }, [loadWritingTemplates]);
 
   // Escape key to close modals
   useEffect(() => {
@@ -304,8 +369,13 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     setDailyTime("09:00");
     setWeeklyDay("1");
     setWeeklyTime("09:00");
-    setCustomCron("");
+    const today = toDateParts(new Date());
+    setCustomMonth(String(today.month));
+    setCustomDay(String(today.day));
+    setCustomHour("9");
+    setCustomMinute("0");
     setRecommendationType(null);
+    setSelectedTemplateId("");
     setEmployeeName("");
     setWorkContent("");
     setReportStartDate(toDateParts(new Date()));
@@ -323,6 +393,11 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     setRecommendationType(type);
     setNewName(type === "weekly-report" ? "周报汇总" : "日报汇总");
     setNewPrompt("");
+    setSelectedTemplateId((current) =>
+      writingTemplates.some((template) => template.id === current)
+        ? current
+        : writingTemplates[0]?.id || "",
+    );
     setFrequency(type === "weekly-report" ? "weekly" : "daily");
     setReportStartDate(
       type === "weekly-report" ? week.start : toDateParts(new Date()),
@@ -346,12 +421,28 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
         return `${m} ${h} * * ${weeklyDay}`;
       }
       case "custom":
-        return customCron.trim();
+        return (
+          buildCustomSchedule(
+            customMonth,
+            customDay,
+            customHour,
+            customMinute,
+          ) || ""
+        );
     }
   }
 
   function isScheduleValid(): boolean {
-    if (frequency === "custom") return customCron.trim().length > 0;
+    if (frequency === "custom") {
+      return (
+        buildCustomSchedule(
+          customMonth,
+          customDay,
+          customHour,
+          customMinute,
+        ) !== null
+      );
+    }
     if (frequency === "minutes") return parseInt(minutesInterval) > 0;
     if (frequency === "hourly") return parseInt(hourlyInterval) > 0;
     return true;
@@ -372,13 +463,83 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
       reportDateRangeValid,
     );
 
+  function handleWritingTemplateImported(template: WritingTemplate): void {
+    setWritingTemplates((current) => [
+      template,
+      ...current.filter((item) => item.id !== template.id),
+    ]);
+    setSelectedTemplateId(template.id);
+  }
+
+  function renderWritingTemplateField(required: boolean): React.JSX.Element {
+    const unavailable = writingTemplatesAvailable === false;
+    const loadingTemplates = writingTemplatesAvailable === null;
+    return (
+      <div className="schedules-field">
+        <label className="schedules-field-label">
+          写作模板{" "}
+          {required ? (
+            <span className="schedules-required">*</span>
+          ) : (
+            "（可选）"
+          )}
+        </label>
+        <div className="schedules-template-picker-row">
+          <select
+            className="input"
+            aria-label={required ? "写作模板" : "写作模板（可选）"}
+            value={selectedTemplateId}
+            onChange={(event) => setSelectedTemplateId(event.target.value)}
+            disabled={unavailable || loadingTemplates}
+          >
+            {unavailable ? (
+              <option value="">远程模式暂不支持写作模板</option>
+            ) : loadingTemplates ? (
+              <option value="">正在读取写作模板…</option>
+            ) : (
+              <>
+                <option value="">
+                  {required
+                    ? writingTemplates.length === 0
+                      ? "暂无写作模板，请先添加"
+                      : "请选择写作模板"
+                    : "不使用写作模板"}
+                </option>
+                {writingTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name} ({template.extension.toUpperCase()})
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+          <WritingTemplateImportButton
+            profile={profile}
+            className="btn btn-secondary schedules-template-add"
+            disabled={unavailable || loadingTemplates}
+            onImported={handleWritingTemplateImported}
+          />
+        </div>
+        {unavailable ? (
+          <div className="schedules-field-hint">
+            写作模板目前仅支持本地计划任务。
+          </div>
+        ) : selectedTemplate?.description ? (
+          <div className="schedules-field-hint">
+            {selectedTemplate.description}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   async function handleCreate(): Promise<void> {
     const selectedModel = availableModels.find(
       (candidate) => candidate.id === newModelId,
     );
     if (!isScheduleValid() || !selectedModel || !recommendationFieldsValid)
       return;
-    const taskPrompt =
+    const basePrompt =
       recommendationType && selectedTemplate
         ? buildReportRecommendationPrompt({
             type: recommendationType,
@@ -391,6 +552,10 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
             template: selectedTemplate,
           })
         : newPrompt.trim() || undefined;
+    const taskPrompt =
+      !recommendationType && selectedTemplate
+        ? buildScheduledTemplatePrompt(basePrompt, selectedTemplate)
+        : basePrompt;
     setActionInProgress("creating");
     setError("");
     try {
@@ -405,7 +570,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
         newDeliver === "local"
           ? newOutputDir || localOutputDir || undefined
           : undefined,
-        recommendationType && selectedTemplate
+        selectedTemplate
           ? requiredSkillsForTemplate(selectedTemplate)
           : undefined,
       );
@@ -560,34 +725,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                       </span>
                     </div>
                   </div>
-                  <div className="schedules-field">
-                    <label className="schedules-field-label">
-                      写作模板 <span className="schedules-required">*</span>
-                    </label>
-                    <select
-                      className="input"
-                      value={selectedTemplateId}
-                      onChange={(event) =>
-                        setSelectedTemplateId(event.target.value)
-                      }
-                      disabled={writingTemplates.length === 0}
-                    >
-                      {writingTemplates.length === 0 ? (
-                        <option value="">暂无写作模板，请先在发现中添加</option>
-                      ) : (
-                        writingTemplates.map((template) => (
-                          <option key={template.id} value={template.id}>
-                            {template.name} ({template.extension.toUpperCase()})
-                          </option>
-                        ))
-                      )}
-                    </select>
-                    {selectedTemplate?.description && (
-                      <div className="schedules-field-hint">
-                        {selectedTemplate.description}
-                      </div>
-                    )}
-                  </div>
+                  {renderWritingTemplateField(true)}
                   <div className="schedules-field">
                     <label className="schedules-field-label">
                       姓名 <span className="schedules-required">*</span>
@@ -667,6 +805,8 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                   ))}
                 </div>
               </div>
+
+              {!recommendationType && renderWritingTemplateField(false)}
 
               {frequency === "minutes" && (
                 <div className="schedules-field">
@@ -763,17 +903,88 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
               {frequency === "custom" && (
                 <div className="schedules-field">
                   <label className="schedules-field-label">
-                    {t("schedules.cronExpression")}
+                    {t("schedules.customTime")}
                   </label>
-                  <input
-                    className="input"
-                    type="text"
-                    placeholder={t("schedules.cronPlaceholder")}
-                    value={customCron}
-                    onChange={(e) => setCustomCron(e.target.value)}
-                  />
+                  <div className="schedules-custom-time-grid">
+                    <label className="schedules-custom-time-part">
+                      <span>{t("schedules.customMonth")}</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min="1"
+                        max="12"
+                        inputMode="numeric"
+                        value={customMonth}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setCustomMonth(nextValue);
+                          const nextMonth = boundedInteger(nextValue, 1, 12);
+                          const currentDay = boundedInteger(customDay, 1, 31);
+                          if (nextMonth !== null && currentDay !== null) {
+                            setCustomDay(
+                              String(
+                                Math.min(
+                                  currentDay,
+                                  daysInMonth(2024, nextMonth),
+                                ),
+                              ),
+                            );
+                          }
+                        }}
+                      />
+                    </label>
+                    <label className="schedules-custom-time-part">
+                      <span>{t("schedules.customDay")}</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min="1"
+                        max={
+                          boundedInteger(customMonth, 1, 12) === null
+                            ? 31
+                            : daysInMonth(2024, Number(customMonth))
+                        }
+                        inputMode="numeric"
+                        value={customDay}
+                        onChange={(event) => setCustomDay(event.target.value)}
+                      />
+                    </label>
+                    <label className="schedules-custom-time-part">
+                      <span>{t("schedules.customHour")}</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max="23"
+                        inputMode="numeric"
+                        value={customHour}
+                        onChange={(event) => setCustomHour(event.target.value)}
+                      />
+                    </label>
+                    <label className="schedules-custom-time-part">
+                      <span>{t("schedules.customMinute")}</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max="59"
+                        inputMode="numeric"
+                        value={customMinute}
+                        onChange={(event) =>
+                          setCustomMinute(event.target.value)
+                        }
+                      />
+                    </label>
+                  </div>
                   <div className="schedules-field-hint">
-                    {t("schedules.cronHint")}
+                    {isScheduleValid()
+                      ? t("schedules.customTimeHint", {
+                          month: customMonth,
+                          day: customDay,
+                          hour: customHour.padStart(2, "0"),
+                          minute: customMinute.padStart(2, "0"),
+                        })
+                      : t("schedules.customTimeInvalid")}
                   </div>
                 </div>
               )}

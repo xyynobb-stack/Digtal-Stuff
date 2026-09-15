@@ -25,3 +25,8 @@ export interface ReplaceWritingTemplateResult {
   template?: WritingTemplate;
   error?: string;
 }
+
+export interface DeleteWritingTemplateResult {
+  success: boolean;
+  error?: string;
+}

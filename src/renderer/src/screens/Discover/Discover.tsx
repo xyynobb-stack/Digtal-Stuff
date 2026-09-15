@@ -21,6 +21,7 @@ import type { LucideIcon } from "lucide-react";
 import { AgentMarkdown } from "../../components/AgentMarkdown";
 import { useI18n } from "../../components/useI18n";
 import { OrbLoader } from "../../components/OrbLoader";
+import { WritingTemplateImportButton } from "../../components/WritingTemplateImportButton";
 import {
   AppModal,
   AppModalDescription,
@@ -33,6 +34,7 @@ import type {
   RegistryDetail,
 } from "../../../../shared/registry";
 import type { WritingTemplate } from "../../../../shared/writing-templates";
+import { localizeRegistryAgent } from "./agentLocalizations";
 
 interface DiscoverProps {
   profile?: string;
@@ -107,6 +109,8 @@ export default function Discover({
     useState<TemplateModalMode>(null);
   const [templateDescriptionDraft, setTemplateDescriptionDraft] = useState("");
   const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateDeleteOpen, setTemplateDeleteOpen] = useState(false);
+  const [templateDeleting, setTemplateDeleting] = useState(false);
   const [installed, setInstalled] = useState<{
     skills: string[];
     mcps: string[];
@@ -270,6 +274,7 @@ export default function Discover({
   const communityList = useMemo<RegistryItem[]>(() => {
     if (tab === "templates") return [];
     const list = catalog[tab] ?? [];
+    if (tab === "agents") return list.map(localizeRegistryAgent);
     if (tab !== "skills") return list;
     const seen = new Set<string>();
     return bundledSkills.flatMap((bundled) => {
@@ -288,7 +293,10 @@ export default function Discover({
       communityList.filter((i) =>
         matchesQuery(
           i.name,
+          i.displayName,
           i.description,
+          i.displayDescription,
+          i.displayAuthor,
           i.author,
           i.category,
           ...(i.tags ?? []),
@@ -339,22 +347,14 @@ export default function Discover({
     toast.success(`已导入 SKILL：${result.name || "本地技能"}`);
   }
 
-  async function handleImportWritingTemplate(): Promise<void> {
-    const result = await window.hermesAPI.importWritingTemplate(profile);
-    if (result.canceled) return;
-    if (!result.success) {
-      toast.error(result.error || "导入写作模板失败。");
-      return;
-    }
+  async function handleWritingTemplateImported(
+    template: WritingTemplate,
+  ): Promise<void> {
     await loadWritingTemplates();
-    window.dispatchEvent(new Event("hermes-writing-templates-changed"));
-    toast.success(`已导入写作模板：${result.template?.name || "本地模板"}`);
     setTab("templates");
-    if (result.template) {
-      setSelectedTemplateId(result.template.id);
-      setTemplateDescriptionDraft(result.template.description ?? "");
-      setTemplateModalMode("edit");
-    }
+    setSelectedTemplateId(template.id);
+    setTemplateDescriptionDraft(template.description ?? "");
+    setTemplateModalMode("edit");
   }
 
   const selectedTemplate =
@@ -417,6 +417,37 @@ export default function Discover({
       profile,
     );
     if (!opened) toast.error("无法打开模板文件。");
+  }
+
+  async function handleDeleteTemplate(): Promise<void> {
+    if (!selectedTemplate || templateDeleting) return;
+    const templateId = selectedTemplate.id;
+    const templateName = selectedTemplate.name;
+    setTemplateDeleting(true);
+    try {
+      const result = await window.hermesAPI.deleteWritingTemplate(
+        templateId,
+        profile,
+      );
+      if (!result.success) {
+        toast.error(result.error || "删除写作模板失败。");
+        return;
+      }
+
+      setWritingTemplates((current) =>
+        current.filter((template) => template.id !== templateId),
+      );
+      setSelectedTemplateId(null);
+      setTemplateDeleteOpen(false);
+      window.dispatchEvent(new Event("hermes-writing-templates-changed"));
+      toast.success(`已删除写作模板：${templateName}`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "删除写作模板失败。",
+      );
+    } finally {
+      setTemplateDeleting(false);
+    }
   }
 
   function tabCount(key: DiscoverTab): number {
@@ -504,7 +535,9 @@ export default function Discover({
       const detail = await window.hermesAPI.fetchRegistryDetail(kind, item);
       setDetailData(detail);
     } catch {
-      setDetailData({ description: item.description });
+      setDetailData({
+        description: item.displayDescription || item.description,
+      });
     } finally {
       setDetailLoading(false);
     }
@@ -523,6 +556,11 @@ export default function Discover({
   const activeRegistryKind: RegistryKind | null =
     tab === "templates" ? null : tab;
 
+  function attribution(item: RegistryItem): string | undefined {
+    if (item.displayAuthor) return `由${item.displayAuthor}提供`;
+    return item.author ? t("discover.by", { author: item.author }) : undefined;
+  }
+
   function renderRegistryCard(
     item: RegistryItem,
     itemKind: RegistryKind,
@@ -533,10 +571,9 @@ export default function Discover({
     const done = state === "done" || isInstalled(itemKind, item);
     const action = ACTION[itemKind];
     const ActionIcon = action.icon;
-    const meta = [
-      item.author && t("discover.by", { author: item.author }),
-      item.version && `v${item.version}`,
-    ].filter(Boolean);
+    const meta = [attribution(item), item.version && `v${item.version}`].filter(
+      Boolean,
+    );
 
     return (
       <div
@@ -565,7 +602,9 @@ export default function Discover({
         {meta.length > 0 && (
           <div className="discover-card-meta">{meta.join(" · ")}</div>
         )}
-        <p className="discover-card-desc">{item.description}</p>
+        <p className="discover-card-desc">
+          {item.displayDescription || item.description}
+        </p>
         {item.tags && item.tags.length > 0 && (
           <div className="discover-card-tags">
             {item.tags.slice(0, 4).map((tag) => (
@@ -711,6 +750,56 @@ export default function Discover({
                   打开模板文件
                 </button>
               )}
+            </div>
+          </>
+        )}
+      </AppModal>
+      <AppModal
+        open={templateDeleteOpen && selectedTemplate !== null}
+        onOpenChange={(open) => {
+          if (!open && !templateDeleting) setTemplateDeleteOpen(false);
+        }}
+        className="writing-template-modal writing-template-delete-modal"
+        overlayClassName="writing-template-modal-overlay"
+        labelledBy="writing-template-delete-title"
+        describedBy="writing-template-delete-description"
+      >
+        {selectedTemplate && (
+          <>
+            <div className="writing-template-modal-header">
+              <div>
+                <AppModalTitle
+                  id="writing-template-delete-title"
+                  className="writing-template-modal-title"
+                >
+                  删除写作模板
+                </AppModalTitle>
+                <AppModalDescription
+                  id="writing-template-delete-description"
+                  className="writing-template-modal-subtitle"
+                >
+                  删除后无法恢复，请确认是否删除“{selectedTemplate.name}”。
+                </AppModalDescription>
+              </div>
+            </div>
+            <div className="writing-template-modal-footer">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={templateDeleting}
+                onClick={() => setTemplateDeleteOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={templateDeleting}
+                onClick={() => void handleDeleteTemplate()}
+              >
+                <Trash size={14} />
+                {templateDeleting ? "正在删除…" : "确认删除"}
+              </button>
             </div>
           </>
         )}
@@ -899,15 +988,10 @@ export default function Discover({
             <Plus size={14} />
             导入本地 SKILL
           </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            title="选择本地文件作为写作模板"
-            onClick={() => void handleImportWritingTemplate()}
-          >
-            <Plus size={14} />
-            添加写作模板
-          </button>
+          <WritingTemplateImportButton
+            profile={profile}
+            onImported={handleWritingTemplateImported}
+          />
         </div>
       </div>
 
@@ -1092,7 +1176,7 @@ export default function Discover({
             const action = ACTION[itemKind];
             const ActionIcon = action.icon;
             const meta = [
-              item.author && t("discover.by", { author: item.author }),
+              attribution(item),
               item.version && `v${item.version}`,
             ].filter(Boolean);
             return (
@@ -1113,7 +1197,9 @@ export default function Discover({
                   <span className="discover-card-iconwrap">
                     <ActiveIcon size={16} />
                   </span>
-                  <span className="discover-card-name">{item.name}</span>
+                  <span className="discover-card-name">
+                    {item.displayName || item.name}
+                  </span>
                   {item.category && (
                     <span className="discover-card-badge">{item.category}</span>
                   )}
@@ -1121,7 +1207,9 @@ export default function Discover({
                 {meta.length > 0 && (
                   <div className="discover-card-meta">{meta.join(" · ")}</div>
                 )}
-                <p className="discover-card-desc">{item.description}</p>
+                <p className="discover-card-desc">
+                  {item.displayDescription || item.description}
+                </p>
                 {item.tags && item.tags.length > 0 && (
                   <div className="discover-card-tags">
                     {item.tags.slice(0, 4).map((tg) => (
@@ -1182,6 +1270,15 @@ export default function Discover({
           >
             <Pencil size={15} />
             修改
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger btn-sm"
+            disabled={!selectedTemplate}
+            onClick={() => setTemplateDeleteOpen(true)}
+          >
+            <Trash size={15} />
+            删除
           </button>
         </div>
       )}

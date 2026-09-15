@@ -1469,6 +1469,15 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
 
     Returns None on success, or an error string on failure.
     """
+    # DESKTOP_FEISHU_DRIVE_DELIVERY: in JingYuAI, the UI's Feishu target
+    # means upload to the employee-authorized Drive, not send a bot message.
+    from tools.cron_feishu_drive_delivery import (
+        deliver_job_output,
+        is_feishu_drive_delivery,
+    )
+    if is_feishu_drive_delivery(job):
+        return deliver_job_output(job, content)
+
     targets = _resolve_delivery_targets(job)
     if not targets:
         deliver_value = _normalize_deliver_value(job.get("deliver", "local"))
@@ -2442,6 +2451,12 @@ def _parse_wake_gate(script_output: str) -> bool:
 
 def _resolve_job_deliverable_output_dir(job: dict) -> Optional[str]:
     """Resolve the configured directory used for generated user deliverables."""
+    # DESKTOP_FEISHU_DRIVE_OUTPUT_DIR: cloud deliveries use one isolated
+    # directory per run so the scheduler uploads only this run's final files.
+    from tools.cron_feishu_drive_delivery import prepare_run_output_dir
+    drive_output_dir = prepare_run_output_dir(job)
+    if drive_output_dir:
+        return drive_output_dir
     raw = str(job.get("output_dir") or "").strip()
     if not raw:
         return None
@@ -2482,6 +2497,11 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
             "that record does not count as the requested deliverable."
         )
         prompt = f"{output_note}\n\n{prompt}"
+    # DESKTOP_FEISHU_DRIVE_PROMPT
+    from tools.cron_feishu_drive_delivery import build_delivery_prompt
+    drive_delivery_note = build_delivery_prompt(job)
+    if drive_delivery_note:
+        prompt = f"{drive_delivery_note}\n\n{prompt}"
     skills = job.get("skills")
     # True when runtime-collected DATA (script stdout, upstream-job output)
     # has been injected into the prompt. Data content legitimately quotes

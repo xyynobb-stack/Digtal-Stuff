@@ -47,6 +47,10 @@ const workflowToolFiles = [
   "market_report_workflow_tool.py",
 ];
 const feishuDriveToolFile = "feishu_drive_files_tool.py";
+const feishuDriveRuntimeFiles = [
+  feishuDriveToolFile,
+  "cron_feishu_drive_delivery.py",
+];
 const visibleLanguageRulesMarker = "<!-- JINGYU_VISIBLE_LANGUAGE_RULES -->";
 const staleOfflineToolingGuidance =
   "This offline build of JingYu Agent does not come with Git Bash, curl, or wget pre-installed.\n" +
@@ -315,14 +319,16 @@ export function syncDevFeishuDriveTools(
   agentRoot,
   overlayRoot = path.join(projectRoot, "resources", "hermes-agent-overlays"),
 ) {
-  const source = path.join(overlayRoot, "tools", feishuDriveToolFile);
   const targetRoot = path.join(agentRoot, "tools");
   const toolsetsPath = path.join(agentRoot, "toolsets.py");
   if (!fs.existsSync(targetRoot) || !fs.existsSync(toolsetsPath)) return false;
-  if (!fs.existsSync(source)) {
-    throw new Error(`Feishu Drive tool is missing: ${source}`);
+  for (const fileName of feishuDriveRuntimeFiles) {
+    const source = path.join(overlayRoot, "tools", fileName);
+    if (!fs.existsSync(source)) {
+      throw new Error(`Feishu Drive runtime file is missing: ${source}`);
+    }
+    fs.copyFileSync(source, path.join(targetRoot, fileName));
   }
-  fs.copyFileSync(source, path.join(targetRoot, feishuDriveToolFile));
   const toolsetsSource = fs.readFileSync(toolsetsPath, "utf8");
   const patched = patchFeishuDriveToolsetSource(toolsetsSource);
   if (patched !== toolsetsSource)

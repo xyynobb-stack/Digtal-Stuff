@@ -56,6 +56,24 @@ Development and packaged Agents share one OAuth-proxy implementation and expose 
 
 `scripts/apply-offline-runtime-overlays.mjs#patchFeishuDriveToolsetSource` removes the obsolete initialization tool, assigns the five OAuth actions to the dedicated `feishu_user_drive` toolset, adds them to the API-server and ACP composites, and adds them to the shared core inherited by CLI and cron. Keeping this toolset separate from legacy app-credential comment actions lets platform resolution expose it in direct desktop conversations. `scripts/prepare-dev-agent.mjs#syncDevFeishuDriveTools` copies the canonical overlay into an installed development Agent.
 
+### Scheduled Drive delivery
+
+计划任务界面的“发送到：飞书”表示将本次任务的最终文件上传到当前员工授权的飞书云盘，不依赖机器人或聊天会话。
+
+留空目标文件夹时上传到“我的文件夹”根目录；也可保存显式共享文件夹链接解析出的 token。运行时使用既有 `feishu_drive_upload_file` 能力，因此沿用员工 OAuth、20 MiB 限制和服务端权限检查，不新增飞书应用权限。
+
+#### Destination selection
+
+计划任务以 `feishu` 表示个人根目录，以 `feishu:<folder_token>` 表示指定文件夹；界面标签始终保留为“发送到”。
+
+#### Isolated run output
+
+每次执行在当前 Profile 的 `cron/feishu-drive/<job-id>/<run-id>` 下创建独立目录，并要求 Agent 仅把最终成品放入该目录，避免重复上传以前运行或临时工作区中的文件。
+
+#### Artifact upload and fallback
+
+任务结束后调度器上传独立目录内的全部最终文件并记录投递清单；如果没有生成文件，则把最终文本保存为 Markdown 后上传，使纯文本结果也能进入云盘。上传失败写入计划任务的投递错误，不把失败伪装成成功。
+
 ### Built-in discovery
 
 All twenty actions use top-level `registry.register(...)` calls so Hermes' AST-based built-in scanner recognizes and imports the module automatically from the system `tools/` directory; the model never needs Tool Search to discover them.

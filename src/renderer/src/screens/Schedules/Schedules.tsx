@@ -31,6 +31,35 @@ const DELIVER_TARGETS = [
   { value: "wecom", label: "企业微信" },
 ];
 
+export function parseFeishuFolderToken(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^[A-Za-z0-9_-]{1,128}$/.test(trimmed)) return trimmed;
+  try {
+    const url = new URL(trimmed);
+    if (
+      url.protocol !== "https:" ||
+      (!url.hostname.endsWith(".feishu.cn") &&
+        !url.hostname.endsWith(".larksuite.com"))
+    ) {
+      return null;
+    }
+    return (
+      url.pathname.match(
+        /^\/drive\/(?:home\/)?folder\/([A-Za-z0-9_-]{1,128})\/?$/,
+      )?.[1] || null
+    );
+  } catch {
+    return null;
+  }
+}
+
+function formatDeliverTarget(value: string): string {
+  if (value === "feishu") return "飞书";
+  if (value.startsWith("feishu:")) return "飞书（指定文件夹）";
+  return value;
+}
+
 interface CronJob {
   id: string;
   name: string;
@@ -202,6 +231,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
   const [newName, setNewName] = useState("");
   const [newPrompt, setNewPrompt] = useState("");
   const [newDeliver, setNewDeliver] = useState("local");
+  const [newFeishuFolder, setNewFeishuFolder] = useState("");
   const [availableModels, setAvailableModels] = useState<ScheduleModel[]>([]);
   const [newModelId, setNewModelId] = useState("");
   const [writingTemplates, setWritingTemplates] = useState<WritingTemplate[]>(
@@ -362,6 +392,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     setNewName("");
     setNewPrompt("");
     setNewDeliver("local");
+    setNewFeishuFolder("");
     setNewOutputDir(null);
     setFrequency("daily");
     setMinutesInterval("30");
@@ -462,6 +493,9 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
       workContent.trim() &&
       reportDateRangeValid,
     );
+  const feishuFolderToken = parseFeishuFolderToken(newFeishuFolder);
+  const deliveryTargetValid =
+    newDeliver !== "feishu" || feishuFolderToken !== null;
 
   function handleWritingTemplateImported(template: WritingTemplate): void {
     setWritingTemplates((current) => [
@@ -537,7 +571,12 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
     const selectedModel = availableModels.find(
       (candidate) => candidate.id === newModelId,
     );
-    if (!isScheduleValid() || !selectedModel || !recommendationFieldsValid)
+    if (
+      !isScheduleValid() ||
+      !selectedModel ||
+      !recommendationFieldsValid ||
+      !deliveryTargetValid
+    )
       return;
     const basePrompt =
       recommendationType && selectedTemplate
@@ -556,6 +595,10 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
       !recommendationType && selectedTemplate
         ? buildScheduledTemplatePrompt(basePrompt, selectedTemplate)
         : basePrompt;
+    const deliverTarget =
+      newDeliver === "feishu" && feishuFolderToken
+        ? `feishu:${feishuFolderToken}`
+        : newDeliver;
     setActionInProgress("creating");
     setError("");
     try {
@@ -563,7 +606,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
         buildSchedule(),
         taskPrompt,
         newName.trim() || undefined,
-        newDeliver !== "local" ? newDeliver : undefined,
+        deliverTarget !== "local" ? deliverTarget : undefined,
         profile,
         selectedModel.model,
         selectedModel.provider,
@@ -1045,6 +1088,33 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                     </div>
                   </div>
                 )}
+                {newDeliver === "feishu" && (
+                  <div className="schedules-output-directory">
+                    <div className="schedules-field" style={{ margin: 0 }}>
+                      <label className="schedules-field-label">
+                        飞书云盘目标文件夹（可选）
+                      </label>
+                      <input
+                        className="input"
+                        aria-label="飞书云盘目标文件夹"
+                        type="text"
+                        placeholder="留空发送到“我的文件夹”，或粘贴共享文件夹链接 / token"
+                        value={newFeishuFolder}
+                        onChange={(event) =>
+                          setNewFeishuFolder(event.target.value)
+                        }
+                      />
+                      {feishuFolderToken === null && (
+                        <div className="schedules-validation-error" role="alert">
+                          请输入有效的飞书文件夹链接或 token。
+                        </div>
+                      )}
+                      <div className="schedules-field-hint">
+                        这里的“飞书”表示上传到飞书云盘，不会发送机器人消息。
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="schedules-field">
                 <label className="schedules-field-label">
@@ -1083,6 +1153,7 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                   !isScheduleValid() ||
                   !newModelId ||
                   !recommendationFieldsValid ||
+                  !deliveryTargetValid ||
                   actionInProgress === "creating"
                 }
               >
@@ -1308,7 +1379,9 @@ function Schedules({ profile }: SchedulesProps): React.JSX.Element {
                 {job.deliver.length > 0 &&
                   !(job.deliver.length === 1 && job.deliver[0] === "local") && (
                     <span>
-                      {t("schedules.deliveredTo")}: {job.deliver.join(", ")}
+                      {t("schedules.deliveredTo")}: {job.deliver
+                        .map(formatDeliverTarget)
+                        .join(", ")}
                     </span>
                   )}
                 {job.skills.length > 0 && (

@@ -804,6 +804,11 @@ describe("market report workflow development overlay", () => {
       "utf8",
     );
     writeFileSync(
+      join(overlay, "tools", "cron_feishu_drive_delivery.py"),
+      "scheduled drive delivery",
+      "utf8",
+    );
+    writeFileSync(
       join(agent, "toolsets.py"),
       `_HERMES_CORE_TOOLS = [
     "execute_code", "delegate_task",
@@ -837,6 +842,12 @@ describe("market report workflow development overlay", () => {
     expect(
       readFileSync(join(agent, "tools", "feishu_drive_files_tool.py"), "utf8"),
     ).toBe("registered drive tools");
+    expect(
+      readFileSync(
+        join(agent, "tools", "cron_feishu_drive_delivery.py"),
+        "utf8",
+      ),
+    ).toBe("scheduled drive delivery");
     const toolsets = readFileSync(join(agent, "toolsets.py"), "utf8");
     expect(toolsets).toContain('"feishu_drive_upload_file"');
     expect(toolsets).not.toContain('"feishu_drive_initialize"');

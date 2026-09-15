@@ -66,6 +66,25 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:`
     );
   }
 
+  if (!patched.includes("DESKTOP_FEISHU_DRIVE_OUTPUT_DIR")) {
+    patched = replaceRequired(
+      patched,
+      `def _resolve_job_deliverable_output_dir(job: dict) -> Optional[str]:
+    """Resolve the configured directory used for generated user deliverables."""
+    raw = str(job.get("output_dir") or "").strip()`,
+      `def _resolve_job_deliverable_output_dir(job: dict) -> Optional[str]:
+    """Resolve the configured directory used for generated user deliverables."""
+    # DESKTOP_FEISHU_DRIVE_OUTPUT_DIR: cloud deliveries use one isolated
+    # directory per run so the scheduler uploads only this run's final files.
+    from tools.cron_feishu_drive_delivery import prepare_run_output_dir
+    drive_output_dir = prepare_run_output_dir(job)
+    if drive_output_dir:
+        return drive_output_dir
+    raw = str(job.get("output_dir") or "").strip()`,
+      filePath,
+    );
+  }
+
   if (!patched.includes("    deliverable_output_dir = _resolve_job_deliverable_output_dir(job)")) {
     patched = replaceRequired(
       patched,
@@ -87,6 +106,45 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:`
         )
         prompt = f"{output_note}\\n\\n{prompt}"
     skills = job.get("skills")`,
+      filePath,
+    );
+  }
+
+
+  if (!patched.includes("DESKTOP_FEISHU_DRIVE_PROMPT")) {
+    patched = replaceRequired(
+      patched,
+      `        prompt = f"{output_note}\\n\\n{prompt}"
+    skills = job.get("skills")`,
+      `        prompt = f"{output_note}\\n\\n{prompt}"
+    # DESKTOP_FEISHU_DRIVE_PROMPT
+    from tools.cron_feishu_drive_delivery import build_delivery_prompt
+    drive_delivery_note = build_delivery_prompt(job)
+    if drive_delivery_note:
+        prompt = f"{drive_delivery_note}\\n\\n{prompt}"
+    skills = job.get("skills")`,
+      filePath,
+    );
+  }
+
+  if (!patched.includes("DESKTOP_FEISHU_DRIVE_DELIVERY")) {
+    patched = replaceRequired(
+      patched,
+      `    Returns None on success, or an error string on failure.
+    """
+    targets = _resolve_delivery_targets(job)`,
+      `    Returns None on success, or an error string on failure.
+    """
+    # DESKTOP_FEISHU_DRIVE_DELIVERY: in JingYuAI, the UI's Feishu target
+    # means upload to the employee-authorized Drive, not send a bot message.
+    from tools.cron_feishu_drive_delivery import (
+        deliver_job_output,
+        is_feishu_drive_delivery,
+    )
+    if is_feishu_drive_delivery(job):
+        return deliver_job_output(job, content)
+
+    targets = _resolve_delivery_targets(job)`,
       filePath,
     );
   }

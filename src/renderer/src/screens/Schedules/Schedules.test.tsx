@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Schedules, { buildCustomSchedule } from "./Schedules";
+import Schedules, {
+  buildCustomSchedule,
+  parseFeishuFolderToken,
+} from "./Schedules";
 
 vi.mock("../../components/useI18n", () => ({
   useI18n: () => ({
@@ -139,6 +142,51 @@ describe("Schedules recommendations", () => {
     expect(call[1]).toContain("整理本月项目进展。");
     expect(call[1]).toContain("C:\\templates\\周报模板.xlsx");
     expect(call[8]).toEqual(["xlsx"]);
+  });
+
+  it("stores Feishu delivery as a Drive folder target while keeping the UI label", async () => {
+    render(<Schedules profile="writer" />);
+
+    await screen.findByText("schedules.empty");
+    fireEvent.click(screen.getByRole("button", { name: "schedules.newTask" }));
+    fireEvent.change(screen.getByPlaceholderText("schedules.promptPlaceholder"), {
+      target: { value: "生成月报文件。" },
+    });
+    const deliverySelect = screen
+      .getByRole("option", { name: "飞书" })
+      .closest("select");
+    expect(deliverySelect).not.toBeNull();
+    fireEvent.change(deliverySelect as HTMLSelectElement, {
+      target: { value: "feishu" },
+    });
+    fireEvent.change(screen.getByLabelText("飞书云盘目标文件夹"), {
+      target: {
+        value: "https://example.feishu.cn/drive/folder/folder_token_123",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "schedules.create" }));
+
+    await waitFor(() =>
+      expect(window.hermesAPI.createCronJob).toHaveBeenCalled(),
+    );
+    expect(vi.mocked(window.hermesAPI.createCronJob).mock.calls[0][3]).toBe(
+      "feishu:folder_token_123",
+    );
+  });
+
+  it("validates Feishu folder links and tokens", () => {
+    expect(parseFeishuFolderToken("")).toBe("");
+    expect(parseFeishuFolderToken("folder_token_123")).toBe(
+      "folder_token_123",
+    );
+    expect(
+      parseFeishuFolderToken(
+        "https://example.feishu.cn/drive/home/folder/folder_token_123",
+      ),
+    ).toBe("folder_token_123");
+    expect(parseFeishuFolderToken("https://evil.test/drive/folder/token")).toBe(
+      null,
+    );
   });
 
   it("imports a template from the create form and selects it immediately", async () => {
